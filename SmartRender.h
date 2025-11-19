@@ -5,22 +5,40 @@
 #include "pico/stdlib.h"
 #include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
 
+///////////////////////////////// Screen arrays
 #define RECT_SOLVER_WIDTH 160
 #define RECT_SOLVER_HEIGHT 128
 
 uint16_t currentScreen[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 uint16_t smartScreen[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 
+uint8_t screenChange[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
+
+
+////////////////////////////// Render modes
+#define FAST_BUT_FLICKER 0
+#define CHANGE_DRAW 1
+#define SLOW_BUT_SMOOTH 2
+
+uint8_t renderMode = CHANGE_DRAW;
+
+//////////////////////////// Dynamic variables
+
 typedef struct ColorList
 {
     struct ColorList *next;
     struct ColorList *previous;
     uint16_t color;
-    bool affected[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 } ColorList;
 
 ColorList *palleteHead = NULL;
 uint16_t palleteColorCount = 0;
+
+/////////////////////////////// Code
+
+
+//Pallete helper functions
+#pragma region
 
 uint8_t IndexOfColor(uint16_t color)
 {
@@ -73,21 +91,37 @@ void AddColorToPallete(uint16_t color)
 
     if (palleteHead == NULL)
     {
+        // printf("!!!!!!!!!!!!!!!!! new head color %d", color);
         palleteHead = malloc(sizeof(ColorList));
         palleteHead->color = color;
         palleteHead->previous = NULL;
         palleteHead->next = NULL;
         palleteColorCount++;
-        memset(palleteHead->affected, 0, sizeof(palleteHead->affected));
+        // printf("%s", " added !!!!!!!!!!!!!");
         return;
     }
+
+    // printf("!!!!!!!!!!!!!!!!! new color %d", color);
+
     ColorList *newColor = malloc(sizeof(ColorList));
+    if (newColor == NULL)
+    {
+        // printf("%s\n", "malloc failed");
+        sleep_ms(100000);
+    }
+    // printf("%s\n", "1");
     palleteHead->next = newColor;
+    // printf("%s\n", "2");
     newColor->previous = palleteHead;
+    // printf("%s\n", "3");
     newColor->color = color;
+    // printf("%s\n", "4");
+    newColor->next = NULL;
+    // printf("%s\n", "5");
 
     palleteHead = newColor;
-    memset(palleteHead->affected, 0, sizeof(palleteHead->affected));
+    // printf("%s\n", "6");
+    // printf("%s", " added !!!!!!!!!!!!!");
 
     palleteColorCount++;
 }
@@ -126,6 +160,8 @@ ColorList *GetColorNodeByIndex(uint8_t colorIndex)
     return currentColor;
 }
 
+
+
 void ClearPallete()
 {
     if (palleteHead == NULL)
@@ -133,17 +169,21 @@ void ClearPallete()
         return;
     }
     ColorList *currentColor = palleteHead;
-    while (currentColor->previous != NULL)
+    while (currentColor != NULL)
     {
-        currentColor = currentColor->previous;
-        free(currentColor->next);
+        ColorList *previous = currentColor->previous;
+        free(currentColor);
+        currentColor = previous;
     }
-    free(currentColor);
+
     palleteColorCount = 0;
     palleteHead = NULL;
 }
 
-void DrawShapeSolved(bool shape[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH], uint16_t color)
+#pragma endregion
+
+//Converts a shape into a series of rectangles. Efficient, but CPU heavy
+void DrawShapeLayerSolved(uint8_t layer, uint16_t color)
 {
     bool renderedPixels[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 
@@ -160,13 +200,13 @@ void DrawShapeSolved(bool shape[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH], uint16_t
                 continue;
             }
 
-            if (!shape[y][x])
+            if (screenChange[y][x] != layer)
             {
                 continue;
             }
 
             uint8_t width = 1;
-            while (shape[y][x + width] && !renderedPixels[y][x + width] && (width + x < RECT_SOLVER_WIDTH))
+            while (screenChange[y][x + width] == layer && !renderedPixels[y][x + width] && (width + x < RECT_SOLVER_WIDTH))
             {
                 width++;
             }
@@ -179,7 +219,7 @@ void DrawShapeSolved(bool shape[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH], uint16_t
                 doExtend = true;
                 for (int x2 = 0; x2 < width; x2++)
                 {
-                    if (!shape[y + height][x + x2])
+                    if (screenChange[y + height][x + x2] != layer)
                     {
                         doExtend = false;
                         break;
@@ -206,36 +246,75 @@ void DrawShapeSolved(bool shape[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH], uint16_t
     }
 }
 
+//Handles the display of a frame
 void DrawScreenSmart(uint16_t frame[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH])
 {
-    // memset(currentScreen,0,sizeof(currentScreen));
+    memset(screenChange, 0, sizeof(screenChange));
 
     ClearPallete();
 
-    for (int y = 0; y < RECT_SOLVER_HEIGHT; y++)
+    switch (renderMode)
     {
-        for (int x = 0; x < RECT_SOLVER_WIDTH; x++)
+    case FAST_BUT_FLICKER:
+        for (int y = 0; y < RECT_SOLVER_HEIGHT; y++)
         {
-            if (currentScreen[y][x] != frame[y][x])
+            for (int x = 0; x < RECT_SOLVER_WIDTH; x++)
             {
-
-                AddColorToPallete(frame[y][x]);
-
-                GetColorNodeByColor(frame[y][x])->affected[y][x] = true;
-
+                SetPixel(x, y, frame[y][x]);
                 currentScreen[y][x] = frame[y][x];
             }
         }
-    }
+        break;
 
-    for (int i = 0; i < palleteColorCount; i++)
-    {
-        DrawShapeSolved(GetColorNodeByIndex(i)->affected, GetColorFromPallete(i));
+    case CHANGE_DRAW:
+        for (int y = 0; y < RECT_SOLVER_HEIGHT; y++)
+        {
+            for (int x = 0; x < RECT_SOLVER_WIDTH; x++)
+            {
+                if (currentScreen[y][x] != frame[y][x])
+                {
+                    SetPixel(x, y, frame[y][x]);
+
+                    currentScreen[y][x] = frame[y][x];
+                }
+            }
+        }
+        break;
+    case SLOW_BUT_SMOOTH:
+        for (int y = 0; y < RECT_SOLVER_HEIGHT; y++)
+        {
+            for (int x = 0; x < RECT_SOLVER_WIDTH; x++)
+            {
+                if (currentScreen[y][x] != frame[y][x])
+                {
+                    // printf("Setting pixel %d,%d: %d\n", x, y, frame[y][x]);
+                    AddColorToPallete(frame[y][x]);
+
+                    screenChange[y][x] = IndexOfColor(frame[y][x]) + 1;
+
+                    currentScreen[y][x] = frame[y][x];
+                }
+            }
+        }
+
+        for (int i = 0; i < palleteColorCount; i++)
+        {
+            DrawShapeLayerSolved(i + 1, GetColorFromPallete(i));
+        }
+        break;
     }
 }
 
+
+//Draw functions
 void SmartRect(uint16_t color, int x, int y, uint8_t w, uint8_t h)
 {
+    if (renderMode == FAST_BUT_FLICKER)
+    {
+        Rectangle(color, x, y, w, h);
+        return;
+    }
+
     if (x > RECT_SOLVER_WIDTH)
     {
         return;
@@ -261,30 +340,40 @@ void SmartRect(uint16_t color, int x, int y, uint8_t w, uint8_t h)
     }
     if (y < 0)
     {
-        h += y - 0;
+        h += y;
         y = 0;
     }
 
     w = min(w, RECT_SOLVER_WIDTH - x);
     h = min(h, RECT_SOLVER_HEIGHT - y);
-    
 
     for (int x2 = 0; x2 < w; x2++)
     {
         for (int y2 = 0; y2 < h; y2++)
         {
-            smartScreen[y+y2][x+x2] = color;
+            smartScreen[y + y2][x + x2] = color;
         }
     }
 }
 
 void SmartShow()
 {
+    if (renderMode == FAST_BUT_FLICKER)
+    {
+        return;
+    }
     DrawScreenSmart(smartScreen);
 }
 
 void SmartClear()
 {
+    if (renderMode == FAST_BUT_FLICKER)
+    {
+        Clear();
+        memset(smartScreen, 0, sizeof(smartScreen));
+        memset(currentScreen, 0, sizeof(currentScreen));
+        return;
+    }
     memset(smartScreen, 0, sizeof(smartScreen));
 }
 

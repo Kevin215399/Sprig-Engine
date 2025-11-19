@@ -17,6 +17,8 @@
 #include "pico/time.h"
 #include "GUI_Icons.h"
 
+#include "SmartRender.h"
+
 // #include "Interpreter.h"
 
 #define CENTER_ANCHOR 0
@@ -99,7 +101,9 @@ typedef struct
 #define PLAY_SCENE_UI 5
 #define EXIT_EDITOR_UI 6
 
-#define OBJECT_BUTTONS 7
+#define RENDER_MODE_BUTTON 7
+
+#define OBJECT_BUTTONS 8
 
 #define MODULE_BUTTONS (8 + MAX_OBJECTS)
 
@@ -437,8 +441,8 @@ void DrawSpriteCentered(uint8_t sprite, int x, int y, uint8_t scale)
     {
         for (int y = 0; y < SPRITE_HEIGHT; y++)
         {
-            printf("Color: %d\n", sprites[sprite].sprite[x][y]);
-            Rectangle(sprites[sprite].sprite[x][y], topLeftX + x * scale, topLeftY + y * scale, scale, scale);
+            // printf("Color: %d\n", sprites[sprite].sprite[x][y]);
+            SmartRect(sprites[sprite].sprite[x][y], topLeftX + x * scale, topLeftY + y * scale, scale, scale);
         }
     }
 }
@@ -454,7 +458,7 @@ void RenderScene(int offsetX, int offsetY)
     {
         if ((i - offsetX - 80) % (10 * sceneScale) == 0)
         {
-            Rectangle(RGBTo16(70, 70, 70), i, topBound, 1, bottomBound - topBound);
+            SmartRect(RGBTo16(70, 70, 70), i, topBound, 1, bottomBound - topBound);
         }
     }
 
@@ -462,15 +466,17 @@ void RenderScene(int offsetX, int offsetY)
     {
         if ((i - offsetY - 64) % (10 * sceneScale) == 0)
         {
-            Rectangle(RGBTo16(70, 70, 70), leftBound, i, rightBound - leftBound, 1);
+            SmartRect(RGBTo16(70, 70, 70), leftBound, i, rightBound - leftBound, 1);
         }
     }
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        printf("Sprite: %d\n", currentScene->objects[i].objectData[1]->data.i);
+        // printf("Sprite: %d\n", currentScene->objects[i].objectData[1]->data.i);
         DrawSpriteCentered(currentScene->objects[i].objectData[1]->data.i, 80 + offsetX, 64 + offsetY, sceneScale);
     }
+
+    SmartShow();
 
     leftBound = 0;
     rightBound = 160;
@@ -542,6 +548,24 @@ void RefocusButton(UIButton *focusTo, bool redraw)
     }
 }
 
+void UpdateRenderButton(bool draw)
+{
+    switch (renderMode)
+    {
+    case FAST_BUT_FLICKER:
+        AddTextToButton(&buttons[RENDER_MODE_BUTTON], "FAST", RED, 1);
+        break;
+    case CHANGE_DRAW:
+        AddTextToButton(&buttons[RENDER_MODE_BUTTON], "ON CHANGE", GREEN, 1);
+        break;
+    case SLOW_BUT_SMOOTH:
+        AddTextToButton(&buttons[RENDER_MODE_BUTTON], "SMOOTH", YELLOW, 1);
+        break;
+    }
+    if (draw)
+        DrawButton(&buttons[RENDER_MODE_BUTTON]);
+}
+
 void ManageSceneUI()
 {
 
@@ -556,7 +580,8 @@ void ManageSceneUI()
     SetButton(&buttons[SELECT_OPTIONS_UI], 85, 56, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[2], NULL, NULL, NULL);
 
     SetButton(&buttons[PLAY_SCENE_UI], 10, 10, 60, 20, 6, RGBTo16(0, 167, 0), WHITE, BLACK, GREEN, NULL, &buttons[OPEN_NAV_PANEL], &buttons[EXIT_EDITOR_UI], NULL);
-    SetButton(&buttons[EXIT_EDITOR_UI], 10, 35, 60, 20, 6, RGBTo16(255, 0, 0), WHITE, BLACK, GREEN, &buttons[PLAY_SCENE_UI], &buttons[OPEN_NAV_PANEL], NULL, NULL);
+    SetButton(&buttons[EXIT_EDITOR_UI], 10, 35, 60, 20, 6, RGBTo16(255, 0, 0), WHITE, BLACK, GREEN, &buttons[PLAY_SCENE_UI], &buttons[OPEN_NAV_PANEL], &buttons[RENDER_MODE_BUTTON], NULL);
+    SetButton(&buttons[RENDER_MODE_BUTTON], 10, 60, 60, 20, 6, RGBTo16(100, 100, 100), WHITE, BLACK, GREEN, &buttons[EXIT_EDITOR_UI], &buttons[OPEN_NAV_PANEL], NULL, NULL);
 
     SetButton(&buttons[OPEN_NAV_PANEL], 150, 0, 10, 20, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
 
@@ -568,8 +593,11 @@ void ManageSceneUI()
     AddTextToButton(&buttons[PLAY_SCENE_UI], "Play", WHITE, 1);
     AddTextToButton(&buttons[EXIT_EDITOR_UI], "Exit", WHITE, 1);
 
+    UpdateRenderButton(false);
+
     buttons[PLAY_SCENE_UI].visible = false;
     buttons[EXIT_EDITOR_UI].visible = false;
+    buttons[RENDER_MODE_BUTTON].visible = false;
     SetNavPanelVisibility(false);
 
     currentButton = &buttons[OPEN_NAV_PANEL];
@@ -776,6 +804,7 @@ void ManageSceneUI()
             buttons[OPEN_NAV_PANEL].leftNext = &buttons[PLAY_SCENE_UI];
             buttons[PLAY_SCENE_UI].visible = true;
             buttons[EXIT_EDITOR_UI].visible = true;
+            buttons[RENDER_MODE_BUTTON].visible = true;
             SetNavPanelVisibility(false);
         }
 
@@ -838,7 +867,7 @@ void ManageSceneUI()
 
             if (refreshSceneView)
             {
-                Rectangle(BLACK, 1, 1, 158, 126);
+                SmartClear();
                 RenderScene(scenePosX, scenePosY);
                 refreshSceneView = false;
             }
@@ -971,6 +1000,16 @@ void ManageSceneUI()
                     }
                 }
             }
+        }
+    
+        //Manage settings
+        if(currentMode == 3 && buttons[RENDER_MODE_BUTTON].isPressed){
+            renderMode++;
+            if(renderMode == 3){
+                renderMode = 0;
+            }
+            UpdateRenderButton(true);
+            sleep_ms(120);
         }
     }
 }

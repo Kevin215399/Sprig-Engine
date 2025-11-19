@@ -21,7 +21,20 @@ File *program;
 
 #include "Interpreter.h"
 
-#include "SmartRender.h"
+
+void RenderTest(){
+    for (int x = 0; x < 360; x+=1)
+    {
+        SmartClear();
+        SmartRect(RED, 80 + cos(x * M_PI / 180) * 20, 64 + sin(x * M_PI / 180) * 20, 20, 20);
+        SmartRect(BLUE, 80 + cos((x + 120) * M_PI / 180) * 20, 64 + sin((x + 120) * M_PI / 180) * 20, 20, 20);
+        SmartRect(YELLOW, 80 + cos((x + 240) * M_PI / 180) * 20, 64 + sin((x + 240) * M_PI / 180) * 20, 20, 20);
+        SmartShow();
+    }
+    renderMode=FAST_BUT_FLICKER;
+    SmartClear();
+    sleep_ms(1000);
+}
 
 int main()
 {
@@ -53,28 +66,10 @@ int main()
 
     Clear();
 
-    sleep_ms(6000);
+    //sleep_ms(5000);
 
-    print("Solving shape...");
 
-    for (int x = 0; x < 720; x++)
-    {
-        
-        Clear();
-        Rectangle(RED, 80 + cos(x * M_PI / 180) * 20, 64 + sin(x * M_PI / 180) * 20, 20, 20);
-    }
-
-    sleep_ms(1000);
-    Clear();
-
-    for (int x = 0; x < 720; x++)
-    {
-        SmartClear();
-        SmartRect(RED, 80 + cos(x * M_PI / 180) * 20, 64 + sin(x * M_PI / 180) * 20, 20, 20);
-        SmartShow();
-    }
-
-    sleep_ms(4000);
+    //sleep_ms(4000);
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
