@@ -6,7 +6,7 @@
 
 #include "SaveSystem.h"
 
-#include "Editor.h"
+// #include "Editor.h"
 
 #include "EngineStructs.h"
 #include <string.h>
@@ -19,6 +19,7 @@
 #define PARENTHESIS_ERROR 4
 #define DATATYPE_ERROR 5
 #define GENERAL_ERROR 6
+#define SCENE_ERROR 7
 
 #define INCORRECT_PAIRS 1
 #define BRACKET_MISMATCH 2
@@ -29,6 +30,7 @@
 #define TOKEN_NOT_RECOGNIZED 7
 #define UNKNOWN_ASSIGNMENT_OPERATOR 8
 #define OPERATOR_CANNOT_BE_USED_WITH_TYPE 9
+#define NO_CAMERA_DEFINED 10
 
 #define OPPERATION_SUCCESS 0x8000
 
@@ -41,7 +43,8 @@ const char *ERROR_NAMES[] = {
     "Type mismatch",
     "Token was not recognized",
     "Assignment attribute unknown",
-    "Type cannot be transformed using this operator"};
+    "Type cannot be transformed using this operator",
+    "No camera, add an object named \"Camera\""};
 
 const char *CATEGORY_ERRORS[] = {
     "EQUATION",
@@ -49,7 +52,8 @@ const char *CATEGORY_ERRORS[] = {
     "VARIABLE",
     "PARENTHESIS",
     "DATATYPE",
-    "GENERAL"};
+    "GENERAL",
+    "SCENE"};
 
 #define OPERATOR_ATOM 255
 
@@ -68,36 +72,51 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 20
+#define OPERATOR_COUNT 29
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
-    {"PI", 11, 0},
-    {"vector", 10, 2},
 
-    {"pow", 9, 2},
-    {"sin", 9, 1},
-    {"cos", 9, 1},
+    {"PI", 12, 0},
+    {"vector", 11, 2},
 
-    {"%", 8, 2},
-    {"^", 8, 2},
-    {"*", 7, 2},
-    {"/", 7, 2},
-    {"-", 6, 2},
-    {"+", 6, 2},
+    {"pow", 10, 2},
+    {"sin", 10, 1},
+    {"cos", 10, 1},
 
-    {">=", 5, 2},
-    {"<=", 5, 2},
-    {">", 5, 2},
-    {"<", 5, 2},
+    {"%", 9, 2},
+    {"^", 9, 2},
+    {"*", 8, 2},
+    {"/", 8, 2},
+    {"-", 7, 2},
+    {"+", 7, 2},
 
-    {"==", 4, 2},
-    {"!=", 4, 2},
+    {">=", 6, 2},
+    {"<=", 6, 2},
+    {">", 6, 2},
+    {"<", 6, 2},
 
-    {"&", 3, 2},
+    {"==", 5, 2},
+    {"!=", 5, 2},
 
-    {"^", 2, 2},
+    {"&", 4, 2},
 
-    {"|", 1, 2},
+    {"^", 3, 2},
+
+    {"|", 2, 2},
+
+    {"Vector", 1, 2},
+
+    {"input", 0, 1},
+    {"deltaTime", 0, 0},
+
+    {"getPosition", 0, 0},
+    {"getScale", 0, 0},
+    {"getSprite", 0, 0},
+
+    {"setPosition", 0, 1},
+    {"setScale", 0, 1},
+    {"setSprite", 0, 1},
+
 };
 /*
 int IntLength(int value)
@@ -113,6 +132,28 @@ int IntLength(int value)
     }
     return numberLength;
 }*/
+
+char ToLower(char in)
+{
+    if (in >= 65 && in <= 90)
+    {
+        return in + 32;
+    }
+    return in;
+}
+
+void FreeAtom(Atom *atom)
+{
+    if (atom == NULL)
+    {
+        return;
+    }
+    if (atom->atom != NULL)
+    {
+        free(atom->atom);
+    }
+    free(atom);
+}
 
 int indexOf(char *search, char *string)
 {
@@ -644,6 +685,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     setatom(&allAtoms[atomIndex++], TYPE_STRING, 0, 0, value);
                 }
+                else if (scriptData->data[variable].currentType == TYPE_VECTOR)
+                {
+                    setatom(&allAtoms[atomIndex++], TYPE_VECTOR, 0, 0, value);
+                }
 
                 printf("Atom: %s\n", allAtoms[atomIndex - 1].atom);
                 isVariable = true;
@@ -849,9 +894,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     else if (operandStack[i - x - 1].type == TYPE_VECTOR)
                     {
                         print("vector param");
-                        float vectX = 0;
-                        float vectY = 0;
-                        sscanf((operandStack[i - x - 1].atom), "%f,%f", x, vectY);
+                        int vectX = 0;
+                        int vectY = 0;
+                        sscanf((operandStack[i - x - 1].atom), "(%d, %d)", &vectX, &vectY);
+                        printf("v:%d,%d\n", vectX, vectY);
                         parameters[operandStack[i].parameters - x - 1].data.XY.x = vectX;
                         parameters[operandStack[i].parameters - x - 1].data.XY.y = vectY;
                         parameters[operandStack[i].parameters - x - 1].currentType = TYPE_VECTOR;
@@ -899,6 +945,60 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     result->data.XY.x = parameters[0].data.XY.x + parameters[1].data.XY.x;
                     result->data.XY.y = parameters[0].data.XY.y + parameters[1].data.XY.y;
                     result->currentType = TYPE_FLOAT;
+                }
+            }
+
+            if (parameters[0].currentType == TYPE_STRING)
+            {
+                if (strcmp(operandStack[i].atom, "input") == 0)
+                {
+                    print("input operation");
+                    result->currentType = TYPE_FLOAT;
+                    switch (ToLower(parameters[0].data.s[0]))
+                    {
+                    case 'w':
+                        printf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
+                        result->data.f = (gpio_get(BUTTON_W) == 0);
+                        break;
+                    case 'd':
+                        result->data.f = (gpio_get(BUTTON_D) == 0);
+                        break;
+                    case 'a':
+                        result->data.f = (gpio_get(BUTTON_A) == 0);
+                        break;
+                    case 's':
+                        result->data.f = (gpio_get(BUTTON_S) == 0);
+                        break;
+
+                    case 'i':
+                        result->data.f = (gpio_get(BUTTON_I) == 0);
+                        break;
+                    case 'j':
+                        result->data.f = (gpio_get(BUTTON_J) == 0);
+                        break;
+                    case 'k':
+                        result->data.f = (gpio_get(BUTTON_K) == 0);
+                        break;
+                    case 'l':
+                        result->data.f = (gpio_get(BUTTON_L) == 0);
+                        break;
+                    default:
+                        result->data.f = -1;
+                        break;
+                    }
+                }
+            }
+
+            if (parameters[0].currentType == TYPE_VECTOR)
+            {
+                if (strcmp(operandStack[i].atom, "setPosition") == 0 && scriptData->linkedObject != NULL)
+                {
+                    printf("set pos (%d,%d)\n", parameters[0].data.XY.x, parameters[0].data.XY.y);
+
+                    scriptData->linkedObject->objectData[0]->data.XY.x = parameters[0].data.XY.x;
+                    scriptData->linkedObject->objectData[0]->data.XY.y = parameters[0].data.XY.y;
+
+                    print("set");
                 }
             }
 
@@ -975,6 +1075,13 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     result->data.f = (parameters[0].data.f != parameters[1].data.f) ? 1 : 0;
                 }
+
+                if (strcmp(operandStack[i].atom, "Vector") == 0)
+                {
+                    result->currentType = TYPE_VECTOR;
+                    result->data.XY.x = parameters[0].data.f;
+                    result->data.XY.y = parameters[1].data.f;
+                }
             }
 
             if (EqualType(&parameters[0], &parameters[1], TYPE_VECTOR))
@@ -1025,8 +1132,22 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
                 setatom(&operandStack[i - operandStack[i].parameters], TYPE_FLOAT, 0, 0, strResult);
             }
+            else if (result->currentType == TYPE_VECTOR)
+            {
+                char *serializedVector = SerializeVar(result);
+
+                setatom(&operandStack[i - operandStack[i].parameters], TYPE_VECTOR, 0, 0, serializedVector);
+                printf("new Vector: %s\n", serializedVector);
+
+                free(serializedVector);
+            }
             else
             {
+                if (result->currentType == NO_TYPE)
+                {
+                    result->data.s = malloc(1);
+                    result->data.s[0] = '\n';
+                }
                 printf("Completed an str operation result: %s\n", result->data.s);
 
                 setatom(&operandStack[i - operandStack[i].parameters], TYPE_STRING, 0, 0, result->data.s);
@@ -1051,6 +1172,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             // printf("atom: %s\n", operandStack[i].atom);
             free(operandStack[i].atom);
         }
+
         return CreateError(EQUATION_ERROR, EQUATION_UNSOLVED, 0);
     }
     else
@@ -1084,6 +1206,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
     {
         free(operandStack[i].atom);
     }
+
 
     return 0;
 }
@@ -1636,6 +1759,11 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
 
 uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 {
+    // Function prototype
+    bool UI_PrintToScreen(char *message, bool isError);
+
+    bool justShuntYard = true;
+
     char *trimmedLine = LeftTrim(scriptData->lines[scriptData->currentLine]);
     printf("Exexute line: %s\n", trimmedLine);
     // If line is a variable or function declaration, ignore
@@ -2051,6 +2179,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         }
+        justShuntYard = false;
     }
 
     // If statement
@@ -2149,6 +2278,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
             }
         }
+        justShuntYard = false;
     }
 
     // While statement
@@ -2252,6 +2382,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
             }
         }
+        justShuntYard = false;
     }
 
     if (indexOf("print", trimmedLine) == 0)
@@ -2315,7 +2446,16 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             UI_PrintToScreen(printMessage, false);
         }
         free(out);
+        justShuntYard = false;
     }
+
+    if (justShuntYard)
+    {
+        EngineVar *out = VarConstructor("", 0, NO_TYPE);
+        uint32_t error = ShuntYard(trimmedLine, strlen(trimmedLine), out, scriptData);
+        free(out);
+    }
+
     scriptData->currentLine++;
     printf("Script line: %d\n", scriptData->currentLine);
 
