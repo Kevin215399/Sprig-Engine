@@ -72,12 +72,24 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 29
+#define OPERATOR_COUNT 28
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
+    {"Vector", 13, 2},
+
+    {"input", 13, 1},
+    {"deltaTime", 13, 0},
+
+    {"getPosition", 13, 0},
+    {"getScale", 13, 0},
+    {"getSprite", 13, 0},
+
+    {"setPosition", 13, 1},
+    {"setScale", 13, 1},
+    {"setSprite", 13, 1},
+
     {"PI", 12, 0},
-    {"vector", 11, 2},
 
     {"pow", 10, 2},
     {"sin", 10, 1},
@@ -104,19 +116,6 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
     {"|", 2, 2},
 
-    {"Vector", 1, 2},
-
-    {"input", 0, 1},
-    {"deltaTime", 0, 0},
-
-    {"getPosition", 0, 0},
-    {"getScale", 0, 0},
-    {"getSprite", 0, 0},
-
-    {"setPosition", 0, 1},
-    {"setScale", 0, 1},
-    {"setSprite", 0, 1},
-
 };
 /*
 int IntLength(int value)
@@ -132,6 +131,7 @@ int IntLength(int value)
     }
     return numberLength;
 }*/
+
 
 char ToLower(char in)
 {
@@ -231,6 +231,7 @@ char *UnpackErrorMessage(uint32_t error)
     printf("error len %d\n", errorLength);
 
     char *errorMessage = (char *)malloc(errorLength + 1);
+
 
     if (numberLength > 0)
     {
@@ -693,6 +694,8 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 printf("Atom: %s\n", allAtoms[atomIndex - 1].atom);
                 isVariable = true;
                 i += strlen(scriptData->data[variable].name) - 1;
+
+                free(value);
                 break;
             }
         }
@@ -804,6 +807,8 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 printf("moved %s to operand stack\n", operationStack[operatorIndex - 1].atom);
                 free(operationStack[--operatorIndex].atom);
             }
+            free(allAtoms[i].atom);
+            // free?
             continue;
         }
 
@@ -874,7 +879,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         if (operandStack[i].type == OPERATOR_ATOM)
         {
             bool isValid = true;
-            printf("operation: %s\n", operandStack[i].atom);
+            printf("operation: %s, params: %d\n", operandStack[i].atom, operandStack[i].parameters);
             EngineVar *parameters = (EngineVar *)malloc(sizeof(EngineVar) * operandStack[i].parameters);
             for (int x = 0; x < operandStack[i].parameters; x++)
             {
@@ -1106,21 +1111,32 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 }
             }
 
-            if (operandStack[i].parameters > 0)
+            uint8_t parameterCount = operandStack[i].parameters;
+
+            if (parameterCount > 0)
             {
+
+                // shift the rest of the operands
                 for (int x = i + 1; x < operandIndex; x++)
                 {
-                    free(operandStack[x - operandStack[i].parameters].atom);
-                    cpyatom(&operandStack[x - operandStack[i].parameters], &operandStack[x]);
+                    free(operandStack[x - parameterCount].atom);
+                    cpyatom(&operandStack[x - parameterCount], &operandStack[x]);
+                    printf("shift: %s to %d\n", operandStack[x].atom, x - parameterCount);
+                    // free(operandStack[x].atom);
                 }
-                for (int x = 0; x < operandStack[i].parameters; x++)
+                for (int x = 0; x < parameterCount; x++)
                 {
                     free(operandStack[operandIndex - x - 1].atom);
-                }
-            }
-            operandIndex -= operandStack[i].parameters;
 
-            free(operandStack[i - operandStack[i].parameters].atom);
+                    if (parameters[x].currentType == TYPE_STRING)
+                    {
+                        free(parameters[x].data.s);
+                    }
+                }
+                operandIndex -= parameterCount;
+            }
+
+            free(operandStack[i - parameterCount].atom);
 
             if (result->currentType == TYPE_FLOAT)
             {
@@ -1130,14 +1146,14 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
                 snprintf(strResult, sizeof(strResult), "%f", result->data.f);
 
-                setatom(&operandStack[i - operandStack[i].parameters], TYPE_FLOAT, 0, 0, strResult);
+                setatom(&operandStack[i - parameterCount], TYPE_FLOAT, 0, 0, strResult);
             }
             else if (result->currentType == TYPE_VECTOR)
             {
                 char *serializedVector = SerializeVar(result);
 
-                setatom(&operandStack[i - operandStack[i].parameters], TYPE_VECTOR, 0, 0, serializedVector);
-                printf("new Vector: %s\n", serializedVector);
+                setatom(&operandStack[i - parameterCount], TYPE_VECTOR, 0, 0, serializedVector);
+                printf("new Vector: %s\n", operandStack[i - parameterCount].atom);
 
                 free(serializedVector);
             }
@@ -1145,15 +1161,17 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 if (result->currentType == NO_TYPE)
                 {
+                    result->currentType = TYPE_STRING;
                     result->data.s = malloc(1);
-                    result->data.s[0] = '\n';
+                    result->data.s[0] = '\0';
                 }
                 printf("Completed an str operation result: %s\n", result->data.s);
 
-                setatom(&operandStack[i - operandStack[i].parameters], TYPE_STRING, 0, 0, result->data.s);
+                setatom(&operandStack[i - parameterCount], TYPE_STRING, 0, 0, result->data.s);
             }
 
             free(parameters);
+            free(result);
 
             i = 0;
 
@@ -1206,7 +1224,6 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
     {
         free(operandStack[i].atom);
     }
-
 
     return 0;
 }
@@ -1287,7 +1304,7 @@ bool IsAlphaNumeric(char c)
 }
 
 //  !!!DEPRECEATED USE SHUNT YARD!!! The data must not have a left space and must be null terminated
-uint32_t GetData(char *data, EngineVar *output, ScriptData *scriptData)
+/*uint32_t GetData(char *data, EngineVar *output, ScriptData *scriptData)
 {
     if (data[0] == '\"') // string
     {                    // string
@@ -1451,7 +1468,7 @@ uint32_t GetData(char *data, EngineVar *output, ScriptData *scriptData)
     }
 
     return CreateError(DATATYPE_ERROR, TYPE_MISMATCH, 0);
-}
+}*/
 
 uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 {
@@ -1641,6 +1658,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             if (trimmedLine[index] != '=')
             {
                 free(trimmedLine);
+                free(entityName);
                 return OPPERATION_SUCCESS;
             }
             index++;
@@ -1651,6 +1669,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             if (trimmedLine[index] == '\0')
             {
                 free(trimmedLine);
+                free(entityName);
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
@@ -1661,13 +1680,16 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             if (error != 0)
             {
                 free(trimmedLine);
+                free(entityName);
                 return error | ((uint16_t)l & 0xFFFF);
             }
             printf("variable declared: %d\n", output->data[output->variableCount].currentType);
             output->variableCount++;
             free(trimmedLine);
+            free(entityName);
             return OPPERATION_SUCCESS;
         }
+        free(entityName);
     }
 
     free(trimmedLine);
@@ -1837,6 +1859,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             free(trimmedLine);
             return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
         }
+        free(trimmedLine);
         return 0;
     }
     print("bracket execute 2");
@@ -1874,12 +1897,14 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (error != 0)
         {
             free(trimmedLine);
+            free(value);
             return error | scriptData->currentLine;
         }
 
         if (value->currentType != scriptData->data[varIndex].currentType)
         {
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
         }
 
@@ -1923,6 +1948,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 scriptData->data[varIndex].data.objID = value->data.objID;
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '+':
@@ -1962,9 +1988,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '-':
@@ -1992,14 +2020,17 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '*':
@@ -2028,20 +2059,24 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '/':
             if (EqualType(&scriptData->data[varIndex], value, TYPE_BOOL))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_VECTOR))
@@ -2063,14 +2098,17 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '|':
@@ -2088,6 +2126,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_FLOAT))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_INT))
@@ -2098,14 +2137,17 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '&':
@@ -2123,6 +2165,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_FLOAT))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_INT))
@@ -2133,14 +2176,17 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         case '^':
@@ -2158,6 +2204,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_FLOAT))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_INT))
@@ -2168,17 +2215,21 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], value, TYPE_STRING))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             if (EqualType(&scriptData->data[varIndex], value, TYPE_OBJ))
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
             free(trimmedLine);
+            free(value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
         }
+        free(value);
         justShuntYard = false;
     }
 
@@ -2219,6 +2270,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (error != 0)
         {
             free(trimmedLine);
+            free(value);
             return error | scriptData->currentLine;
         }
 
@@ -2234,6 +2286,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         else
         {
             free(trimmedLine);
+            free(value);
             return CreateError(GENERAL_ERROR, TYPE_MISMATCH, scriptData->currentLine);
         }
 
@@ -2267,7 +2320,9 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                     }
 
                     free(trimmedLine);
+                    free(value);
                     printf("Script line: %d\n", scriptData->currentLine);
+
                     return 0;
                 }
             }
@@ -2275,9 +2330,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (!foundEnd)
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
             }
         }
+        free(value);
         justShuntYard = false;
     }
 
@@ -2322,6 +2379,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (error != 0)
         {
             free(trimmedLine);
+            free(value);
             return error | scriptData->currentLine;
         }
 
@@ -2337,6 +2395,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         else
         {
             free(trimmedLine);
+            free(value);
             return CreateError(GENERAL_ERROR, TYPE_MISMATCH, scriptData->currentLine);
         }
 
@@ -2372,6 +2431,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                     }
 
                     free(trimmedLine);
+                    free(value);
                     printf("Script line: %d\n", scriptData->currentLine);
                     return 0;
                 }
@@ -2379,9 +2439,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (!foundEnd)
             {
                 free(trimmedLine);
+                free(value);
                 return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
             }
         }
+        free(value);
         justShuntYard = false;
     }
 
@@ -2409,6 +2471,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (error != 0)
         {
             free(trimmedLine);
+            free(out);
             return error | scriptData->currentLine;
         }
 
@@ -2453,6 +2516,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     {
         EngineVar *out = VarConstructor("", 0, NO_TYPE);
         uint32_t error = ShuntYard(trimmedLine, strlen(trimmedLine), out, scriptData);
+        print("Just shunted");
         free(out);
     }
 
