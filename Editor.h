@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 
 #include "SaveSystem.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "TFT.h"
 
 #include "Keyboard.h"
 

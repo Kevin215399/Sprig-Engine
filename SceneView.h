@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 
 #include "SaveSystem.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "TFT.h"
 
 #include "Keyboard.h"
 
@@ -19,7 +19,15 @@
 
 #include "SmartRender.h"
 
-// #include "Interpreter.h"
+#include "Interpreter.h"
+
+#define CAMERA_SPRITE -1
+
+// Func prototypes
+uint32_t RunProgram();
+
+///////////////////////// SCENE VIEW
+#pragma region
 
 #define CENTER_ANCHOR 0
 #define LEFT_ANCHOR 1
@@ -141,7 +149,7 @@ void DrawButton(UIButton *button)
     Rectangle(fill, button->x + 1, button->y + button->curveRadius, button->width - 2, button->height - button->curveRadius * 2);
 
     // corners
-    for (int i = 0; i < 90; i += 1)
+    for (int i = 0; i < 90; i += 5)
     {
         float radians = i * (M_PI / 180);
 
@@ -155,13 +163,13 @@ void DrawButton(UIButton *button)
         Rectangle(fill, button->x + button->curveRadius - x + 1, button->y + button->height - button->curveRadius + y, (button->x + button->width - button->curveRadius + x) - (button->x + button->curveRadius - x) - 1, 1);
 
         // TR
-        Rectangle(outline, min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), max(button->y + button->curveRadius - y, button->y), 1, 1);
+        SetPixel(min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), max(button->y + button->curveRadius - y, button->y), outline);
         // TL
-        Rectangle(outline, max(button->x + button->curveRadius - x, button->x), max(button->y + button->curveRadius - y, button->y), 1, 1);
+        SetPixel(max(button->x + button->curveRadius - x, button->x), max(button->y + button->curveRadius - y, button->y), outline);
         // BL
-        Rectangle(outline, max(button->x + button->curveRadius - x, button->x), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), 1, 1);
+        SetPixel(max(button->x + button->curveRadius - x, button->x), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), outline);
         // BR
-        Rectangle(outline, min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), 1, 1);
+        SetPixel(min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), outline);
     }
 
     // left wall
@@ -434,6 +442,10 @@ uint8_t sceneScale = 4;
 
 void DrawSpriteCentered(uint8_t sprite, int x, int y, uint8_t scale)
 {
+    if (sprite < 0)
+    {
+        return;
+    }
     int topLeftX = x - scale * SPRITE_WIDTH / 2;
     int topLeftY = y - scale * SPRITE_HEIGHT / 2;
 
@@ -657,6 +669,9 @@ void ManageSceneUI()
             }
             RefocusButton(&buttons[SELECT_OBJECTS_UI], false);
             SetNavPanelVisibility(true);
+
+            buttons[OPEN_NAV_PANEL].leftNext = NULL;
+            buttons[OPEN_NAV_PANEL].downNext = NULL;
         }
 
         // Objects mode
@@ -692,6 +707,7 @@ void ManageSceneUI()
             }
 
             SetNavPanelVisibility(false);
+            sleep_ms(100);
         }
 
         // Layout mode
@@ -707,6 +723,11 @@ void ManageSceneUI()
             SetNavPanelVisibility(false);
 
             refreshSceneView = true;
+
+            SmartShowAll();
+            DrawButton(&buttons[OPEN_NAV_PANEL]);
+
+            sleep_ms(100);
         }
 
         // Module mode
@@ -729,7 +750,7 @@ void ManageSceneUI()
             printf("Script count: %d\n", currentScene->objects[currentObject].scriptCount);
 
             // Serialize var prototype
-            char *SerializeVar(EngineVar * variable);
+            uint16_t SerializeVar(EngineVar * variable);
 
             for (int i = 0; i < currentScene->objects[currentObject].scriptCount; i++)
             {
@@ -767,7 +788,9 @@ void ManageSceneUI()
 
                     SetButton(&buttons[buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
                     buttons[buttonIndex].textAnchor = LEFT_ANCHOR;
-                    AddTextToButton(&buttons[buttonIndex], SerializeVar(variableList[variableCount]), WHITE, 1);
+                    uint16_t data = SerializeVar(variableList[variableCount]);
+                    AddTextToButton(&buttons[buttonIndex], stringPool[data], WHITE, 1);
+                    FreeString(&data);
                     DrawButton(&buttons[buttonIndex++]);
 
                     variableCount++;
@@ -791,6 +814,8 @@ void ManageSceneUI()
                     }
                 }
             }
+
+            sleep_ms(100);
         }
 
         // Settings mode
@@ -806,6 +831,8 @@ void ManageSceneUI()
             buttons[EXIT_EDITOR_UI].visible = true;
             buttons[RENDER_MODE_BUTTON].visible = true;
             SetNavPanelVisibility(false);
+
+            sleep_ms(100);
         }
 
         if (buttons[EXIT_EDITOR_UI].onPressDown)
@@ -870,6 +897,7 @@ void ManageSceneUI()
                 SmartClear();
                 RenderScene(scenePosX, scenePosY);
                 refreshSceneView = false;
+                DrawButton(&buttons[OPEN_NAV_PANEL]);
             }
             sleep_ms(delay);
         }
@@ -925,11 +953,11 @@ void ManageSceneUI()
                         {
                             if (variableList[variableBeingModified]->data.s)
                             {
-                                free(variableList[variableBeingModified]->data.s);
+                                FreeString(&variableList[variableBeingModified]->data.s);
                             }
-                            variableList[variableBeingModified]->data.s = malloc(16);
-                            strcpy(variableList[variableBeingModified]->data.s, modifyVariable);
-                            variableList[variableBeingModified]->data.s[15] = '\0';
+                            variableList[variableBeingModified]->data.s = PoolString();
+                            strcpy(stringPool[variableList[variableBeingModified]->data.s], modifyVariable);
+                            stringPool[variableList[variableBeingModified]->data.s][STRING_POOL_WIDTH-1] = '\0';
                         }
                         else
                         {
@@ -960,11 +988,11 @@ void ManageSceneUI()
                                 }
                                 if (EqualType(variableList[variableBeingModified], output, TYPE_STRING))
                                 {
-                                    char *temp = malloc(strlen(output->data.s) + 1);
-                                    sprintf(temp, "%s", output->data.s);
+                                    uint16_t temp = PoolString();
+                                    sprintf(stringPool[temp], "%s", output->data.s);
 
-                                    free(variableList[variableBeingModified]->data.s);
-                                    free(output->data.s);
+                                    FreeString(&variableList[variableBeingModified]->data.s);
+                                    FreeString(&output->data.s);
 
                                     variableList[variableBeingModified]->data.s = temp;
                                 }
@@ -997,19 +1025,28 @@ void ManageSceneUI()
                         showKeyboard = true;
                         refreshKeyboard = true;
                         variableBeingModified = i;
+                        modifyVariable[0] = '\0';
                     }
                 }
             }
         }
-    
-        //Manage settings
-        if(currentMode == 3 && buttons[RENDER_MODE_BUTTON].isPressed){
+
+        // Manage settings
+        if (currentMode == 3 && buttons[RENDER_MODE_BUTTON].isPressed)
+        {
             renderMode++;
-            if(renderMode == 3){
+            if (renderMode == 3)
+            {
                 renderMode = 0;
             }
             UpdateRenderButton(true);
             sleep_ms(120);
+        }
+
+        // Play scene
+        if (buttons[PLAY_SCENE_UI].isPressed)
+        {
+            RunProgram();
         }
     }
 }
@@ -1021,22 +1058,25 @@ void EditScene(int sceneIndex)
     currentScene->objects[currentScene->objectCount] = *ObjectConstructor(0, "Object1", strlen("Object1"));
 
     EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x = 67; string myString = \"hi\"; bool b = true;");
+                                             "int x=0;setPosition(Vector(x,x));x=x+1;");
 
     currentScene->objects[currentScene->objectCount].scriptData[0] = ScriptDataConstructor(script);
+
+    currentScene->objects[currentScene->objectCount].scriptData[0]->linkedObject = &currentScene->objects[currentScene->objectCount];
+
     currentScene->objects[currentScene->objectCount].scriptCount++;
 
     // Function prototypes
     uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
-    char *UnpackErrorMessage(uint32_t error);
+    uint16_t UnpackErrorMessage(uint32_t error);
     //
 
     uint32_t errorNum = SetScriptData(script, currentScene->objects[currentScene->objectCount].scriptData[0], 0);
 
-    char *error = UnpackErrorMessage(errorNum);
+    uint16_t error = UnpackErrorMessage(errorNum);
 
     printf("set script error: %s\n", error);
-    free(error);
+    FreeString(&error);
 
     currentScene->objectCount++;
     ManageSceneUI();
@@ -1340,6 +1380,12 @@ void SceneMenu()
                     if (sceneName != NULL)
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
+                        scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Camera", strlen("Camera"));
+                        scenes[index].objects[scenes[index].objectCount].objectData[2]->data.i = 3;
+                        scenes[index].objects[scenes[index].objectCount].objectData[1]->data.i = CAMERA_SPRITE;
+
+                        scenes[index].objectCount++;
+
                         EditScene(index);
                     }
                 }
@@ -1361,5 +1407,105 @@ void SceneMenu()
         }
     }
 }
+
+#pragma endregion
+
+///////////////////////// Run program
+#pragma region
+
+uint32_t RunProgram()
+{
+    bool UI_PrintToScreen(char *message, bool isError);
+
+    EngineObject *camera = NULL;
+
+    unsigned long exitHoldTime = millis();
+
+    for (int i = 0; i < currentScene->objectCount; i++)
+    {
+        if (strcmp(currentScene->objects[i].name, "Camera") == 0)
+        {
+            camera = &currentScene->objects[i];
+            break;
+        }
+    }
+
+    if (camera == NULL)
+    {
+        return CreateError(SCENE_ERROR, NO_CAMERA_DEFINED, 0);
+    }
+
+    Clear();
+    SmartClear();
+    SmartShowAll();
+
+    while (1)
+    {
+        uint8_t cameraScale = camera->objectData[2]->data.i;
+        int cameraX = camera->objectData[0]->data.XY.x;
+        int cameraY = camera->objectData[0]->data.XY.y;
+
+        SmartClear();
+        for (int i = 0; i < currentScene->objectCount; i++)
+        {
+            if (currentScene->objects[i].objectData[1]->data.i < 0)
+            {
+                continue;
+            }
+            printf("sprite (%d,%d): %d\n",
+                   80 + currentScene->objects[i].objectData[0]->data.XY.x + cameraX,
+                   64 - currentScene->objects[i].objectData[0]->data.XY.y + cameraY,
+                   cameraScale * currentScene->objects[i].objectData[2]->data.i);
+            DrawSpriteCentered(
+                currentScene->objects[i].objectData[1]->data.i,
+                80 + currentScene->objects[i].objectData[0]->data.XY.x + cameraX,
+                64 - currentScene->objects[i].objectData[0]->data.XY.y + cameraY,
+                cameraScale * currentScene->objects[i].objectData[2]->data.i);
+        }
+        SmartShow();
+
+        for (int obj = 0; obj < currentScene->objectCount; obj++)
+        {
+            for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+            {
+                currentScene->objects[obj].scriptData[scr]->currentLine = 0;
+                while (currentScene->objects[obj].scriptData[scr]->currentLine < currentScene->objects[obj].scriptData[scr]->lineCount)
+                {
+                    uint32_t errorNum = ExecuteLine(currentScene->objects[obj].scriptData[scr]->script, currentScene->objects[obj].scriptData[scr]);
+                    uint16_t error = UnpackErrorMessage(errorNum);
+                    printf("Execute line result: %s\n", stringPool[error]);
+                    if (errorNum != 0)
+                    {
+                        UI_PrintToScreen(stringPool[error], true);
+                        sleep_ms(3000);
+                        FreeString(&error);
+                        free(camera);
+                        return errorNum;
+                    }
+                    FreeString(&error);
+                }
+            }
+        }
+        print("/////////////////////////////////////////////////// script done execute");
+
+        if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
+        {
+            print("exiting");
+            if (millis() - exitHoldTime > 5000)
+            {
+                free(camera);
+                return 0;
+            }
+        }
+        else
+        {
+            exitHoldTime = millis();
+        }
+    }
+    free(camera);
+    return 0;
+}
+
+#pragma endregion
 
 #endif

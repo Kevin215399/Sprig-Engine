@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
-#include "C:\Users\kphoh\Documents\RP pico\lib\SDSimple.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "SDSimple.h"
+#include "TFT.h"
 
 #include "Keyboard.h"
 
@@ -21,9 +21,9 @@ File *program;
 
 #include "Interpreter.h"
 
-
-void RenderTest(){
-    for (int x = 0; x < 360; x+=1)
+void RenderTest()
+{
+    for (int x = 0; x < 360; x += 1)
     {
         SmartClear();
         SmartRect(RED, 80 + cos(x * M_PI / 180) * 20, 64 + sin(x * M_PI / 180) * 20, 20, 20);
@@ -31,7 +31,7 @@ void RenderTest(){
         SmartRect(YELLOW, 80 + cos((x + 240) * M_PI / 180) * 20, 64 + sin((x + 240) * M_PI / 180) * 20, 20, 20);
         SmartShow();
     }
-    renderMode=FAST_BUT_FLICKER;
+    renderMode = FAST_BUT_FLICKER;
     SmartClear();
     sleep_ms(1000);
 }
@@ -66,53 +66,63 @@ int main()
 
     Clear();
 
-    //sleep_ms(5000);
+    // sleep_ms(5000);
 
-
-    //sleep_ms(4000);
+    sleep_ms(4000);
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
 
-    EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x = 2+3*2;print(x);");
+    /*EngineScript *script = ScriptConstructor(0, "script1",
+                                             "int x = 0; setPosition(Vector(x,0));  x+=1;");
 
     // int x=0; while(x<8){ x+=1; if(x%2==0){ print(\"even\"); } if(x%2!=0){ print(\"odd\"); } }
 
     ScriptData *testData = ScriptDataConstructor(script);
+    testData->linkedObject = NULL;
 
     uint32_t errorNum = SetScriptData(script, testData, 0);
 
-    char *error = UnpackErrorMessage(errorNum);
+    uint16_t error = UnpackErrorMessage(errorNum);
 
     printf("set script error: %s\n", error);
+
     if (errorNum == 0)
     {
-        free(error);
+        FreeString(&error);
 
-        while (testData->currentLine < testData->lineCount)
+        int iteration = 0;
+        while (1)
         {
-            errorNum = ExecuteLine(script, testData);
-            error = UnpackErrorMessage(errorNum);
-            printf("Execute line result: %s\n", error);
-            if (errorNum != 0)
+            testData->currentLine = 0;
+
+            while (testData->currentLine < testData->lineCount)
             {
-                UI_PrintToScreen(error, true);
+                errorNum = ExecuteLine(script, testData);
+                error = UnpackErrorMessage(errorNum);
+                printf("Execute line result: %s\n", stringPool[error]);
+                if (errorNum != 0)
+                {
+                    UI_PrintToScreen(stringPool[error], true);
 
-                break;
+                    break;
+                }
+                FreeString(&error);
             }
-            free(error);
+            printf("\n////////////////////////////// Iteration %d\n\n", iteration);
+            iteration++;
         }
-
         FreeScriptData(testData, false);
     }
     else
     {
-        UI_PrintToScreen(error, true);
-        free(error);
+        UI_PrintToScreen(stringPool[error], true);
+        FreeString(&error);
     }
 
     editorView = 0;
+
+    sleep_ms(3000);*/
 
     /*ScriptData *output = ScriptDataConstructor(0, 0, NULL, 0);
     EngineScript *script = ScriptConstructor(0, "test", "{\nhi;\ntest()\n}");
@@ -150,7 +160,6 @@ int main()
     free(script);
     free(output->brackets);
     free(output);*/
-    sleep_ms(1000);
 
     // SceneMenu();
 

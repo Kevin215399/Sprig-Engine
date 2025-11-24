@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
-#include "C:\Users\kphoh\Documents\RP pico\lib\SDSimple.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "SDSimple.h"
+#include "TFT.h"
 
 #include "EngineStructs.h"
 #include <string.h>

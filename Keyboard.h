@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "TFT.h"
 #include "InputManager.h"
 
 uint8_t keyboardX = 0;

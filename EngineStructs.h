@@ -46,7 +46,7 @@ bool CharCmpr(char *str1, char *str2)
     }
 
     return true;
-} 
+}
 
 // A struct for position
 typedef struct
@@ -61,7 +61,7 @@ typedef union
     bool b;
     int i;
     float f;
-    char *s;
+    uint16_t s;
 
     Vector2 XY;
     uint8_t objID;
@@ -118,8 +118,10 @@ typedef struct
     bool bracketType;
 } BracketPair;
 
+struct EngineObject;
+
 // A struct that keeps script data. Can be added to objects
-typedef struct
+typedef struct ScriptData
 {
     EngineScript *script;
 
@@ -138,14 +140,16 @@ typedef struct
     BracketPair *brackets;
     uint8_t bracketPairs;
 
+    struct EngineObject *linkedObject;
+
 } ScriptData;
 
 // A struct that defines an engine object. holds scripts, a sprite, name, and data
-typedef struct
+typedef struct EngineObject
 {
     uint8_t ID;
     char name[MAX_NAME_LENGTH];
-    //uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
+    // uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
     uint8_t scriptCount;
 
     ScriptData **scriptData;
@@ -313,6 +317,8 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
     output->bracketPairs = 0;
     output->currentLine = 0;
 
+    output->linkedObject = NULL;
+
     return output;
 }
 
@@ -333,7 +339,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
         }
     }
 
-    output->scriptData = (ScriptData**)malloc(sizeof(ScriptData*) * MAX_SCRIPTS_PER_OBJECT);
+    output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
 
     output->objectData = (EngineVar **)malloc(sizeof(EngineVar *) * 3);
@@ -341,6 +347,10 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     output->objectData[1] = VarConstructor("sprite", strlen("sprite"), TYPE_INT);
     output->objectData[2] = VarConstructor("scale", strlen("scale"), TYPE_INT);
     output->objectData[1]->data.i = 0;
+    output->objectData[2]->data.i = 1;
+
+    output->objectData[0]->data.XY.x = 0;
+    output->objectData[0]->data.XY.y = 0;
     return output;
 }
 

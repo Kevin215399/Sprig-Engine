@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "C:\Users\kphoh\Documents\RP pico\lib\TFT.h"
+#include "TFT.h"
 
 ///////////////////////////////// Screen arrays
 #define RECT_SOLVER_WIDTH 160
@@ -13,7 +13,6 @@ uint16_t currentScreen[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 uint16_t smartScreen[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
 
 uint8_t screenChange[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
-
 
 ////////////////////////////// Render modes
 #define FAST_BUT_FLICKER 0
@@ -36,8 +35,7 @@ uint16_t palleteColorCount = 0;
 
 /////////////////////////////// Code
 
-
-//Pallete helper functions
+// Pallete helper functions
 #pragma region
 
 uint8_t IndexOfColor(uint16_t color)
@@ -160,21 +158,19 @@ ColorList *GetColorNodeByIndex(uint8_t colorIndex)
     return currentColor;
 }
 
-
-
 void ClearPallete()
 {
     if (palleteHead == NULL)
     {
         return;
     }
-    ColorList *currentColor = palleteHead;
-    while (currentColor != NULL)
+
+    while (palleteHead->previous != NULL)
     {
-        ColorList *previous = currentColor->previous;
-        free(currentColor);
-        currentColor = previous;
+        palleteHead = palleteHead->previous;
+        free(palleteHead->next);
     }
+    free(palleteHead);
 
     palleteColorCount = 0;
     palleteHead = NULL;
@@ -182,7 +178,7 @@ void ClearPallete()
 
 #pragma endregion
 
-//Converts a shape into a series of rectangles. Efficient, but CPU heavy
+// Converts a shape into a series of rectangles. Efficient, but CPU heavy
 void DrawShapeLayerSolved(uint8_t layer, uint16_t color)
 {
     bool renderedPixels[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH];
@@ -246,7 +242,7 @@ void DrawShapeLayerSolved(uint8_t layer, uint16_t color)
     }
 }
 
-//Handles the display of a frame
+// Handles the display of a frame
 void DrawScreenSmart(uint16_t frame[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH])
 {
     memset(screenChange, 0, sizeof(screenChange));
@@ -305,8 +301,7 @@ void DrawScreenSmart(uint16_t frame[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH])
     }
 }
 
-
-//Draw functions
+// Draw functions
 void SmartRect(uint16_t color, int x, int y, uint8_t w, uint8_t h)
 {
     if (renderMode == FAST_BUT_FLICKER)
@@ -363,6 +358,12 @@ void SmartShow()
         return;
     }
     DrawScreenSmart(smartScreen);
+}
+
+void SmartShowAll()
+{
+    memset(currentScreen, 0, sizeof(currentScreen));
+    SmartShow();
 }
 
 void SmartClear()
