@@ -1,10 +1,10 @@
 Written in C
 
---------------- Hardware ------------------
+<h1>--------------- Hardware ------------------</h1>
 This engine is designed for the hackclub sprig. It has 8 buttons, a 1.8" TFT adafruit screen with SD card, and a speaker. It is powered
 by two double-A batteries and controlled by a raspberry PI pico W.
 
--------------- Interpreter ---------------------
+<h1>-------------- Interpreter ---------------------</h1>
 Custom made interpreter uses shunting yard algorithm to parse lines and call functions.
 
 Structure:
@@ -27,7 +27,7 @@ EngineSprite (Contains the data for a sprite)
 
 
 
--------------- Smart Renderer ------------------
+<h1>-------------- Smart Renderer ------------------</h1>
 
 1. Normal
 This mode is used for all the editor UI. It bipasses the smart renderer and manually draws rectangles and text onto the screen,
@@ -44,6 +44,6 @@ First this mode scans for pixels that have changed, and creates a pallete using 
 Then an algorithm takes each color and converts it into the least number of rectangles. While very efficient and smooth,
 it requires more CPU time making it slower than "On Change".
 
------------- Customizability -------------------
+<h1>------------ Customizability -------------------</h1>
 Custom scripts, layouts, and sprites can be created using the UI. Everything is saved to the
 SD card on the TFT display.
