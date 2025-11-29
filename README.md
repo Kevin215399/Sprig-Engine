@@ -9,21 +9,21 @@ Custom made interpreter uses shunting yard algorithm to parse lines and call fun
 
 Structure:
 
-EngineUnion (holds a value; int, string, etc..)
-  |
-  V
-EngineVar (Contains an EngineUnion as well as stores the current type and a name)
-EngineFunction (Contains a function and its start and end points within a script)
-  |
-  V
-ScriptData (Contains the current state of script execution)
-EngineObject (Contains object data and the scripts attached to it)
-  |
-  V
-EngineScene (Contains objects)
-
-EngineScript (Contains the content of a script and its name)
-EngineSprite (Contains the data for a sprite)
+EngineUnion (holds a value; int, string, etc..)<br>
+  |<br>
+  V<br>
+EngineVar (Contains an EngineUnion as well as stores the current type and a name)<br>
+EngineFunction (Contains a function and its start and end points within a script)<br>
+  |<br>
+  V<br>
+ScriptData (Contains the current state of script execution)<br>
+EngineObject (Contains object data and the scripts attached to it)<br>
+  |<br>
+  V<br>
+EngineScene (Contains objects)<br>
+<br>
+EngineScript (Contains the content of a script and its name)<br>
+EngineSprite (Contains the data for a sprite)<br>
 
 
 
