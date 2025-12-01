@@ -30,7 +30,9 @@ typedef struct ColorList
     uint16_t color;
 } ColorList;
 
-ColorList *palleteHead = NULL;
+#define MAX_COLORS 100
+uint16_t pallete[MAX_COLORS];
+
 uint16_t palleteColorCount = 0;
 
 /////////////////////////////// Code
@@ -38,142 +40,28 @@ uint16_t palleteColorCount = 0;
 // Pallete helper functions
 #pragma region
 
-uint8_t IndexOfColor(uint16_t color)
+uint16_t IndexOfColor(uint16_t color)
 {
-    if (palleteHead == NULL)
+    for (int i = 0; i < palleteColorCount; i++)
     {
-        return 255;
-    }
-
-    ColorList *currentColor = palleteHead;
-    uint16_t index = 0;
-    while (currentColor->previous != NULL)
-    {
-        currentColor = currentColor->previous;
-    }
-    while (currentColor->color != color)
-    {
-        if (currentColor->next == NULL)
+        if (pallete[i] == color)
         {
-            return 255;
+            return i;
         }
-        currentColor = currentColor->next;
-        index++;
     }
-    return index;
+    return 0xFFFF;
 }
-ColorList *GetColorNodeByColor(uint16_t color)
+void AddColor(uint16_t color)
 {
-    ColorList *currentColor = palleteHead;
-
-    while (currentColor->previous != NULL)
-    {
-        currentColor = currentColor->previous;
-    }
-    while (currentColor->color != color)
-    {
-        if (currentColor->next == NULL)
-        {
-            return NULL;
-        }
-        currentColor = currentColor->next;
-    }
-    return currentColor;
-}
-void AddColorToPallete(uint16_t color)
-{
-    if (IndexOfColor(color) != 255)
-    {
+    if (IndexOfColor(color) != 0xFFFF)
         return;
-    }
-
-    if (palleteHead == NULL)
-    {
-        // printf("!!!!!!!!!!!!!!!!! new head color %d", color);
-        palleteHead = malloc(sizeof(ColorList));
-        palleteHead->color = color;
-        palleteHead->previous = NULL;
-        palleteHead->next = NULL;
-        palleteColorCount++;
-        // printf("%s", " added !!!!!!!!!!!!!");
-        return;
-    }
-
-    // printf("!!!!!!!!!!!!!!!!! new color %d", color);
-
-    ColorList *newColor = malloc(sizeof(ColorList));
-    if (newColor == NULL)
-    {
-        // printf("%s\n", "malloc failed");
-        sleep_ms(100000);
-    }
-    // printf("%s\n", "1");
-    palleteHead->next = newColor;
-    // printf("%s\n", "2");
-    newColor->previous = palleteHead;
-    // printf("%s\n", "3");
-    newColor->color = color;
-    // printf("%s\n", "4");
-    newColor->next = NULL;
-    // printf("%s\n", "5");
-
-    palleteHead = newColor;
-    // printf("%s\n", "6");
-    // printf("%s", " added !!!!!!!!!!!!!");
-
-    palleteColorCount++;
-}
-uint16_t GetColorFromPallete(uint8_t colorIndex)
-{
-    ColorList *currentColor = palleteHead;
-    while (currentColor->previous != NULL)
-    {
-        currentColor = currentColor->previous;
-    }
-    for (int i = 0; i < colorIndex; i++)
-    {
-        if (currentColor->next == NULL)
-        {
-            return BLACK;
-        }
-        currentColor = currentColor->next;
-    }
-    return currentColor->color;
-}
-ColorList *GetColorNodeByIndex(uint8_t colorIndex)
-{
-    ColorList *currentColor = palleteHead;
-    while (currentColor->previous != NULL)
-    {
-        currentColor = currentColor->previous;
-    }
-    for (int i = 0; i < colorIndex; i++)
-    {
-        if (currentColor->next == NULL)
-        {
-            return NULL;
-        }
-        currentColor = currentColor->next;
-    }
-    return currentColor;
+    pallete[palleteColorCount++] = color;
 }
 
 void ClearPallete()
 {
-    if (palleteHead == NULL)
-    {
-        return;
-    }
-
-    while (palleteHead->previous != NULL)
-    {
-        palleteHead = palleteHead->previous;
-        free(palleteHead->next);
-    }
-    free(palleteHead);
-
+    memset(pallete, 0, sizeof(pallete));
     palleteColorCount = 0;
-    palleteHead = NULL;
 }
 
 #pragma endregion
@@ -284,7 +172,7 @@ void DrawScreenSmart(uint16_t frame[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH])
                 if (currentScreen[y][x] != frame[y][x])
                 {
                     // printf("Setting pixel %d,%d: %d\n", x, y, frame[y][x]);
-                    AddColorToPallete(frame[y][x]);
+                    AddColor(frame[y][x]);
 
                     screenChange[y][x] = IndexOfColor(frame[y][x]) + 1;
 
@@ -295,14 +183,14 @@ void DrawScreenSmart(uint16_t frame[RECT_SOLVER_HEIGHT][RECT_SOLVER_WIDTH])
 
         for (int i = 0; i < palleteColorCount; i++)
         {
-            DrawShapeLayerSolved(i + 1, GetColorFromPallete(i));
+            DrawShapeLayerSolved(i + 1, pallete[i]);
         }
         break;
     }
 }
 
 // Draw functions
-void SmartRect(uint16_t color, int x, int y, uint8_t w, uint8_t h)
+void SmartRect(uint16_t color, int x, int y, int w, int h)
 {
     if (renderMode == FAST_BUT_FLICKER)
     {

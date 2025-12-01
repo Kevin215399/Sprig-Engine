@@ -21,6 +21,8 @@
 
 #include "Interpreter.h"
 
+#include "ColliderPackage.h"
+
 #define CAMERA_SPRITE -1
 
 // Func prototypes
@@ -111,26 +113,50 @@ typedef struct
 
 #define RENDER_MODE_BUTTON 7
 
-#define OBJECT_BUTTONS 8
+#define ADD_SCRIPT_BUTTON 8
 
-#define MODULE_BUTTONS (8 + MAX_OBJECTS)
+#define OBJECT_BUTTONS 9
+
+#define SCRIPT_DELETE_BUTTON (OBJECT_BUTTONS + MAX_OBJECTS + 1)
+#define MODULE_BUTTONS (SCRIPT_DELETE_BUTTON + 1)
 
 #define MAIN_PANEL 0
 #define OBJECT_PANEL 1
 #define NAV_PANEL 2
 
-#define MODULE_PANELS (MAX_SCRIPTS_PER_OBJECT)
+#define MODULE_PANELS 3
 
 bool NavPanelOpen = 0;
 
-UIButton buttons[8 + MAX_OBJECTS + (MAX_SCRIPTS_PER_OBJECT * 10)];
+UIButton buttons[MODULE_BUTTONS + 50];
 
-UIPanel panels[3];
+UIPanel panels[4];
 
 UIButton *currentButton = NULL;
 bool sceneRefreshUI = true;
 
 EngineScene *currentScene;
+
+uint8_t currentObject = 0;
+
+uint32_t errors[10];
+uint8_t errorCount;
+
+char *packageNames[] = {
+    "Base",
+    "Collision"};
+#define PACKAGE_COUNT 2
+
+#define NORMAL_FIELD 0
+#define VECTOR_X_FIELD 1
+#define VECTOR_Y_FIELD 2
+
+typedef struct
+{
+    int buttonNumber;
+    EngineVar *link;
+    uint8_t specialMode;
+} InputFieldLink;
 
 // Button and Panel functions
 #pragma region
@@ -409,7 +435,8 @@ void SetPanel(UIPanel *panel,
 
 void AddTextToButton(UIButton *button, char *text, uint16_t color, uint8_t fontSize)
 {
-    button->text = text;
+    button->text = malloc(strlen(text) + 1);
+    strcpy(button->text, text);
     button->fontColor = color;
     button->fontSize = fontSize;
     button->hasText = true;
@@ -440,23 +467,68 @@ void AddIconToPanel(UIPanel *panel, const uint16_t icon[16][16])
 
 uint8_t sceneScale = 4;
 
-void DrawSpriteCentered(uint8_t sprite, int x, int y, uint8_t scale)
+void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY)
 {
     if (sprite < 0)
     {
+        const uint16_t (*icon)[16];
+
+        switch (sprite)
+        {
+        case CAMERA_SPRITE:
+            icon = CAMERA_ICON;
+            scaleX /= 2;
+            scaleY /= 4;
+            break;
+
+        default:
+            return;
+            break;
+        }
+
+        scaleX = ceil(scaleX);
+        scaleY = ceil(scaleY);
+
+        int topLeftX = x - scaleX * 16 / 2;
+        int topLeftY = y - scaleY * 16 / 2;
+
+        for (int x = 0; x < 16; x++)
+        {
+            for (int y = 0; y < 16; y++)
+            {
+                // printf("Color: %d\n", sprites[sprite].sprite[x][y]);
+                if (icon[y][x] == TRANSPARENT)
+                {
+                    continue;
+                }
+                SmartRect(icon[y][x], topLeftX + x * scaleX, topLeftY + y * scaleY, scaleX, scaleY);
+            }
+        }
         return;
     }
-    int topLeftX = x - scale * SPRITE_WIDTH / 2;
-    int topLeftY = y - scale * SPRITE_HEIGHT / 2;
+    int topLeftX = x - scaleX * SPRITE_WIDTH / 2;
+    int topLeftY = y - scaleY * SPRITE_HEIGHT / 2;
 
     for (int x = 0; x < SPRITE_WIDTH; x++)
     {
         for (int y = 0; y < SPRITE_HEIGHT; y++)
         {
+            if (sprites[sprite].sprite[x][y] == TRANSPARENT)
+            {
+                continue;
+            }
             // printf("Color: %d\n", sprites[sprite].sprite[x][y]);
-            SmartRect(sprites[sprite].sprite[x][y], topLeftX + x * scale, topLeftY + y * scale, scale, scale);
+            SmartRect(sprites[sprite].sprite[x][y], topLeftX + x * scaleX, topLeftY + y * scaleY, scaleX, scaleY);
         }
     }
+}
+
+void DrawRectOutline(uint16_t color, int x, int y, int w, int h)
+{
+    SmartRect(color, x, y, w, 1);
+    SmartRect(color, x, y + h, w, 1);
+    SmartRect(color, x, y, 1, h);
+    SmartRect(color, x + w, y, 1, h);
 }
 
 void RenderScene(int offsetX, int offsetY)
@@ -482,11 +554,75 @@ void RenderScene(int offsetX, int offsetY)
         }
     }
 
+    EngineObject *camera = NULL;
+
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        // printf("Sprite: %d\n", currentScene->objects[i].objectData[1]->data.i);
-        DrawSpriteCentered(currentScene->objects[i].objectData[1]->data.i, 80 + offsetX, 64 + offsetY, sceneScale);
+        Vector2 scale;
+
+        if (currentScene->objects[i].objectData[2]->currentType == TYPE_INT)
+        {
+            scale.x = currentScene->objects[i].objectData[2]->data.i;
+            scale.y = currentScene->objects[i].objectData[2]->data.i;
+        }
+        else
+        {
+            scale.x = currentScene->objects[i].objectData[2]->data.XY.x;
+            scale.y = currentScene->objects[i].objectData[2]->data.XY.y;
+        }
+
+        if (strcmp(currentScene->objects[i].name, "Camera") == 0)
+        {
+            camera = &currentScene->objects[i];
+        }
+
+        DrawSpriteCentered(currentScene->objects[i].objectData[1]->data.i,
+
+                           80 + offsetX + sceneScale * currentScene->objects[i].objectData[0]->data.XY.x,
+                           64 + offsetY + sceneScale * currentScene->objects[i].objectData[0]->data.XY.y,
+                           sceneScale * scale.x,
+                           sceneScale * scale.y);
+
+        for (int x = 0; x < currentScene->objects[i].colliderCount; x++)
+        {
+
+            Rect *rect = GetRectByID(currentScene->objects[i].colliderBoxes[x]);
+
+            DrawRectOutline(
+                GREEN,
+                80 + offsetX + sceneScale * (scale.x * currentScene->objects[i].objectData[4]->data.XY.x * (rect->center.x + currentScene->objects[i].objectData[3]->data.XY.x) + currentScene->objects[i].objectData[0]->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * currentScene->objects[i].objectData[4]->data.XY.y * (rect->center.y + currentScene->objects[i].objectData[3]->data.XY.y) + currentScene->objects[i].objectData[0]->data.XY.y),
+                sceneScale * scale.x * rect->scale.x * currentScene->objects[i].objectData[4]->data.XY.x,
+                sceneScale * scale.y * rect->scale.y * currentScene->objects[i].objectData[4]->data.XY.y);
+        }
     }
+
+    int width = 160 * sceneScale / camera->objectData[2]->data.i;
+    int height = 128 * sceneScale / camera->objectData[2]->data.i;
+
+    SmartRect(WHITE,
+              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
+              64 + offsetY + camera->objectData[0]->data.XY.y + height / 2,
+              width,
+              1);
+
+    SmartRect(WHITE,
+              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
+              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              width,
+              1);
+
+    SmartRect(WHITE,
+              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
+              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              1,
+              height);
+
+    SmartRect(WHITE,
+              80 + offsetX + camera->objectData[0]->data.XY.x + width / 2,
+              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              1,
+              height);
 
     SmartShow();
 
@@ -497,6 +633,55 @@ void RenderScene(int offsetX, int offsetY)
 }
 
 #pragma endregion
+
+void DecompileScene()
+{
+    for (int i = 0; i < currentScene->objectCount; i++)
+    {
+        for (int s = 0; s < currentScene->objects[i].scriptCount; s++)
+        {
+            printf("obj: %d, scr: %d\n", i, s);
+            FreeScriptData(currentScene->objects[i].scriptData[s], false);
+        }
+    }
+}
+
+void RecompileScene()
+{
+    for (int i = 0; i < currentScene->objectCount; i++)
+    {
+        for (int s = 0; s < currentScene->objects[i].scriptCount; s++)
+        {
+
+            currentScene->objects[i].scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i].scriptIndexes[s]]);
+            currentScene->objects[i].scriptData[s]->linkedObject = &currentScene->objects[currentObject];
+
+            // Function prototypes
+            uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
+            uint16_t UnpackErrorMessage(uint32_t error);
+
+            printf("obj: %d, scr: %d\n", i, s);
+            uint32_t errorNum = SetScriptData(
+                &scripts[currentScene->objects[i].scriptData[s]->script->ID],
+                currentScene->objects[i].scriptData[s],
+                0);
+
+            if (errorNum != 0)
+            {
+                errors[errorCount++] = errorNum;
+            }
+
+            uint16_t error = UnpackErrorMessage(errorNum);
+            printf("set script error: %s\n", stringPool[error]);
+            FreeString(&error);
+        }
+
+        if (currentScene->objects[i].objectData[3] != NULL)
+        {
+            RecalculateObjectColliders(&currentScene->objects[i]);
+        }
+    }
+}
 
 void SetNavPanelVisibility(bool visible)
 {
@@ -578,6 +763,154 @@ void UpdateRenderButton(bool draw)
         DrawButton(&buttons[RENDER_MODE_BUTTON]);
 }
 
+int SelectScriptToAdd()
+{
+    uint8_t current = 0;
+    bool refresh = true;
+    while (1)
+    {
+        if (refresh)
+        {
+            Clear();
+            WriteWord("Add Script", strlen("Add Script"), 1, 1, 2, RGBTo16(0, 255, 0), TRANSPARENT);
+            Rectangle(RGBTo16(255, 200, 0), 0, 18, 160, 1);
+
+            if (scriptCount + PACKAGE_COUNT > 0)
+            {
+                if (current < PACKAGE_COUNT)
+                {
+                    WriteWord(packageNames[current], strlen(packageNames[current]), 5, 64, 2, YELLOW, TRANSPARENT);
+                }
+                else
+                {
+                    WriteWord(scripts[current - PACKAGE_COUNT].name, strlen(scripts[current - PACKAGE_COUNT].name), 5, 64, 2, WHITE, TRANSPARENT);
+                }
+            }
+            else
+                WriteWord("No Scripts", strlen("No Scripts"), 5, 64, 2, RGBTo16(100, 100, 100), TRANSPARENT);
+
+            refresh = false;
+            sleep_ms(100);
+        }
+
+        if (GetButton() == BUTTON_D)
+        {
+            current++;
+            if (current >= scriptCount + PACKAGE_COUNT)
+            {
+                current = 0;
+            }
+            refresh = true;
+        }
+        if (GetButton() == BUTTON_A)
+        {
+            if (current == 0)
+            {
+                current = scriptCount + PACKAGE_COUNT - 1;
+            }
+            else
+            {
+                current++;
+            }
+            refresh = true;
+        }
+
+        if (GetButton() == BUTTON_L)
+        {
+            return -1;
+        }
+
+        if (GetButton() == BUTTON_J)
+        {
+            return current;
+        }
+    }
+}
+
+void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *variableCount, EngineVar **linkVars, uint8_t *buttonIndex, InputFieldLink *variableLinks)
+{
+    int height = 13;
+    panels[MODULE_PANELS].visible = true;
+    SetPanel(&panels[MODULE_PANELS], 3, height, 154, 15 * (1 + totalVariableCount), 6, RGBTo16(70, 70, 70), RGBTo16(120, 120, 120));
+    DrawPanel(&panels[MODULE_PANELS]);
+    panels[MODULE_PANELS].visible = false;
+
+    WriteWord(
+        (moduleName),
+        strlen(moduleName),
+        31,
+        height + 3,
+        1,
+        WHITE,
+        ORANGE);
+
+    SetButton(&buttons[SCRIPT_DELETE_BUTTON], 5, 15, 23, 11, 5, BLACK, WHITE, RED, WHITE, NULL, NULL, NULL, NULL);
+    AddTextToButton(&buttons[SCRIPT_DELETE_BUTTON], "DEL", RED, 1);
+    DrawButton(&buttons[SCRIPT_DELETE_BUTTON]);
+
+    for (int x = 0; x < totalVariableCount; x++)
+    {
+        printf("Var button: %d\n", x);
+
+        variableLinks[*variableCount].link = linkVars[x];
+
+        printf("var: %s\n", linkVars[x]->name);
+
+        WriteWord(
+            (linkVars[x]->name),
+            strlen(linkVars[x]->name),
+            6,
+            height + 15 * (x + 1) + 2,
+            1,
+            WHITE,
+            RGBTo16(0, 0, 80));
+
+        uint8_t buttonStart = 15 + (FONT_WIDTHS[0] + 1) * strlen(linkVars[x]->name);
+
+        if (variableLinks[*variableCount].link->currentType == TYPE_VECTOR)
+        {
+            variableLinks[*variableCount].link = linkVars[x];
+            variableLinks[*variableCount].buttonNumber = *buttonIndex;
+            variableLinks[*variableCount].specialMode = VECTOR_X_FIELD;
+
+            SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart) / 2 - 5, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+            buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
+            char buffer[32];
+            sprintf(buffer, "%d", linkVars[x]->data.XY.x);
+            AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
+            DrawButton(&buttons[(*buttonIndex)++]);
+            (*variableCount)++;
+
+            buttonStart += (145 - buttonStart) / 2;
+
+            variableLinks[*variableCount].link = linkVars[x];
+            variableLinks[*variableCount].buttonNumber = *buttonIndex;
+            variableLinks[*variableCount].specialMode = VECTOR_Y_FIELD;
+
+            SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart), 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+            buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
+            sprintf(buffer, "%d", linkVars[x]->data.XY.y);
+            AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
+            DrawButton(&buttons[(*buttonIndex)++]);
+            (*variableCount)++;
+        }
+        else
+        {
+
+            variableLinks[*variableCount].buttonNumber = *buttonIndex;
+            variableLinks[*variableCount].specialMode = NORMAL_FIELD;
+
+            SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+            buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
+            uint16_t data = SerializeVar(variableLinks[*variableCount].link);
+            AddTextToButton(&buttons[*buttonIndex], stringPool[data], WHITE, 1);
+            FreeString(&data);
+            DrawButton(&buttons[(*buttonIndex)++]);
+            (*variableCount)++;
+        }
+    }
+}
+
 void ManageSceneUI()
 {
 
@@ -597,6 +930,8 @@ void ManageSceneUI()
 
     SetButton(&buttons[OPEN_NAV_PANEL], 150, 0, 10, 20, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
 
+    SetButton(&buttons[ADD_SCRIPT_BUTTON], 0, 118, 20, 10, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+
     AddTextToButton(&buttons[SELECT_OBJECTS_UI], "Objects", WHITE, 1);
     AddTextToButton(&buttons[SELECT_LAYOUT_UI], "Layout", WHITE, 1);
     AddTextToButton(&buttons[SELECT_MODULE_UI], "Modules", WHITE, 1);
@@ -604,6 +939,8 @@ void ManageSceneUI()
 
     AddTextToButton(&buttons[PLAY_SCENE_UI], "Play", WHITE, 1);
     AddTextToButton(&buttons[EXIT_EDITOR_UI], "Exit", WHITE, 1);
+
+    AddTextToButton(&buttons[ADD_SCRIPT_BUTTON], "Add", WHITE, 1);
 
     UpdateRenderButton(false);
 
@@ -632,7 +969,7 @@ void ManageSceneUI()
     int scenePosX = 0;
     int scenePosY = 0;
 
-    uint8_t currentObject = 0;
+    currentObject = 0;
 
     bool showKeyboard = false;
     char keyboardSelect = '\0';
@@ -648,7 +985,8 @@ void ManageSceneUI()
 
     uint8_t variableBeingModified = 0;
 
-    EngineVar **variableList = (EngineVar **)malloc(sizeof(EngineVar *) * MAX_SCRIPTS_PER_OBJECT * 10);
+    // EngineVar *variableList[MAX_SCRIPTS_PER_OBJECT * 10];
+    InputFieldLink variableLinks[10];
     uint8_t variableCount = 0;
 
     // Prototype functions
@@ -656,12 +994,14 @@ void ManageSceneUI()
     float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, ScriptData *scriptData);
     bool EqualType(EngineVar * var1, EngineVar * var2, uint8_t type);
 
+    uint8_t modulePage = 0;
+
     while (1)
     {
         if (!showKeyboard)
             UpdateUIButtons();
 
-        if (buttons[OPEN_NAV_PANEL].onPressDown)
+        if ((buttons[OPEN_NAV_PANEL].onPressDown && currentMode != 1) || (GetButton() == BUTTON_L && currentMode == 1))
         {
             for (int i = SELECT_LAYOUT_UI; i <= SELECT_OPTIONS_UI; i++)
             {
@@ -672,6 +1012,7 @@ void ManageSceneUI()
 
             buttons[OPEN_NAV_PANEL].leftNext = NULL;
             buttons[OPEN_NAV_PANEL].downNext = NULL;
+            sleep_ms(100);
         }
 
         // Objects mode
@@ -721,11 +1062,14 @@ void ManageSceneUI()
             panels[MAIN_PANEL].fillColor = RGBTo16(0, 0, 0);
 
             SetNavPanelVisibility(false);
+            buttons[OPEN_NAV_PANEL].visible = false;
 
             refreshSceneView = true;
-
+            Clear();
             SmartShowAll();
-            DrawButton(&buttons[OPEN_NAV_PANEL]);
+
+            scenePosX = 0;
+            scenePosY = 0;
 
             sleep_ms(100);
         }
@@ -752,48 +1096,69 @@ void ManageSceneUI()
             // Serialize var prototype
             uint16_t SerializeVar(EngineVar * variable);
 
-            for (int i = 0; i < currentScene->objects[currentObject].scriptCount; i++)
+            uint8_t objectPackageCount = 0;
+            bool doCollider = false;
+            bool doPhysics = false;
+
+            if (currentScene->objects[currentObject].objectData[3] != NULL)
             {
+                doCollider = true;
+                objectPackageCount++;
+            }
 
-                uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[i]->variableCount);
-
-                SetPanel(&panels[MODULE_PANELS + i], 3, height, 154, 15 * (1 + scriptVariables), 6, RGBTo16(70, 70, 70), RGBTo16(120, 120, 120));
-                DrawPanel(&panels[MODULE_PANELS + i]);
-
-                WriteWord(
-                    (currentScene->objects[currentObject].scriptData[i]->script->name),
-                    strlen(currentScene->objects[currentObject].scriptData[i]->script->name),
-                    6,
-                    height + 3,
-                    1,
-                    WHITE,
-                    ORANGE);
-
-                for (int x = 0; x < scriptVariables; x++)
+            if (currentScene->objects[currentObject].scriptCount + objectPackageCount > 0)
+            {
+                if (doCollider)
                 {
-                    printf("Var button: %d\n", x);
-
-                    variableList[variableCount] = &(currentScene->objects[currentObject].scriptData[i]->data[x]);
+                    DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &currentScene->objects[currentObject].objectData[3], &buttonIndex, variableLinks);
+                }
+                else
+                {
+                    /*uint8_t scriptIndex = modulePage - objectPackageCount;
+                    uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
+                    SetPanel(&panels[MODULE_PANELS + scriptIndex], 3, height, 154, 15 * (1 + scriptVariables), 6, RGBTo16(70, 70, 70), RGBTo16(120, 120, 120));
+                    DrawPanel(&panels[MODULE_PANELS + scriptIndex]);
 
                     WriteWord(
-                        (variableList[variableCount]->name),
-                        strlen(variableList[variableCount]->name),
-                        6,
-                        height + 15 * (x + 1) + 2,
+                        (currentScene->objects[currentObject].scriptData[scriptIndex]->script->name),
+                        strlen(currentScene->objects[currentObject].scriptData[scriptIndex]->script->name),
+                        31,
+                        height + 3,
                         1,
                         WHITE,
-                        RGBTo16(0, 0, 80));
+                        ORANGE);
 
-                    uint8_t buttonStart = 15 + (FONT_WIDTHS[0] + 1) * strlen(variableList[variableCount]->name);
+                    SetButton(&buttons[buttonIndex], 5, 15, 23, 11, 5, BLACK, WHITE, RED, WHITE, NULL, NULL, NULL, NULL);
+                    AddTextToButton(&buttons[buttonIndex], "DEL", RED, 1);
+                    DrawButton(&buttons[buttonIndex]);
+                    buttonIndex++;
 
-                    SetButton(&buttons[buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
-                    buttons[buttonIndex].textAnchor = LEFT_ANCHOR;
-                    uint16_t data = SerializeVar(variableList[variableCount]);
-                    AddTextToButton(&buttons[buttonIndex], stringPool[data], WHITE, 1);
-                    FreeString(&data);
-                    DrawButton(&buttons[buttonIndex++]);
+                    for (int x = 0; x < scriptVariables; x++)
+                    {
+                        printf("Var button: %d\n", x);
 
-                    variableCount++;
+                        variableList[variableCount] = &(currentScene->objects[currentObject].scriptData[scriptIndex]->data[x]);
+
+                        WriteWord(
+                            (variableList[variableCount]->name),
+                            strlen(variableList[variableCount]->name),
+                            6,
+                            height + 15 * (x + 1) + 2,
+                            1,
+                            WHITE,
+                            RGBTo16(0, 0, 80));
+
+                        uint8_t buttonStart = 15 + (FONT_WIDTHS[0] + 1) * strlen(variableList[variableCount]->name);
+
+                        SetButton(&buttons[buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+                        buttons[buttonIndex].textAnchor = LEFT_ANCHOR;
+                        uint16_t data = SerializeVar(variableList[variableCount]);
+                        AddTextToButton(&buttons[buttonIndex], stringPool[data], WHITE, 1);
+                        FreeString(&data);
+                        DrawButton(&buttons[buttonIndex++]);
+
+                        variableCount++;
+                    }*/
                 }
             }
 
@@ -812,9 +1177,20 @@ void ManageSceneUI()
                     {
                         buttons[i].downNext = &buttons[i + 1];
                     }
+                    else
+                    {
+                        buttons[i].downNext = &buttons[ADD_SCRIPT_BUTTON];
+                        buttons[ADD_SCRIPT_BUTTON].upNext = &buttons[i];
+                    }
                 }
             }
-
+            else
+            {
+                buttons[OPEN_NAV_PANEL].downNext = &buttons[ADD_SCRIPT_BUTTON];
+                buttons[ADD_SCRIPT_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
+            }
+            buttons[ADD_SCRIPT_BUTTON].visible = true;
+            DrawButton(&buttons[ADD_SCRIPT_BUTTON]);
             sleep_ms(100);
         }
 
@@ -837,7 +1213,48 @@ void ManageSceneUI()
 
         if (buttons[EXIT_EDITOR_UI].onPressDown)
         {
-            // Add save code
+            DecompileScene();
+            free(modifyVariable);
+
+            FlushBuffer();
+
+            char *fileName = malloc(strlen(FILE_IDENTIFIER) + strlen(currentProjectName) + strlen(currentScene->name) + 4);
+            sprintf(fileName, "%s`%s`%s",
+                    FILE_IDENTIFIER,
+                    currentProjectName,
+                    currentScene->name);
+
+            File *scene = GetFile(fileName);
+
+            if (scene->startBlock == 0)
+            {
+                scene = CreateFile(fileName, strlen(fileName), currentScene->objectCount * 2 + 2);
+            }
+
+            print("starting object save");
+
+            int startBlock = scene->startBlock;
+            char buffer[4];
+            sprintf(buffer, "%d", currentScene->objectCount);
+            WriteFile(scene, buffer, strlen(buffer) + 1);
+            scene->startBlock -= 1;
+            for (int obj = 0; obj < currentScene->objectCount; obj++)
+            {
+                char *serializedObject = SerializeObject(&currentScene->objects[obj]);
+                print("obj serialized");
+                WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
+                scene->startBlock -= 2;
+                free(serializedObject);
+            }
+
+            free(scene);
+            free(fileName);
+
+            DisengageSD();
+
+            print("saved scene to project");
+
+            SaveProject(program);
             return;
         }
 
@@ -856,25 +1273,25 @@ void ManageSceneUI()
 
             if (GetButton() == BUTTON_D)
             {
-                scenePosX -= 1;
+                scenePosX -= 3;
                 refreshSceneView = true;
             }
 
             if (GetButton() == BUTTON_A)
             {
-                scenePosX += 1;
+                scenePosX += 3;
                 refreshSceneView = true;
             }
 
             if (GetButton() == BUTTON_W)
             {
-                scenePosY += 1;
+                scenePosY += 3;
                 refreshSceneView = true;
             }
 
             if (GetButton() == BUTTON_S)
             {
-                scenePosY -= 1;
+                scenePosY -= 3;
                 refreshSceneView = true;
             }
 
@@ -892,12 +1309,18 @@ void ManageSceneUI()
                 delay = 100;
             }
 
+            if (gpio_get(BUTTON_J) == 0)
+            {
+                refreshSceneView = true;
+                currentScene->objects[currentObject].objectData[0]->data.XY.x = -scenePosX / sceneScale;
+                currentScene->objects[currentObject].objectData[0]->data.XY.y = -scenePosY / sceneScale;
+            }
+
             if (refreshSceneView)
             {
                 SmartClear();
                 RenderScene(scenePosX, scenePosY);
                 refreshSceneView = false;
-                DrawButton(&buttons[OPEN_NAV_PANEL]);
             }
             sleep_ms(delay);
         }
@@ -948,20 +1371,10 @@ void ManageSceneUI()
                     }
                     if (GetButton() == BUTTON_L)
                     {
+                        InputFieldLink *inputLink = &variableLinks[variableBeingModified];
 
-                        if (variableList[variableBeingModified]->currentType == TYPE_STRING)
+                        if (inputLink->specialMode == VECTOR_X_FIELD)
                         {
-                            if (variableList[variableBeingModified]->data.s)
-                            {
-                                FreeString(&variableList[variableBeingModified]->data.s);
-                            }
-                            variableList[variableBeingModified]->data.s = PoolString();
-                            strcpy(stringPool[variableList[variableBeingModified]->data.s], modifyVariable);
-                            stringPool[variableList[variableBeingModified]->data.s][STRING_POOL_WIDTH-1] = '\0';
-                        }
-                        else
-                        {
-
                             EngineVar *output = malloc(sizeof(EngineVar));
                             ScriptData *emptyScripData = malloc(sizeof(ScriptData));
                             emptyScripData->variableCount = 0;
@@ -969,37 +1382,96 @@ void ManageSceneUI()
 
                             if (error == 0)
                             {
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_BOOL))
+                                if (output->currentType == TYPE_FLOAT)
                                 {
-                                    variableList[variableBeingModified]->data.b = output->data.b;
+                                    inputLink->link->data.XY.x = (int)output->data.f;
                                 }
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_VECTOR))
+                                if (output->currentType == TYPE_INT)
                                 {
-                                    variableList[variableBeingModified]->data.XY.x = output->data.XY.x;
-                                    variableList[variableBeingModified]->data.XY.y = output->data.XY.y;
+                                    inputLink->link->data.XY.x = output->data.i;
                                 }
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_FLOAT))
-                                {
-                                    variableList[variableBeingModified]->data.f = output->data.f;
-                                }
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_INT))
-                                {
-                                    variableList[variableBeingModified]->data.i = output->data.i;
-                                }
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_STRING))
-                                {
-                                    uint16_t temp = PoolString();
-                                    sprintf(stringPool[temp], "%s", output->data.s);
+                            }
+                            free(output);
+                            free(emptyScripData);
+                        }
+                        else if (inputLink->specialMode == VECTOR_Y_FIELD)
+                        {
+                            EngineVar *output = malloc(sizeof(EngineVar));
+                            ScriptData *emptyScripData = malloc(sizeof(ScriptData));
+                            emptyScripData->variableCount = 0;
+                            uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
-                                    FreeString(&variableList[variableBeingModified]->data.s);
-                                    FreeString(&output->data.s);
-
-                                    variableList[variableBeingModified]->data.s = temp;
-                                }
-                                if (EqualType(variableList[variableBeingModified], output, TYPE_OBJ))
+                            if (error == 0)
+                            {
+                                if (output->currentType == TYPE_FLOAT)
                                 {
-                                    variableList[variableBeingModified]->data.objID = output->data.objID;
+                                    inputLink->link->data.XY.y = (int)output->data.f;
                                 }
+                                if (output->currentType == TYPE_INT)
+                                {
+                                    inputLink->link->data.XY.y = output->data.i;
+                                }
+                            }
+                            free(output);
+                            free(emptyScripData);
+                        }
+                        else
+                        {
+
+                            if (inputLink->link->currentType == TYPE_STRING)
+                            {
+                                if (inputLink->link->data.s)
+                                {
+                                    FreeString(&inputLink->link->data.s);
+                                }
+                                inputLink->link->data.s = PoolString();
+                                strcpy(stringPool[inputLink->link->data.s], modifyVariable);
+                                stringPool[inputLink->link->data.s][STRING_POOL_WIDTH - 1] = '\0';
+                            }
+                            else
+                            {
+
+                                EngineVar *output = malloc(sizeof(EngineVar));
+                                ScriptData *emptyScripData = malloc(sizeof(ScriptData));
+                                emptyScripData->variableCount = 0;
+                                uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
+
+                                if (error == 0)
+                                {
+                                    if (EqualType(inputLink->link, output, TYPE_BOOL))
+                                    {
+                                        inputLink->link->data.b = output->data.b;
+                                    }
+                                    if (EqualType(inputLink->link, output, TYPE_VECTOR))
+                                    {
+                                        inputLink->link->data.XY.x = output->data.XY.x;
+                                        inputLink->link->data.XY.y = output->data.XY.y;
+                                    }
+                                    if (EqualType(inputLink->link, output, TYPE_FLOAT))
+                                    {
+                                        inputLink->link->data.f = output->data.f;
+                                    }
+                                    if (EqualType(inputLink->link, output, TYPE_INT))
+                                    {
+                                        inputLink->link->data.i = output->data.i;
+                                    }
+                                    if (EqualType(inputLink->link, output, TYPE_STRING))
+                                    {
+                                        uint16_t temp = PoolString();
+                                        sprintf(stringPool[temp], "%s", output->data.s);
+
+                                        FreeString(&inputLink->link->data.s);
+                                        FreeString(&output->data.s);
+
+                                        inputLink->link->data.s = temp;
+                                    }
+                                    if (EqualType(inputLink->link, output, TYPE_OBJ))
+                                    {
+                                        inputLink->link->data.objID = output->data.objID;
+                                    }
+                                }
+                                free(output);
+                                free(emptyScripData);
                             }
                         }
 
@@ -1026,7 +1498,75 @@ void ManageSceneUI()
                         refreshKeyboard = true;
                         variableBeingModified = i;
                         modifyVariable[0] = '\0';
+                        caretPosition = 0;
                     }
+                }
+
+                if (buttons[ADD_SCRIPT_BUTTON].isPressed)
+                {
+                    int script = SelectScriptToAdd();
+
+                    if (script == 0)
+                    {
+                        AddColliderToObject(&currentScene->objects[currentObject], COLLIDER_MESH, true);
+                        script = -1;
+                    }
+                    else
+                    {
+                        script -= PACKAGE_COUNT;
+                    }
+
+                    if (script != -1)
+                    {
+                        currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount] = ScriptDataConstructor(&scripts[script]);
+                        currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->linkedObject = &currentScene->objects[currentObject];
+                        currentScene->objects[currentObject].scriptIndexes[currentScene->objects[currentObject].scriptCount] = script;
+                        // Function prototypes
+                        uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
+                        uint16_t UnpackErrorMessage(uint32_t error);
+                        //
+
+                        uint32_t errorNum = SetScriptData(
+                            &scripts[script],
+                            currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount],
+                            0);
+
+                        if (errorNum != 0)
+                        {
+                            errors[errorCount++] = errorNum;
+                        }
+
+                        uint16_t error = UnpackErrorMessage(errorNum);
+                        printf("set script error: %s\n", stringPool[error]);
+                        FreeString(&error);
+
+                        currentScene->objects[currentObject].scriptCount++;
+                    }
+                    refresh = true;
+                    sleep_ms(100);
+                }
+
+                uint8_t scriptCount = currentScene->objects[currentObject].scriptCount;
+                if (GetButton() == BUTTON_D)
+                {
+                    modulePage++;
+                    if (modulePage >= scriptCount)
+                    {
+                        modulePage = 0;
+                    }
+                    refresh = true;
+                }
+                if (GetButton() == BUTTON_A)
+                {
+                    if (modulePage == 0)
+                    {
+                        modulePage = scriptCount - 1;
+                    }
+                    else
+                    {
+                        modulePage--;
+                    }
+                    refresh = true;
                 }
             }
         }
@@ -1047,6 +1587,19 @@ void ManageSceneUI()
         if (buttons[PLAY_SCENE_UI].isPressed)
         {
             RunProgram();
+            refresh = true;
+        }
+
+        if (currentMode == 0)
+        {
+            for (int i = 0; i < currentScene->objectCount; i++)
+            {
+                if (buttons[i + OBJECT_BUTTONS].isPressed)
+                {
+                    currentObject = i;
+                    break;
+                }
+            }
         }
     }
 }
@@ -1055,14 +1608,14 @@ void EditScene(int sceneIndex)
 {
     currentScene = &scenes[sceneIndex];
 
-    currentScene->objects[currentScene->objectCount] = *ObjectConstructor(0, "Object1", strlen("Object1"));
-
-    EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x=0;setPosition(Vector(x,x));x=x+1;");
+    /*EngineScript *script = ScriptConstructor(0, "script1",
+                                             "int x=0;setPosition(Vector(0,sin(x*PI/180)*40));setScale(Vector(5,((x/24)%2+1)*2));setSprite((x/48)%2);x+=6;");
 
     currentScene->objects[currentScene->objectCount].scriptData[0] = ScriptDataConstructor(script);
 
     currentScene->objects[currentScene->objectCount].scriptData[0]->linkedObject = &currentScene->objects[currentScene->objectCount];
+
+    currentScene->objects[currentScene->objectCount].objectData[2]->data.XY.x = 5;
 
     currentScene->objects[currentScene->objectCount].scriptCount++;
 
@@ -1076,9 +1629,10 @@ void EditScene(int sceneIndex)
     uint16_t error = UnpackErrorMessage(errorNum);
 
     printf("set script error: %s\n", error);
-    FreeString(&error);
+    FreeString(&error);*/
 
-    currentScene->objectCount++;
+    RecompileScene();
+
     ManageSceneUI();
 }
 
@@ -1381,13 +1935,18 @@ void SceneMenu()
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
                         scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Camera", strlen("Camera"));
-                        scenes[index].objects[scenes[index].objectCount].objectData[2]->data.i = 3;
+                        scenes[index].objects[scenes[index].objectCount].objectData[2]->currentType = TYPE_INT;
+                        scenes[index].objects[scenes[index].objectCount].objectData[2]->data.i = 2;
                         scenes[index].objects[scenes[index].objectCount].objectData[1]->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
+                        scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Object1", strlen("Object1"));
+                        scenes[index].objectCount++;
+
                         EditScene(index);
                     }
+                    free(sceneName);
                 }
                 else
                 {
@@ -1441,7 +2000,9 @@ uint32_t RunProgram()
 
     while (1)
     {
-        uint8_t cameraScale = camera->objectData[2]->data.i;
+        uint8_t cameraScale;
+        cameraScale = camera->objectData[2]->data.i;
+
         int cameraX = camera->objectData[0]->data.XY.x;
         int cameraY = camera->objectData[0]->data.XY.y;
 
@@ -1452,16 +2013,30 @@ uint32_t RunProgram()
             {
                 continue;
             }
-            printf("sprite (%d,%d): %d\n",
-                   80 + currentScene->objects[i].objectData[0]->data.XY.x + cameraX,
-                   64 - currentScene->objects[i].objectData[0]->data.XY.y + cameraY,
-                   cameraScale * currentScene->objects[i].objectData[2]->data.i);
+
+            Vector2 scale;
+
+            if (currentScene->objects[i].objectData[2]->currentType == TYPE_INT)
+            {
+                scale.x = currentScene->objects[i].objectData[2]->data.i;
+                scale.y = currentScene->objects[i].objectData[2]->data.i;
+            }
+            else
+            {
+                scale.x = currentScene->objects[i].objectData[2]->data.XY.x;
+                scale.y = currentScene->objects[i].objectData[2]->data.XY.y;
+            }
+
+            printf("Scale: (%d,%d)\n", scale.x, scale.y);
+
             DrawSpriteCentered(
                 currentScene->objects[i].objectData[1]->data.i,
-                80 + currentScene->objects[i].objectData[0]->data.XY.x + cameraX,
-                64 - currentScene->objects[i].objectData[0]->data.XY.y + cameraY,
-                cameraScale * currentScene->objects[i].objectData[2]->data.i);
+                80 + sceneScale * currentScene->objects[i].objectData[0]->data.XY.x - cameraX,
+                64 + sceneScale * currentScene->objects[i].objectData[0]->data.XY.y - cameraY,
+                cameraScale * scale.x,
+                cameraScale * scale.y);
         }
+
         SmartShow();
 
         for (int obj = 0; obj < currentScene->objectCount; obj++)
@@ -1479,7 +2054,6 @@ uint32_t RunProgram()
                         UI_PrintToScreen(stringPool[error], true);
                         sleep_ms(3000);
                         FreeString(&error);
-                        free(camera);
                         return errorNum;
                     }
                     FreeString(&error);
@@ -1493,7 +2067,6 @@ uint32_t RunProgram()
             print("exiting");
             if (millis() - exitHoldTime > 5000)
             {
-                free(camera);
                 return 0;
             }
         }
@@ -1502,7 +2075,7 @@ uint32_t RunProgram()
             exitHoldTime = millis();
         }
     }
-    free(camera);
+
     return 0;
 }
 

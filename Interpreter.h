@@ -15,6 +15,22 @@
 
 #include "MemoryPool.h"
 
+//#define DEBUG 1
+
+#ifdef DEBUG
+#define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
+#define debugPrint(x) printf("%s\n", x)
+#else
+#define debugPrintf(...) \
+    do                   \
+    {                    \
+    } while (0)
+#define debugPrint(x) \
+    do                \
+    {                 \
+    } while (0)
+#endif
+
 #define EQUATION_ERROR 1
 #define FUNCTION_ERROR 2
 #define VARIABLE_ERROR 3
@@ -74,7 +90,7 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 28
+#define OPERATOR_COUNT 29
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
@@ -86,6 +102,8 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"getPosition", 13, 0},
     {"getScale", 13, 0},
     {"getSprite", 13, 0},
+
+    {"setCameraScale", 13, 1},
 
     {"setPosition", 13, 1},
     {"setScale", 13, 1},
@@ -221,7 +239,7 @@ uint16_t UnpackErrorMessage(uint32_t error)
 
             numberLength = IntLength(line);
 
-            printf("line digits: %d\n", numberLength);
+            debugPrintf("line digits: %d\n", numberLength);
             errorLength += numberLength;
             errorLength += strlen(LINE_PREFIX);
         }
@@ -229,7 +247,7 @@ uint16_t UnpackErrorMessage(uint32_t error)
     errorLength += strlen(ERROR_PREFIX);
     errorLength += strlen(CATEGORY_SUFFIX);
     errorLength += strlen(ERROR_TYPE_SUFFIX);
-    printf("error len %d\n", errorLength);*/
+    debugPrintf("error len %d\n", errorLength);*/
 
     uint16_t errorMessage = PoolString();
 
@@ -260,11 +278,11 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
             lineCount++;
         }
     }
-    // printf("lines %d\n", lineCount);
-    // printf("line count: %d\n",lineCount);
+    // debugPrintf("lines %d\n", lineCount);
+    debugPrintf("line count: %d\n", lineCount);
     char **lines = (char **)malloc(sizeof(char *) * lineCount);
     int *lineIndexes = (int *)malloc(sizeof(int) * lineCount);
-    // print("total lines allocated");
+    // debugPrint("total lines allocated");
     int currentLine = 0;
     uint16_t lineLength = 0;
 
@@ -275,24 +293,25 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
 
     for (int i = 0; i < strlen(script->content); i++)
     {
+        debugPrintf("%c\n", script->content[i]);
         lineLength++;
         if (script->content[i] == ';')
         {
             lines[currentLine] = (char *)malloc(sizeof(char) * (lineLength));
-            // printf("allocated line len %d\n", lineLength + 1);
+            debugPrintf("allocated line len %d\n", lineLength + 1);
             currentLine++;
             lineLength = 0;
         }
         else if (script->content[i] == '{' || script->content[i] == '}')
         {
             lines[currentLine] = (char *)malloc(sizeof(char) * (lineLength + 1));
-            // printf("allocated line len %d\n", lineLength + 1);
+            debugPrintf("allocated line len %d\n", lineLength + 1);
             currentLine++;
             lineLength = 0;
         }
     }
     // lines[currentLine] = (char *)malloc(sizeof(char) * (lineLength + 1));
-    //  printf("allocated line len %d\n", lineLength + 1);
+    //  debugPrintf("allocated line len %d\n", lineLength + 1);
 
     currentLine = 0;
     uint16_t caret = 0;
@@ -300,16 +319,16 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
     {
         if (script->content[i] != ';')
             lines[currentLine][caret++] = script->content[i];
-        // printf("line %d, %c\n", currentLine, script->content[i]);
+        // debugPrintf("line %d, %c\n", currentLine, script->content[i]);
         if (script->content[i] == ';' || script->content[i] == '{' || script->content[i] == '}')
         {
             lines[currentLine][caret] = '\0';
-            // printf("line %s\n", lines[currentLine]);
+            debugPrintf("line %s\n", lines[currentLine]);
             currentLine++;
             caret = 0;
             if (currentLine < lineCount)
             {
-                // printf("Line: %d, index: %d\n", currentLine, i + 1);
+                // debugPrintf("Line: %d, index: %d\n", currentLine, i + 1);
                 lineIndexes[currentLine] = i + 1;
             }
         }
@@ -498,7 +517,7 @@ int FloatLength(float value)
         value *= 10;
         isDecimal = true;
     }
-    printf("get float len %d", IntLength((int)value));
+    debugPrintf("get float len %d", IntLength((int)value));
     return IntLength((int)value) + (isDecimal ? 1 : 0);
 }
 // Returns a malloced char*
@@ -512,13 +531,13 @@ uint16_t SerializeVar(EngineVar *variable)
     }
     if (variable->currentType == TYPE_INT)
     {
-        printf("int type serialize, %d\n", variable->data.i);
+        debugPrintf("int type serialize, %d\n", variable->data.i);
         int numberLength = IntLength(variable->data.i);
 
-        printf("length: %d", numberLength);
+        debugPrintf("length: %d", numberLength);
         uint16_t intChar = PoolString();
         sprintf(stringPool[intChar], "%d", variable->data.i);
-        printf("out: %s\n", stringPool[intChar]);
+        debugPrintf("out: %s\n", stringPool[intChar]);
         return intChar;
     }
     if (variable->currentType == TYPE_FLOAT)
@@ -572,7 +591,7 @@ void GreatestCommonType(Atom *atom1, Atom *atom2)
 
 float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, ScriptData *scriptData)
 {
-    print("shunt yard");
+    debugPrint("shunt yard");
     Atom operationStack[50] = {0};
     uint8_t operatorIndex = 0;
     Atom operandStack[50] = {0};
@@ -584,10 +603,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
     // Tokenize the input into atoms
     for (int i = 0; i < equationLength; i++)
     {
-        printf("tokenize %c\n", equation[i]);
+        debugPrintf("tokenize %c\n", equation[i]);
 
         // If the index is parenthesis, push to stack
-        // printf("Finding atom: %c\n", equation[i]);
+        // debugPrintf("Finding atom: %c\n", equation[i]);
         if (equation[i] == ' ')
         {
             continue;
@@ -602,7 +621,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             setatom(&allAtoms[atomIndex++], OPERATOR_ATOM, 0, 0, "(");
 
-            printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
             continue;
         }
         if (equation[i] == ')')
@@ -610,7 +629,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             setatom(&allAtoms[atomIndex++], OPERATOR_ATOM, 0, 0, ")");
 
-            printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
             continue;
         }
 
@@ -646,7 +665,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             FreeString(&string);
 
-            printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
 
             i += index - i;
             continue;
@@ -668,10 +687,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         bool isVariable = false;
         for (int variable = 0; variable < scriptData->variableCount; variable++)
         {
-            printf("Var name: %s\n", scriptData->data[variable].name);
+            debugPrintf("Var name: %s\n", scriptData->data[variable].name);
             if (indexOf(scriptData->data[variable].name, equation + i) == 0)
             {
-                print("var match");
+                debugPrint("var match");
                 uint16_t value = SerializeVar(&(scriptData->data[variable]));
 
                 if (scriptData->data[variable].currentType == TYPE_FLOAT || scriptData->data[variable].currentType == TYPE_INT)
@@ -687,7 +706,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     setatom(&allAtoms[atomIndex++], TYPE_VECTOR, 0, 0, stringPool[value]);
                 }
 
-                printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+                debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
                 isVariable = true;
                 i += strlen(scriptData->data[variable].name) - 1;
 
@@ -700,12 +719,12 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             continue;
         }
 
-        // print("Finding operator");
+        // debugPrint("Finding operator");
         //  Search through each operator for matches
         bool atomDone = false;
         for (int operator= 0; operator<OPERATOR_COUNT; operator++)
         {
-             printf("Operator: %s\n",OPERATOR_PRECEDENT_LIST[operator].operator);
+             debugPrintf("Operator: %s\n",OPERATOR_PRECEDENT_LIST[operator].operator);
             uint8_t operatorLength = strlen(OPERATOR_PRECEDENT_LIST[operator].operator);
             if (i + operatorLength > equationLength)
             {
@@ -733,7 +752,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 );
 
                 i += operatorLength - 1;
-                printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+                debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
                 break;
             }
         }
@@ -741,12 +760,12 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         if (atomDone)
             continue;
 
-        // print("Finding number");
+        // debugPrint("Finding number");
         //  If the current char is a number, continue searching until the end
         uint8_t numberLength = 0;
         while (IsNumber(equation[i + numberLength]))
         {
-            // printf("%c\n",equation[i+numberLength]);
+            // debugPrintf("%c\n",equation[i+numberLength]);
             numberLength++;
         }
         if (numberLength == 0)
@@ -766,29 +785,29 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
         for (int numberIndex = 0; numberIndex < numberLength; numberIndex++)
         {
-            // printf("%c\n", equation[i + numberIndex]);
+            // debugPrintf("%c\n", equation[i + numberIndex]);
             stringPool[allAtoms[atomIndex].atom][numberIndex] = equation[i + numberIndex];
         }
         stringPool[allAtoms[atomIndex].atom][numberLength] = '\0';
         allAtoms[atomIndex++].type = TYPE_FLOAT;
         i += numberLength - 1;
-        printf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+        debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
     }
 
     // At this point, the string should be tokenized. Shunt yard can commence
 
     for (int i = 0; i < atomIndex; i++)
     {
-        printf("Atom shunt yard %s\n", stringPool[allAtoms[i].atom]);
+        debugPrintf("Atom shunt yard %s\n", stringPool[allAtoms[i].atom]);
 
         if (stringPool[allAtoms[i].atom][0] == ',')
         {
             while (operatorIndex > 0 && stringPool[operationStack[operatorIndex - 1].atom][0] != '(')
             {
-                printf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
+                debugPrintf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
                 cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
 
-                printf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
+                debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
                 FreeString(&operationStack[--operatorIndex].atom);
             }
             FreeString(&allAtoms[i].atom);
@@ -801,13 +820,13 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             if (stringPool[allAtoms[i].atom][0] == ')')
             {
                 // If the operator is parenthesis, pop off all of the previous operations until you get to the matching one
-                print("parenthesis");
+                debugPrint("parenthesis");
                 while (operatorIndex > 0 && stringPool[operationStack[operatorIndex - 1].atom][0] != '(')
                 {
-                    printf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
+                    debugPrintf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
                     cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
 
-                    printf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
+                    debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
                     FreeString(&operationStack[--operatorIndex].atom);
                 }
                 FreeString(&operationStack[--operatorIndex].atom);
@@ -821,27 +840,27 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     {
                         cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
 
-                        printf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
+                        debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
                         FreeString(&operationStack[--operatorIndex].atom);
                     }
                 }
                 cpyatom(&operationStack[operatorIndex++], &allAtoms[i]);
-                printf("added %s to operation stack\n", stringPool[allAtoms[i].atom]);
+                debugPrintf("added %s to operation stack\n", stringPool[allAtoms[i].atom]);
             }
         }
         else
         {
             cpyatom(&operandStack[operandIndex++], &allAtoms[i]);
-            printf("added %s to operand stack\n", stringPool[allAtoms[i].atom]);
+            debugPrintf("added %s to operand stack\n", stringPool[allAtoms[i].atom]);
         }
         FreeString(&allAtoms[i].atom);
     }
-    print("shunt done, pushing remain");
+    debugPrint("shunt done, pushing remain");
     // push remaining operators to output
     while (operatorIndex > 0)
     {
         cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
-        printf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
+        debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
         FreeString(&operationStack[--operatorIndex].atom);
     }
 
@@ -852,7 +871,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
     for (int i = 0; i < operandIndex; i++)
     {
-        printf("RPN: %s\n", stringPool[operandStack[i].atom]);
+        debugPrintf("RPN: %s\n", stringPool[operandStack[i].atom]);
         // free(operandStack[i].atom);
     }
 
@@ -863,7 +882,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         if (operandStack[i].type == OPERATOR_ATOM)
         {
             bool isValid = true;
-            printf("operation: %s, params: %d\n", stringPool[operandStack[i].atom], operandStack[i].parameters);
+            debugPrintf("operation: %s, params: %d\n", stringPool[operandStack[i].atom], operandStack[i].parameters);
 
             uint8_t PARAMETER_COUNT = 2;
 
@@ -883,35 +902,35 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     if (operandStack[i - x - 1].type == TYPE_FLOAT)
                     {
-                        print("normal param");
+                        debugPrint("normal param");
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.f = atof(stringPool[operandStack[i - x - 1].atom]);
                         varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_FLOAT;
                     }
                     else if (operandStack[i - x - 1].type == TYPE_VECTOR)
                     {
-                        print("vector param");
+                        debugPrint("vector param");
                         int vectX = 0;
                         int vectY = 0;
                         sscanf((stringPool[operandStack[i - x - 1].atom]), "(%d, %d)", &vectX, &vectY);
-                        printf("v:%d,%d\n", vectX, vectY);
+                        debugPrintf("v:%d,%d\n", vectX, vectY);
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.x = vectX;
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.y = vectY;
                         varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_VECTOR;
                     }
                     else if (operandStack[i - x - 1].type == TYPE_STRING)
                     {
-                        print("string param");
+                        debugPrint("string param");
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.s = PoolString();
                         strcpy(stringPool[varPool[parameters[operandStack[i].parameters - x - 1]].data.s], stringPool[operandStack[i - x - 1].atom]);
                         varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_STRING;
-                        print("copied");
+                        debugPrint("copied");
                     }
                 }
             }
             uint16_t result = PoolVar("");
             if (!isValid)
             {
-                print("invalid parameters");
+                debugPrint("invalid parameters");
                 for (int freeParam = 0; freeParam < PARAMETER_COUNT; freeParam++)
                 {
                     if (varPool[parameters[freeParam]].currentType == TYPE_STRING)
@@ -925,20 +944,20 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             if (strcmp(stringPool[operandStack[i].atom], "+") == 0)
             {
-                print("add");
+                debugPrint("add");
                 if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
                 {
-                    print("type float");
+                    debugPrint("type float");
                     varPool[result].data.f = varPool[parameters[0]].data.f + varPool[parameters[1]].data.f;
                     varPool[result].currentType = TYPE_FLOAT;
                 }
                 if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_STRING))
                 {
-                    print("type string");
+                    debugPrint("type string");
                     varPool[result].data.s = PoolString();
                     sprintf(stringPool[varPool[result].data.s], "%s%s", stringPool[varPool[parameters[0]].data.s], stringPool[varPool[parameters[1]].data.s]);
 
-                    printf("concat result: %s\n", stringPool[varPool[result].data.s]);
+                    debugPrintf("concat result: %s\n", stringPool[varPool[result].data.s]);
                     // free(varPool[parameters[0]].data.s);
                     // free(varPool[parameters[1]].data.s);
                     varPool[result].currentType = TYPE_STRING;
@@ -955,12 +974,12 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 if (strcmp(stringPool[operandStack[i].atom], "input") == 0)
                 {
-                    print("input operation");
+                    debugPrint("input operation");
                     varPool[result].currentType = TYPE_FLOAT;
                     switch (ToLower(stringPool[varPool[parameters[0]].data.s][0]))
                     {
                     case 'w':
-                        printf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
+                        debugPrintf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
                         varPool[result].data.f = (gpio_get(BUTTON_W) == 0);
                         break;
                     case 'd':
@@ -996,17 +1015,23 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
                 {
-                    printf("set pos (%d,%d)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
+                    debugPrintf("set pos (%d,%d)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
 
                     scriptData->linkedObject->objectData[0]->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    scriptData->linkedObject->objectData[0]->data.XY.y = varPool[parameters[0]].data.XY.y;
+                    scriptData->linkedObject->objectData[0]->data.XY.y = -varPool[parameters[0]].data.XY.y;
 
-                    print("set");
+                    debugPrint("set");
+                }
+                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->objectData[2]->currentType == TYPE_VECTOR)
+                {
+                    scriptData->linkedObject->objectData[2]->data.XY.x = varPool[parameters[0]].data.XY.x;
+                    scriptData->linkedObject->objectData[2]->data.XY.y = varPool[parameters[0]].data.XY.y;
                 }
             }
 
             if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
             {
+                debugPrintf("FLOAT OP: %s\n", stringPool[operandStack[i].atom]);
                 varPool[result].currentType = TYPE_FLOAT;
                 if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
                 {
@@ -1024,21 +1049,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     varPool[result].data.f = (int)varPool[parameters[0]].data.f % (int)varPool[parameters[1]].data.f;
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
-                {
-                    varPool[result].data.f = cos(varPool[parameters[0]].data.f);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "sin") == 0)
-                {
-                    varPool[result].data.f = sin(varPool[parameters[0]].data.f);
-                }
+
                 if (strcmp(stringPool[operandStack[i].atom], "pow") == 0)
                 {
                     varPool[result].data.f = pow(varPool[parameters[0]].data.f, varPool[parameters[1]].data.f);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "PI") == 0)
-                {
-                    varPool[result].data.f = 3.14159265459;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "|") == 0)
@@ -1086,6 +1100,36 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.XY.y = varPool[parameters[1]].data.f;
                 }
             }
+            else if (varPool[parameters[0]].currentType == TYPE_FLOAT)
+            {
+                varPool[result].currentType = TYPE_FLOAT;
+                if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
+                {
+                    debugPrint("COS OPERATION");
+                    varPool[result].data.f = cos(varPool[parameters[0]].data.f);
+                }
+                if (strcmp(stringPool[operandStack[i].atom], "sin") == 0)
+                {
+                    debugPrint("SIN OPERATION");
+                    varPool[result].data.f = sin(varPool[parameters[0]].data.f);
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->objectData[2]->currentType == TYPE_INT)
+                {
+                    scriptData->linkedObject->objectData[2]->data.i = varPool[parameters[0]].data.f;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
+                {
+                    scriptData->linkedObject->objectData[1]->data.i = (int)varPool[parameters[0]].data.f;
+                }
+            }
+
+            if (strcmp(stringPool[operandStack[i].atom], "PI") == 0)
+            {
+                varPool[result].currentType = TYPE_FLOAT;
+                varPool[result].data.f = 3.14159265459;
+            }
 
             if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
             {
@@ -1119,7 +1163,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     FreeString(&operandStack[x - parameterCount].atom);
                     cpyatom(&operandStack[x - parameterCount], &operandStack[x]);
-                    printf("shift: %s to %d\n", stringPool[operandStack[x].atom], x - parameterCount);
+                    debugPrintf("shift: %s to %d\n", stringPool[operandStack[x].atom], x - parameterCount);
                     // free(operandStack[x].atom);
                 }
                 for (int x = 0; x < parameterCount; x++)
@@ -1133,7 +1177,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             if (varPool[result].currentType == TYPE_FLOAT)
             {
-                printf("Completed an float operation result: %f\n", varPool[result].data.f);
+                debugPrintf("Completed an float operation result: %f\n", varPool[result].data.f);
 
                 char strResult[20];
 
@@ -1146,7 +1190,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 uint16_t serializedVector = SerializeVar(&varPool[result]);
 
                 setatom(&operandStack[i - parameterCount], TYPE_VECTOR, 0, 0, stringPool[serializedVector]);
-                printf("new Vector: %s\n", stringPool[operandStack[i - parameterCount].atom]);
+                debugPrintf("new Vector: %s\n", stringPool[operandStack[i - parameterCount].atom]);
 
                 FreeString(&serializedVector);
             }
@@ -1158,7 +1202,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.s = PoolString();
                     stringPool[varPool[result].data.s][0] = '\0';
                 }
-                printf("Completed an str operation result: %s\n", stringPool[varPool[result].data.s]);
+                debugPrintf("Completed an str operation result: %s\n", stringPool[varPool[result].data.s]);
 
                 setatom(&operandStack[i - parameterCount], TYPE_STRING, 0, 0, stringPool[varPool[result].data.s]);
             }
@@ -1177,17 +1221,20 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             for (int x = 0; x < operandIndex; x++)
             {
-                printf("OUT: %s\n", stringPool[operandStack[x].atom]);
+                debugPrintf("OUT: %s\n", stringPool[operandStack[x].atom]);
+                // debugPrint("debugPrint done");
             }
-            print("");
+            debugPrint("");
         }
     }
+
+    debugPrint("Outputting shunt yard");
 
     if (operandIndex > 1)
     {
         for (int i = 0; i < operandIndex; i++)
         {
-            // printf("atom: %s\n", operandStack[i].atom);
+            // debugPrintf("atom: %s\n", operandStack[i].atom);
             FreeString(&operandStack[i].atom);
         }
 
@@ -1204,32 +1251,39 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 output->data.i = floor(output->data.f);
                 output->currentType = TYPE_INT;
-                print("type int");
+                debugPrint("type int");
             }
             else
             {
                 output->currentType = TYPE_FLOAT;
-                print("type float");
+                debugPrint("type float");
             }
         }
         if (operandStack[0].type == TYPE_STRING)
         {
+            debugPrint("output is string");
             output->currentType = TYPE_STRING;
             output->data.s = PoolString();
+            debugPrint("copying");
+            debugPrintf("from: %s\n", stringPool[varPool[operandStack[0].atom].data.s]);
+            debugPrintf("to: %s\n", stringPool[output->data.s]);
             strcpy(stringPool[output->data.s], stringPool[varPool[operandStack[0].atom].data.s]);
+            debugPrint("copy done");
             FreeString(&varPool[operandStack[0].atom].data.s);
+            debugPrint("freed string");
         }
     }
 
+    debugPrint("freeing operands");
     for (int i = 0; i < operandIndex; i++)
     {
         FreeString(&operandStack[i].atom);
     }
-
+    debugPrint("done");
     return 0;
 }
 
-char *RemoveSpaces(char *in)
+/*char *RemoveSpaces(char *in)
 {
     char *out = (char *)malloc(1 + strlen(in));
     int i = 0;
@@ -1244,24 +1298,26 @@ char *RemoveSpaces(char *in)
     }
     out[writeIndex] = '\0';
     return out;
-}
+}*/
 
 // DOES NOT FREE INPUT AND OUTPUT IS MALLOCED
-char *LeftTrim(char *str)
+uint16_t LeftTrim(char *str)
 {
     int index = 0;
     while (str[index] <= 32 && str[index] != '\0')
     {
         index++;
+        debugPrint("trim");
     }
     if (str[index] == '\0')
     {
-        return NULL;
+        return NULL_POOL;
     }
 
-    char *output = (char *)malloc(strlen(str) - index + 1);
+    uint16_t output = PoolString();
 
-    strcpy(output, str + index);
+    strcpy(stringPool[output], str + index);
+    debugPrintf("trim %s\n", str + index);
     return output;
 }
 
@@ -1322,11 +1378,11 @@ bool IsAlphaNumeric(char c)
         {
             return CreateError(DATATYPE_ERROR, TYPE_MISMATCH, 0);
         }
-        // printf("getData: %s\n", data + 1);
+        // debugPrintf("getData: %s\n", data + 1);
         output->data.s = (char *)malloc(index);
         strncpy(output->data.s, data + 1, index - 1);
         output->data.s[index - 1] = '\0';
-        // printf("getData result: %s\n", output->data.s);
+        // debugPrintf("getData result: %s\n", output->data.s);
         output->currentType = TYPE_STRING;
         return 0;
     }
@@ -1366,7 +1422,7 @@ bool IsAlphaNumeric(char c)
         {
             return CreateError(DATATYPE_ERROR, TYPE_MISMATCH, 0);
         }
-        printf("xValue: %f\n", xValue);
+        debugPrintf("xValue: %f\n", xValue);
 
         uint8_t commaLocation = index;
 
@@ -1403,7 +1459,7 @@ bool IsAlphaNumeric(char c)
         {
             return CreateError(DATATYPE_ERROR, TYPE_MISMATCH, 0);
         }
-        printf("yValue: %f\n", xValue);
+        debugPrintf("yValue: %f\n", xValue);
 
         if (output->currentType != NO_TYPE && output->currentType != TYPE_VECTOR)
         {
@@ -1473,148 +1529,163 @@ bool IsAlphaNumeric(char c)
 
 uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 {
-    char *trimmedLine = LeftTrim(output->lines[l]);
-    if (trimmedLine == NULL)
+    uint16_t trimmedLine = LeftTrim(output->lines[l]);
+    if (trimmedLine == NULL_POOL)
     {
-        free(trimmedLine);
+        FreeString(&trimmedLine);
         return CreateError(DATATYPE_ERROR, SYNTAX_UNKNOWN, 0);
     }
-    printf("trimmed line: %s\n", trimmedLine);
-    int varType = GetTypeFromString(trimmedLine);
-    printf("got type %d\n", varType);
+    debugPrintf("trimmed line: %s\n", stringPool[trimmedLine]);
+
+    debugPrint("check after trim");
+    for (int i = 0; i < output->lineCount; i++)
+    {
+        debugPrintf("split done line num %d\n", i);
+        debugPrintf("split done line: %s\n", output->lines[i]);
+    }
+
+    int varType = GetTypeFromString(stringPool[trimmedLine]);
+    debugPrintf("got type %d\n", varType);
     if (varType != NO_TYPE)
     {
         int index = 0;
         // Move index to space after type
-        while (trimmedLine[index] > 32) // if it is character
+        while (stringPool[trimmedLine][index] > 32) // if it is character
         {
             index++;
         }
-        if (trimmedLine[index] == '\0')
+        if (stringPool[trimmedLine][index] == '\0')
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
         }
         index++;
 
         uint8_t nameLength = 0;
         while (
-            IsAlphaNumeric(trimmedLine[index + nameLength])) // if it is character
+            IsAlphaNumeric(stringPool[trimmedLine][index + nameLength])) // if it is character
         {
             nameLength++;
         }
-        if (trimmedLine[index + nameLength] == '\0')
+        if (stringPool[trimmedLine][index + nameLength] == '\0')
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
         }
-        char *entityName = (char *)malloc(nameLength + 1);
+        uint16_t entityName = PoolString();
 
-        strncpy(entityName, trimmedLine + index, nameLength);
-        entityName[nameLength] = '\0';
+        strncpy(stringPool[entityName], stringPool[trimmedLine] + index, nameLength);
+        stringPool[entityName][nameLength] = '\0';
 
-        printf("Type: %d, Name: %s\n", varType, entityName);
+        debugPrintf("Type: %d, Name: %s\n", varType, stringPool[entityName]);
         index += nameLength;
 
-        printf("next char: %c\n", trimmedLine[index]);
+        debugPrintf("next char: %c\n", stringPool[trimmedLine][index]);
 
-        while (trimmedLine[index] <= 32) // if it is not a character
+        while (stringPool[trimmedLine][index] <= 32) // if it is not a character
         {
             index++;
         }
-        if (trimmedLine[index] == '\0')
+        if (stringPool[trimmedLine][index] == '\0')
         {
-            free(entityName);
-            free(trimmedLine);
+            FreeString(&entityName);
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
         }
 
-        if (trimmedLine[index] == '(')
+        debugPrint("check before dec");
+        for (int i = 0; i < output->lineCount; i++)
+        {
+            debugPrintf("split done line num %d\n", i);
+            debugPrintf("split done line: %s\n", output->lines[i]);
+        }
+
+        if (stringPool[trimmedLine][index] == '(')
         { // function declare
-            print("declare function");
+            debugPrint("declare function");
             index++;
             EngineFunction *newFunction = (EngineFunction *)malloc(sizeof(EngineFunction));
             newFunction->parameterIndex = 0;
-            while (trimmedLine[index] != ')' && trimmedLine[index] != '\0')
+            while (stringPool[trimmedLine][index] != ')' && stringPool[trimmedLine][index] != '\0')
             {
-                while (trimmedLine[index] <= 32)
+                while (stringPool[trimmedLine][index] <= 32)
                 {
                     index++;
                 }
 
-                uint8_t parameterType = GetTypeFromString(trimmedLine + index);
+                uint8_t parameterType = GetTypeFromString(stringPool[trimmedLine] + index);
 
-                printf("parameter type: %d\n", parameterType);
+                debugPrintf("parameter type: %d\n", parameterType);
 
                 // loop until space after type
-                while (trimmedLine[index] > 32)
+                while (stringPool[trimmedLine][index] > 32)
                 {
                     index++;
                 }
-                if (trimmedLine[index] == '\0')
+                if (stringPool[trimmedLine][index] == '\0')
                 {
-                    free(trimmedLine);
-                    free(entityName);
+                    FreeString(&trimmedLine);
+                    FreeString(&entityName);
                     free(newFunction);
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
                 index++;
 
-                print("data space");
+                debugPrint("data space");
 
                 // get length
                 uint8_t parameterNameLength = 0;
-                while (IsAlphaNumeric(trimmedLine[index + parameterNameLength])) // if it is character
+                while (IsAlphaNumeric(stringPool[trimmedLine][index + parameterNameLength])) // if it is character
                 {
                     parameterNameLength++;
                 }
-                if (trimmedLine[index + parameterNameLength] == '\0')
+                if (stringPool[trimmedLine][index + parameterNameLength] == '\0')
                 {
-                    free(trimmedLine);
-                    free(entityName);
+                    FreeString(&trimmedLine);
+                    FreeString(&entityName);
                     free(newFunction);
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
-                print("got param len");
+                debugPrint("got param len");
                 // copy name and type to parameter
                 newFunction->parameters[newFunction->parameterIndex].parameterName = (char *)malloc(parameterNameLength + 1);
                 strncpy(
                     newFunction->parameters[newFunction->parameterIndex].parameterName,
-                    trimmedLine + index,
+                    stringPool[trimmedLine] + index,
                     parameterNameLength);
                 newFunction->parameters[newFunction->parameterIndex].parameterName[parameterNameLength] = '\0';
                 newFunction->parameters[newFunction->parameterIndex].parameterType = parameterType;
-                printf("Param Index: %d, Type %d, Name %s\n",
-                       newFunction->parameterIndex,
-                       newFunction->parameters[newFunction->parameterIndex].parameterType,
-                       newFunction->parameters[newFunction->parameterIndex].parameterName);
+                debugPrintf("Param Index: %d, Type %d, Name %s\n",
+                            newFunction->parameterIndex,
+                            newFunction->parameters[newFunction->parameterIndex].parameterType,
+                            newFunction->parameters[newFunction->parameterIndex].parameterName);
                 newFunction->parameterIndex++;
                 index += parameterNameLength;
-                while (trimmedLine[index] < 32 && trimmedLine[index] != '\0')
+                while (stringPool[trimmedLine][index] < 32 && stringPool[trimmedLine][index] != '\0')
                 {
                     index++;
                 }
-                if (trimmedLine[index] == ',')
+                if (stringPool[trimmedLine][index] == ',')
                 {
                     index++;
                 }
-                printf("rest of line: %s\n", trimmedLine + index);
+                debugPrintf("rest of line: %s\n", stringPool[trimmedLine] + index);
             }
-            while (trimmedLine[index] != '{' && trimmedLine[index] != '\0')
+            while (stringPool[trimmedLine][index] != '{' && stringPool[trimmedLine][index] != '\0')
             {
                 index++;
             }
-            printf("line index: %d", output->lineIndexes[l]);
-            if (trimmedLine[index] != '{')
+            debugPrintf("line index: %d", output->lineIndexes[l]);
+            if (stringPool[trimmedLine][index] != '{')
             {
-                free(entityName);
+                FreeString(&entityName);
                 free(newFunction);
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
             int bracketStart = indexOf("{", output->lines[l]) + output->lineIndexes[l];
-            printf("bracket pos: %d\n", bracketStart);
+            debugPrintf("bracket pos: %d\n", bracketStart);
             newFunction->bracketStart = bracketStart;
 
             bool foundEnd = false;
@@ -1623,77 +1694,178 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                 if (output->brackets[i].startPos == bracketStart)
                 {
                     foundEnd = true;
-                    printf("end bracket: %d\n", output->brackets[i].endPos);
+                    debugPrintf("end bracket: %d\n", output->brackets[i].endPos);
                     newFunction->bracketEnd = output->brackets[i].endPos;
                     break;
                 }
             }
             if (!foundEnd)
             {
-                free(entityName);
+                FreeString(&entityName);
                 free(newFunction);
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
             output->functions[output->functionCount] = newFunction;
-            output->functions[output->functionCount]->name = (char *)malloc(sizeof(char) * (strlen(entityName) + 1));
-            strcpy(output->functions[output->functionCount]->name, entityName);
-            free(entityName);
+            output->functions[output->functionCount]->name = (char *)malloc(sizeof(char) * (strlen(stringPool[entityName]) + 1));
+            strcpy(output->functions[output->functionCount]->name, stringPool[entityName]);
+            FreeString(&entityName);
             output->functionCount++;
-            print("declare fin");
+            debugPrint("declare fin");
 
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             return OPPERATION_SUCCESS;
         }
         else
         { // variable declare
             output->data[output->variableCount].currentType = varType;
-            strncpy(output->data[output->variableCount].name, entityName, MAX_NAME_LENGTH - 1);
+            strncpy(output->data[output->variableCount].name, stringPool[entityName], MAX_NAME_LENGTH - 1);
             output->data[output->variableCount].name[MAX_NAME_LENGTH - 1] = '\0';
 
-            while (trimmedLine[index] <= 32 && trimmedLine[index] != '\0')
+            debugPrint("check var start");
+            for (int i = 0; i < output->lineCount; i++)
+            {
+                debugPrintf("split done line num %d\n", i);
+                debugPrintf("split done line: %s\n", output->lines[i]);
+            }
+
+            while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
             {
                 index++;
             }
-            if (trimmedLine[index] != '=')
+            if (stringPool[trimmedLine][index] != '=')
             {
-                free(trimmedLine);
-                free(entityName);
+                FreeString(&trimmedLine);
+                FreeString(&entityName);
                 return OPPERATION_SUCCESS;
             }
             index++;
-            while (trimmedLine[index] <= 32 && trimmedLine[index] != '\0')
+            while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
             {
                 index++;
             }
-            if (trimmedLine[index] == '\0')
+            if (stringPool[trimmedLine][index] == '\0')
             {
-                free(trimmedLine);
-                free(entityName);
+                FreeString(&trimmedLine);
+                FreeString(&entityName);
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
-            printf("right side: %s\n", trimmedLine + index);
+            debugPrintf("right side: %s\n", trimmedLine + index);
 
-            uint32_t error = ShuntYard(trimmedLine + index, strlen(trimmedLine + index), &(output->data[output->variableCount]), output);
+            uint16_t assignValue = PoolVar("");
+
+            uint32_t error = ShuntYard(stringPool[trimmedLine] + index, strlen(stringPool[trimmedLine] + index), &varPool[assignValue], output);
+
+            debugPrint("check after shunt");
+            for (int i = 0; i < output->lineCount; i++)
+            {
+                debugPrintf("split done line num %d\n", i);
+                debugPrintf("split done line: %s\n", output->lines[i]);
+            }
 
             if (error != 0)
             {
-                free(trimmedLine);
-                free(entityName);
+                FreeString(&trimmedLine);
+                FreeString(&entityName);
+                FreeVar(&assignValue);
                 return error | ((uint16_t)l & 0xFFFF);
             }
-            printf("variable declared: %d\n", output->data[output->variableCount].currentType);
+            debugPrintf("TYPE to %d, from %d\n", output->data[output->variableCount].currentType, varPool[assignValue].currentType);
+            if (output->data[output->variableCount].currentType == TYPE_INT)
+            {
+                if (varPool[assignValue].currentType == TYPE_INT)
+                {
+                    output->data[output->variableCount].data.i = varPool[assignValue].data.i;
+                }
+                else if (varPool[assignValue].currentType == TYPE_FLOAT)
+                {
+
+                    output->data[output->variableCount].data.i = (int)varPool[assignValue].data.f;
+                }
+                else
+                {
+                    FreeString(&trimmedLine);
+                    FreeString(&entityName);
+                    FreeVar(&assignValue);
+                    return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
+                }
+
+                debugPrint("check after int");
+                for (int i = 0; i < output->lineCount; i++)
+                {
+                    debugPrintf("split done line num %d\n", i);
+                    debugPrintf("split done line: %s\n", output->lines[i]);
+                }
+            }
+            else if (output->data[output->variableCount].currentType == TYPE_FLOAT)
+            {
+                debugPrint("check before float");
+                for (int i = 0; i < output->lineCount; i++)
+                {
+                    debugPrintf("split done line num %d\n", i);
+                    debugPrintf("split done line: %s\n", output->lines[i]);
+                }
+                if (varPool[assignValue].currentType == TYPE_INT)
+                {
+                    debugPrintf("indexes: %d, %d\n",output->variableCount,assignValue);
+                    debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
+                    //float floatVal = (float)varPool[assignValue].data.i;
+                    output->data[output->variableCount].data.f = 0;
+                }
+                else if (varPool[assignValue].currentType == TYPE_FLOAT)
+                {
+                    
+                    output->data[output->variableCount].data.f = varPool[assignValue].data.f;
+                }
+                else
+                {
+                    FreeString(&trimmedLine);
+                    FreeString(&entityName);
+                    FreeVar(&assignValue);
+                    return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
+                }
+
+                debugPrint("check after float");
+                for (int i = 0; i < output->lineCount; i++)
+                {
+                    debugPrintf("split done line num %d\n", i);
+                    debugPrintf("split done line: %s\n", output->lines[i]);
+                }
+            }
+            else if (EqualType(&varPool[assignValue], &output->data[output->variableCount], TYPE_STRING))
+            {
+                FreeString(&output->data[output->variableCount].data.s);
+                output->data[output->variableCount].data.s = PoolString();
+                strcpy(stringPool[output->data[output->variableCount].data.s], stringPool[varPool[assignValue].data.s]);
+                FreeString(&varPool[assignValue].data.s);
+            }
+            else if (EqualType(&varPool[assignValue], &output->data[output->variableCount], TYPE_VECTOR))
+            {
+                output->data[output->variableCount].data.XY.x = varPool[assignValue].data.XY.x;
+                output->data[output->variableCount].data.XY.y = varPool[assignValue].data.XY.y;
+            }
+
+            FreeVar(&assignValue);
+
+            debugPrint("check end");
+            for (int i = 0; i < output->lineCount; i++)
+            {
+                debugPrintf("split done line num %d\n", i);
+                debugPrintf("split done line: %s\n", output->lines[i]);
+            }
+
+            debugPrintf("variable declared: %d\n", output->data[output->variableCount].currentType);
             output->variableCount++;
-            free(trimmedLine);
-            free(entityName);
+            FreeString(&trimmedLine);
+            FreeString(&entityName);
             return OPPERATION_SUCCESS;
         }
-        free(entityName);
+        FreeString(&entityName);
     }
 
-    free(trimmedLine);
+    FreeString(&trimmedLine);
     return 0;
 }
 
@@ -1711,7 +1883,7 @@ uint8_t GetScope(ScriptData *scriptData, uint16_t line)
             level++;
         }
     }
-    printf("line: %d, scope: %d\n", line, level);
+    debugPrintf("line: %d, scope: %d\n", line, level);
     return level;
 }
 
@@ -1721,6 +1893,11 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
     uint32_t error = 0;
 
     SplitScript(script, output);
+    for (int i = 0; i < output->lineCount; i++)
+    {
+        debugPrintf("split done line num %d\n", i);
+        debugPrintf("split done line: %s\n", output->lines[i]);
+    }
 
     error = CalculateBrackets(script, output);
     if (error != 0)
@@ -1730,9 +1907,13 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
 
     for (int l = 0; l < output->lineCount; l++)
     {
+        debugPrintf("setscr %d\n", l);
         // Find and add all variables/functions to the script data
-
-        printf("Set scr data: line: %s\n", output->lines[l]);
+        for (int i = 0; i < output->lineCount; i++)
+        {
+            debugPrintf("split done line num %d\n", i);
+            debugPrintf("split done line: %s\n", output->lines[i]);
+        }
 
         if (GetScope(output, l) != scopeLevel)
         {
@@ -1743,11 +1924,11 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
 
         if (error != 0 && error != OPPERATION_SUCCESS)
         {
-            print("set scr error");
+            debugPrint("set scr error");
             return error;
         }
     }
-    print("set script done");
+    debugPrint("set script done");
     return 0;
 }
 
@@ -1762,19 +1943,26 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
     free(scriptData->lines);
     free(scriptData->brackets);
 
-    // print("free scr data 1");
+    // debugPrint("free scr data 1");
 
     for (int i = 0; i < scriptData->functionCount; i++)
     {
         free(scriptData->functions[i]->name);
-        // print("free scr data 1a");
+        // debugPrint("free scr data 1a");
         free(scriptData->functions[i]);
-        // print("free scr data 1b");
+        // debugPrint("free scr data 1b");
     }
-    // print("free scr data 2");
+    for (int i = 0; i < scriptData->variableCount; i++)
+    {
+        if (scriptData->data[i].currentType == TYPE_STRING)
+            FreeString(&scriptData->data[i].data.s);
+    }
+    free(scriptData->data);
+    // debugPrint("free scr data 3");
     scriptData->lineCount = 0;
     scriptData->bracketPairs = 0;
     scriptData->functionCount = 0;
+    scriptData->variableCount = 0;
 
     if (!onlyFreeContent)
         free(scriptData);
@@ -1787,19 +1975,19 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
     bool justShuntYard = true;
 
-    char *trimmedLine = LeftTrim(scriptData->lines[scriptData->currentLine]);
-    printf("Exexute line: %s\n", trimmedLine);
+    uint16_t trimmedLine = LeftTrim(scriptData->lines[scriptData->currentLine]);
+    debugPrintf("Exexute line: %s\n", stringPool[trimmedLine]);
     // If line is a variable or function declaration, ignore
-    if (GetTypeFromString(trimmedLine) != NO_TYPE)
+    if (GetTypeFromString(stringPool[trimmedLine]) != NO_TYPE)
     {
-        free(trimmedLine);
+        FreeString(&trimmedLine);
         scriptData->currentLine++;
         return 0;
     }
     // If line only includes end of a curly bracket
-    if (trimmedLine[0] == '}')
+    if (stringPool[trimmedLine][0] == '}')
     {
-        print("jumpback");
+        debugPrint("jumpback");
         int bracketEnd = scriptData->lineIndexes[scriptData->currentLine] + indexOf("}", scriptData->lines[scriptData->currentLine]);
 
         bool foundEnd = false;
@@ -1808,7 +1996,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (scriptData->brackets[i].endPos == bracketEnd)
             {
                 foundEnd = true;
-                // printf("end bracket: %d\n", scriptData->brackets[i].endPos);
+                // debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
 
                 for (int x = 0; x < scriptData->lineCount - 1; x++)
                 {
@@ -1819,14 +2007,14 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                         if (indexOf("while", scriptData->lines[x]) != -1)
                         {
                             scriptData->currentLine = x;
-                            printf("jumpback %d\n", scriptData->currentLine);
+                            debugPrintf("jumpback %d\n", scriptData->currentLine);
                         }
                         else
                         {
-                            print("end brack was not a loop");
-                            free(trimmedLine);
+                            debugPrint("end brack was not a loop");
+                            FreeString(&trimmedLine);
                             scriptData->currentLine++;
-                            print("bracket execute a");
+                            debugPrint("bracket execute a");
                             return 0;
                         }
                     }
@@ -1838,14 +2026,14 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                     if (indexOf("while", scriptData->lines[scriptData->lineCount - 1]) != -1)
                     {
                         scriptData->currentLine = scriptData->lineCount - 1;
-                        printf("jumpback %d\n", scriptData->currentLine);
+                        debugPrintf("jumpback %d\n", scriptData->currentLine);
                     }
                     else
                     {
-                        print("end brack was not a loop");
-                        free(trimmedLine);
+                        debugPrint("end brack was not a loop");
+                        FreeString(&trimmedLine);
                         scriptData->currentLine++;
-                        print("bracket execute b");
+                        debugPrint("bracket execute b");
                         return 0;
                     }
                 }
@@ -1853,24 +2041,24 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 break;
             }
         }
-        print("bracket execute 1");
+        debugPrint("bracket execute 1");
         if (!foundEnd)
         {
-            print("did not find end");
-            free(trimmedLine);
+            debugPrint("did not find end");
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
         }
-        free(trimmedLine);
+        FreeString(&trimmedLine);
         return 0;
     }
-    print("bracket execute 2");
+    debugPrint("bracket execute 2");
 
     // Set variable
 
     int varIndex = -1;
     for (int i = 0; i < scriptData->variableCount; i++)
     {
-        if (indexOf(scriptData->data[i].name, trimmedLine) == 0)
+        if (indexOf(scriptData->data[i].name, stringPool[trimmedLine]) == 0)
         {
             varIndex = i;
             break;
@@ -1879,37 +2067,75 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
     if (varIndex != -1)
     {
-        int index = indexOf("=", trimmedLine) - 1;
-        uint8_t assignType = trimmedLine[index];
+        int index = indexOf("=", stringPool[trimmedLine]) - 1;
+        uint8_t assignType = stringPool[trimmedLine][index];
 
         // create a variable to store the assignment result
         uint16_t value = PoolVar("");
 
         index += 2;
 
-        while (trimmedLine[index] <= 32 && trimmedLine[index] != '\0')
+        while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
         {
             index++;
         }
-        printf("assign value :%s\n", trimmedLine + index);
+        debugPrintf("assign value :%s\n", stringPool[trimmedLine] + index);
 
-        uint32_t error = ShuntYard(trimmedLine + index, strlen(trimmedLine + index), &varPool[value], scriptData);
+        char buffer[50];
+
+        sprintf(buffer, "%s%c%s", scriptData->data[varIndex].name, assignType, stringPool[trimmedLine] + index);
+
+        uint32_t error = ShuntYard(buffer, strlen(buffer), &varPool[value], scriptData);
 
         if (error != 0)
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             FreeVar(&value);
             return error | scriptData->currentLine;
         }
+        debugPrintf("to %d, from %d", scriptData->data[varIndex].currentType, varPool[value].currentType);
 
-        if (varPool[value].currentType != scriptData->data[varIndex].currentType)
+        if (varPool[value].currentType == TYPE_INT)
         {
-            free(trimmedLine);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
+            varPool[value].currentType = TYPE_FLOAT;
+            varPool[value].data.f = varPool[value].data.i;
         }
 
-        switch (assignType)
+        if (scriptData->data[varIndex].currentType == TYPE_BOOL && varPool[value].currentType == TYPE_FLOAT)
+        {
+            scriptData->data[varIndex].data.b = (varPool[value].data.f != 0);
+        }
+        if (scriptData->data[varIndex].currentType == TYPE_VECTOR && varPool[value].currentType == TYPE_VECTOR)
+        {
+            scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x;
+            scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y;
+        }
+        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
+        {
+            scriptData->data[varIndex].data.f = varPool[value].data.f;
+        }
+        if (scriptData->data[varIndex].currentType == TYPE_INT && varPool[value].currentType == TYPE_FLOAT)
+        {
+            debugPrint("float assign to int");
+            debugPrintf("%d<-%d\n", scriptData->data[varIndex].data.i, (int)varPool[value].data.f);
+            scriptData->data[varIndex].data.i = (int)varPool[value].data.f;
+        }
+        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
+        {
+            uint16_t temp = PoolString();
+            sprintf(stringPool[temp], "%s", stringPool[varPool[value].data.s]);
+
+            FreeString(&scriptData->data[varIndex].data.s);
+            FreeString(&varPool[value].data.s);
+
+            scriptData->data[varIndex].data.s = temp;
+        }
+        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
+        {
+            scriptData->data[varIndex].data.objID = varPool[value].data.objID;
+        }
+
+        /*switch (assignType)
         {
         default:
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
@@ -1948,7 +2174,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             {
                 scriptData->data[varIndex].data.objID = varPool[value].data.objID;
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -1974,7 +2200,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
             {
                 scriptData->data[varIndex].data.i = varPool[value].data.i + scriptData->data[varIndex].data.i;
-                printf("added to int: %d\n", scriptData->data[varIndex].data.i);
+                debugPrintf("added to int: %d\n", scriptData->data[varIndex].data.i);
                 break;
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
@@ -1990,13 +2216,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2026,7 +2252,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2034,13 +2260,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2066,12 +2292,12 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
             {
                 scriptData->data[varIndex].data.i = varPool[value].data.i * scriptData->data[varIndex].data.i;
-                printf("multiplied ints: %d\n", scriptData->data[varIndex].data.i);
+                debugPrintf("multiplied ints: %d\n", scriptData->data[varIndex].data.i);
                 break;
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2079,13 +2305,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2094,7 +2320,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         case '/':
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2118,7 +2344,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2126,13 +2352,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2152,7 +2378,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2165,7 +2391,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2173,13 +2399,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2199,7 +2425,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2212,7 +2438,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2220,13 +2446,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2246,7 +2472,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2259,7 +2485,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2267,19 +2493,19 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
             if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
                 return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
             }
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
             return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
             break;
-        }
+        }*/
         if (varPool[value].currentType == TYPE_STRING)
             FreeString(&varPool[value].data.s);
         FreeVar(&value);
@@ -2287,16 +2513,16 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     }
 
     // If statement
-    if (indexOf("if", trimmedLine) == 0)
+    if (indexOf("if", stringPool[trimmedLine]) == 0)
     {
         int index = 2;
-        while (trimmedLine[index] != '(' && trimmedLine[index] != '\0')
+        while (stringPool[trimmedLine][index] != '(' && stringPool[trimmedLine][index] != '\0')
         {
             index++;
         }
-        if (trimmedLine[index] == '\0')
+        if (stringPool[trimmedLine][index] == '\0')
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, scriptData->currentLine);
         }
         index++;
@@ -2304,13 +2530,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         int endIndex = index;
         uint8_t parenthesisCount = 1;
 
-        while (trimmedLine[endIndex] != '\0' && parenthesisCount > 0)
+        while (stringPool[trimmedLine][endIndex] != '\0' && parenthesisCount > 0)
         {
-            if (trimmedLine[endIndex] == ')')
+            if (stringPool[trimmedLine][endIndex] == ')')
             {
                 parenthesisCount--;
             }
-            if (trimmedLine[endIndex] == '(')
+            if (stringPool[trimmedLine][endIndex] == '(')
             {
                 parenthesisCount++;
             }
@@ -2319,10 +2545,10 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         endIndex--;
 
         uint16_t value = PoolVar("");
-        uint32_t error = ShuntYard(trimmedLine + index, endIndex - index, &varPool[value], scriptData);
+        uint32_t error = ShuntYard(stringPool[trimmedLine] + index, endIndex - index, &varPool[value], scriptData);
         if (error != 0)
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2340,7 +2566,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         else
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2350,7 +2576,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (isZero)
         {
             int bracketStart = indexOf("{", scriptData->lines[scriptData->currentLine]) + scriptData->lineIndexes[scriptData->currentLine];
-            printf("bracket pos: %d\n", bracketStart);
+            debugPrintf("bracket pos: %d\n", bracketStart);
 
             bool foundEnd = false;
             for (int i = 0; i < scriptData->bracketPairs; i++)
@@ -2358,7 +2584,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 if (scriptData->brackets[i].startPos == bracketStart)
                 {
                     foundEnd = true;
-                    printf("end bracket: %d\n", scriptData->brackets[i].endPos);
+                    debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
 
                     for (int x = 0; x < scriptData->lineCount - 1; x++)
                     {
@@ -2376,11 +2602,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                         scriptData->currentLine = scriptData->lineCount;
                     }
 
-                    free(trimmedLine);
+                    FreeString(&trimmedLine);
                     if (varPool[value].currentType == TYPE_STRING)
                         FreeString(&varPool[value].data.s);
                     FreeVar(&value);
-                    printf("Script line: %d\n", scriptData->currentLine);
+                    debugPrintf("Script line: %d\n", scriptData->currentLine);
 
                     return 0;
                 }
@@ -2388,7 +2614,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
             if (!foundEnd)
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2402,32 +2628,32 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     }
 
     // While statement
-    if (indexOf("while", trimmedLine) == 0)
+    if (indexOf("while", stringPool[trimmedLine]) == 0)
     {
         int index = 2;
-        while (trimmedLine[index] != '(' && trimmedLine[index] != '\0')
+        while (stringPool[trimmedLine][index] != '(' && stringPool[trimmedLine][index] != '\0')
         {
             index++;
         }
-        if (trimmedLine[index] == '\0')
+        if (stringPool[trimmedLine][index] == '\0')
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, scriptData->currentLine);
         }
         index++;
 
-        print("while found (");
+        debugPrint("while found (");
 
         int endIndex = index;
         uint8_t parenthesisCount = 1;
 
-        while (trimmedLine[endIndex] != '\0' && parenthesisCount > 0)
+        while (stringPool[trimmedLine][endIndex] != '\0' && parenthesisCount > 0)
         {
-            if (trimmedLine[endIndex] == ')')
+            if (stringPool[trimmedLine][endIndex] == ')')
             {
                 parenthesisCount--;
             }
-            if (trimmedLine[endIndex] == '(')
+            if (stringPool[trimmedLine][endIndex] == '(')
             {
                 parenthesisCount++;
             }
@@ -2435,13 +2661,13 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         endIndex--;
 
-        print("while found )");
+        debugPrint("while found )");
 
         uint16_t value = PoolVar("");
-        uint32_t error = ShuntYard(trimmedLine + index, endIndex - index, &varPool[value], scriptData);
+        uint32_t error = ShuntYard(stringPool[trimmedLine] + index, endIndex - index, &varPool[value], scriptData);
         if (error != 0)
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2459,7 +2685,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         else
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
@@ -2469,7 +2695,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (isZero)
         {
             int bracketStart = indexOf("{", scriptData->lines[scriptData->currentLine]) + scriptData->lineIndexes[scriptData->currentLine];
-            printf("bracket pos: %d\n", bracketStart);
+            debugPrintf("bracket pos: %d\n", bracketStart);
 
             bool foundEnd = false;
             for (int i = 0; i < scriptData->bracketPairs; i++)
@@ -2477,12 +2703,12 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 if (scriptData->brackets[i].startPos == bracketStart)
                 {
                     foundEnd = true;
-                    printf("end bracket: %d\n", scriptData->brackets[i].endPos);
+                    debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
 
                     for (int x = 0; x < scriptData->lineCount - 1; x++)
                     {
 
-                        printf("(%d,%d): %d\n", scriptData->lineIndexes[x], scriptData->lineIndexes[x + 1], scriptData->brackets[i].endPos);
+                        debugPrintf("(%d,%d): %d\n", scriptData->lineIndexes[x], scriptData->lineIndexes[x + 1], scriptData->brackets[i].endPos);
                         if (
                             scriptData->lineIndexes[x] <= scriptData->brackets[i].endPos &&
                             scriptData->lineIndexes[x + 1] > scriptData->brackets[i].endPos)
@@ -2497,17 +2723,17 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                         scriptData->currentLine = scriptData->lineCount;
                     }
 
-                    free(trimmedLine);
+                    FreeString(&trimmedLine);
                     if (varPool[value].currentType == TYPE_STRING)
                         FreeString(&varPool[value].data.s);
                     FreeVar(&value);
-                    printf("Script line: %d\n", scriptData->currentLine);
+                    debugPrintf("Script line: %d\n", scriptData->currentLine);
                     return 0;
                 }
             }
             if (!foundEnd)
             {
-                free(trimmedLine);
+                FreeString(&trimmedLine);
                 if (varPool[value].currentType == TYPE_STRING)
                     FreeString(&varPool[value].data.s);
                 FreeVar(&value);
@@ -2520,19 +2746,19 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         justShuntYard = false;
     }
 
-    if (indexOf("print", trimmedLine) == 0)
+    if (indexOf("debugPrint", stringPool[trimmedLine]) == 0)
     {
-        int start = indexOf("(", trimmedLine) + 1;
+        int start = indexOf("(", stringPool[trimmedLine]) + 1;
         int endIndex = start;
         uint8_t parenthesisCount = 1;
 
-        while (trimmedLine[endIndex] != '\0' && parenthesisCount > 0)
+        while (stringPool[trimmedLine][endIndex] != '\0' && parenthesisCount > 0)
         {
-            if (trimmedLine[endIndex] == ')')
+            if (stringPool[trimmedLine][endIndex] == ')')
             {
                 parenthesisCount--;
             }
-            if (trimmedLine[endIndex] == '(')
+            if (stringPool[trimmedLine][endIndex] == '(')
             {
                 parenthesisCount++;
             }
@@ -2540,10 +2766,10 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         endIndex--;
         uint16_t out = PoolVar("");
-        uint32_t error = ShuntYard(trimmedLine + start, endIndex - start, &varPool[out], scriptData);
+        uint32_t error = ShuntYard(stringPool[trimmedLine] + start, endIndex - start, &varPool[out], scriptData);
         if (error != 0)
         {
-            free(trimmedLine);
+            FreeString(&trimmedLine);
             FreeVar(&out);
             return error | scriptData->currentLine;
         }
@@ -2563,7 +2789,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %d", scriptData->script->name, varPool[out].data.i);
             }
 
-            printf("float message print: %s\n", stringPool[printMessage]);
+            debugPrintf("float message debugPrint: %s\n", stringPool[printMessage]);
 
             UI_PrintToScreen(stringPool[printMessage], false);
 
@@ -2571,7 +2797,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         else if (varPool[out].currentType == TYPE_STRING)
         {
-            printf("str message print: %s\n", stringPool[varPool[out].data.s]);
+            debugPrintf("str message debugPrint: %s\n", stringPool[varPool[out].data.s]);
 
             uint16_t printMessage = PoolString();
             snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %s", scriptData->script->name, varPool[out].data.s);
@@ -2591,7 +2817,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     if (justShuntYard)
     {
         uint16_t out = PoolVar("");
-        uint32_t error = ShuntYard(trimmedLine, strlen(trimmedLine), &varPool[out], scriptData);
+        uint32_t error = ShuntYard(stringPool[trimmedLine], strlen(stringPool[trimmedLine]), &varPool[out], scriptData);
         if (varPool[out].currentType == TYPE_STRING)
         {
             FreeString(&varPool[out].data.s);
@@ -2600,9 +2826,9 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     }
 
     scriptData->currentLine++;
-    printf("Script line: %d\n", scriptData->currentLine);
+    debugPrintf("Script line: %d\n", scriptData->currentLine);
 
-    free(trimmedLine);
+    FreeString(&trimmedLine);
 
     return 0;
 }
@@ -2613,26 +2839,26 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     int varIndex = indexOf("var", line);
     if (varIndex != -1)
     {
-        print("found var");
+        debugPrint("found var");
         int varStart = varIndex + 3;
         while (line[varStart] <= 32)
         {
             varStart++;
         }
-        printf("start: %d\n", varStart);
+        debugPrintf("start: %d\n", varStart);
         int varEnd = varStart;
         while (line[varEnd] > 32 && line[varEnd] != '=' && varEnd < strlen(line))
         {
             varEnd++;
         }
-        printf("end: %d\n", varEnd);
+        debugPrintf("end: %d\n", varEnd);
         scriptData->data[scriptData->variableCount].currentType = TYPE_FLOAT;
-        print("set type");
+        debugPrint("set type");
         for (int i = 0; i < MAX_NAME_LENGTH; i++)
         {
             if (i < varEnd - varStart)
             {
-                printf("name: %c\n", line[varStart + i]);
+                debugPrintf("name: %c\n", line[varStart + i]);
                 scriptData->data[scriptData->variableCount].name[i] = line[varStart + i];
             }
             else
@@ -2641,7 +2867,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
         }
         scriptData->data[scriptData->variableCount++].data.f = 0;
-        printf("Variable: %s\n", scriptData->data[scriptData->variableCount - 1].name);
+        debugPrintf("Variable: %s\n", scriptData->data[scriptData->variableCount - 1].name);
         return 0;
     }
 
@@ -2668,7 +2894,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
             if (match && scriptData->data[i].currentType == TYPE_FLOAT)
             {
-                printf("Set value %f to %s\n", out, scriptData->data[i].name);
+                debugPrintf("Set value %f to %s\n", out, scriptData->data[i].name);
                 scriptData->data[i].data.f = out;
                 return 0;
             }

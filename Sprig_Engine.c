@@ -68,13 +68,21 @@ int main()
 
     // sleep_ms(5000);
 
-    sleep_ms(4000);
+    //sleep_ms(4000);
+
+    gpio_init(28);
+    gpio_set_dir(28,true);
+    gpio_put(28,true);
+
+    gpio_init(4);
+    gpio_set_dir(4,true);
+    gpio_put(4,true);
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
 
     /*EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x = 0; setPosition(Vector(x,0));  x+=1;");
+                                             "int x = 0; setPosition(Vector(cos(x*PI/180)*5,0));  x+=1;");
 
     // int x=0; while(x<8){ x+=1; if(x%2==0){ print(\"even\"); } if(x%2!=0){ print(\"odd\"); } }
 
@@ -92,7 +100,7 @@ int main()
         FreeString(&error);
 
         int iteration = 0;
-        while (1)
+        while (iteration < 1)
         {
             testData->currentLine = 0;
 

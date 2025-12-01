@@ -10,8 +10,11 @@
 #include "EngineStructs.h"
 #include <string.h>
 #include <math.h>
+#include "MemoryPool.h"
 
-char FILE_IDENTIFIER[] = "SPRIG-ENGINE1\n";
+#include "ColliderPackage.h"
+
+char FILE_IDENTIFIER[] = "SPRIG-ENGINE1";
 
 char *currentProjectName;
 
@@ -20,6 +23,8 @@ typedef struct
     char *array;
     uint8_t length;
 } charArray;
+
+uint16_t SerializeVar(EngineVar *variable);
 
 void SoftReset()
 {
@@ -62,6 +67,7 @@ bool FileExists(char *name)
     bool exists = (result->startBlock != 0);
     if (exists)
     {
+        free(result->name);
         free(result);
         print("file exists");
     }
@@ -81,11 +87,12 @@ void CreateProject(char *name)
     print("allocated memory");
     char buffer[512];
 
-    snprintf(buffer, sizeof(buffer), "%s|%d|%d|%d", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount);
+    snprintf(buffer, sizeof(buffer), "%s`%d`%d`%d`0", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount);
 
     WriteFile(newFile, buffer, 512);
 
     print("wrote to project");
+    free(newFile->name);
     free(newFile);
     DisengageSD();
 }
@@ -102,7 +109,7 @@ bool FileFormattedCorrect(char *name)
         return false;
     }
 
-    uint8_t *data = ReadBlock(file->startBlock);
+    Block data = ReadBlock(file->startBlock);
     print("FileFormatCheck: got file block");
 
     uint8_t blocksOccupied = file->startBlock - file->endBlock + 1;
@@ -110,7 +117,7 @@ bool FileFormattedCorrect(char *name)
     bool validIdentifier = true;
     for (int i = 0; i < strlen(FILE_IDENTIFIER); i++)
     {
-        if (FILE_IDENTIFIER[i] != data[i])
+        if (FILE_IDENTIFIER[i] != data.data[i])
         {
             validIdentifier = false;
             break;
@@ -118,7 +125,8 @@ bool FileFormattedCorrect(char *name)
     }
     print("FileFormatCheck: checked identifier");
     // DisengageSD();
-    free(data);
+
+    free(file->name);
     free(file);
 
     print("FileFormatCheck: freed data");
@@ -141,6 +149,7 @@ uint8_t GetProgramCount(bool flush)
         {
             programCount++;
         }
+        free(f->name);
         free(f);
         print("GetProgramCount: checked file");
     }
@@ -177,6 +186,7 @@ File **GetAllPrograms()
             programs[programIndex] = FileInit(file->name, file->nameLength, file->startBlock, file->endBlock);
             programIndex++;
         }
+        free(file->name);
         free(file);
     }
     DisengageSD();
@@ -247,19 +257,139 @@ void TextToSprite(char *text)
     }
 }
 
+char *SerializeObject(EngineObject *object)
+{
+#define VAR_SERIALIZE_LENGTH 64
+
+    char *output = malloc(strlen(object->name) + 7 + (object->objectDataCount * VAR_SERIALIZE_LENGTH) + (object->scriptCount * 4) + 1);
+
+    sprintf(output, "%s\n%d`%d`%c`%c", object->name, object->scriptCount, object->objectDataCount, (object->objectData[3] != NULL) ? 't' : 'f', 'f');
+
+    printf("obj %s\n", output);
+
+    int index = strlen(output);
+    for (int i = 0; i < object->objectDataCount; i++)
+    {
+        uint16_t value = SerializeVar(object->objectData[i]);
+
+        sprintf(output + index, "`%d`%s\n",
+                object->objectData[i]->currentType,
+                stringPool[value]);
+
+        printf("obj %s\n", output);
+
+        index = strlen(output);
+
+        FreeString(&value);
+    }
+
+    for (int i = 0; i < object->scriptCount; i++)
+    {
+        sprintf(output + index,
+                "`%d",
+                object->scriptIndexes[i]);
+
+        index = strlen(output);
+        printf("obj %s\n", output);
+    }
+
+    output[index] = '\0';
+
+    printf("Object serialized: %s\n", output);
+
+    return output;
+}
+
+EngineVar *DeserializeVar(uint8_t type, char *serializedVar)
+{
+    EngineVar *output = VarConstructor("", 0, NO_TYPE);
+    switch (type)
+    {
+    case TYPE_BOOL:
+        output->currentType = TYPE_BOOL;
+        output->data.b = serializedVar[0] == '0' ? false : true;
+        break;
+    case TYPE_FLOAT:
+        output->currentType = TYPE_FLOAT;
+        output->data.f = atof(serializedVar);
+        break;
+    case TYPE_INT:
+        output->currentType = TYPE_INT;
+        output->data.i = (int)floor(atof(serializedVar));
+        break;
+    case TYPE_STRING:
+        output->currentType = TYPE_STRING;
+        output->data.s = PoolString();
+        strcpy(stringPool[output->data.s], serializedVar);
+        break;
+    case TYPE_VECTOR:
+        output->currentType = TYPE_VECTOR;
+        sscanf(serializedVar, "(%d, %d)", &output->data.XY.x, &output->data.XY.y);
+        break;
+
+    default:
+        break;
+    }
+    return output;
+}
+
+EngineObject *DeserializeObject(char *serializedObject)
+{
+    printf("Deserialize: %s\n", serializedObject);
+
+    int scriptCount = 0;
+    int dataCount = 0;
+    char colliderAdded = 'f';
+    char physicsAdded = 'f';
+    char name[16];
+    sscanf(serializedObject, "%[^\n]\n%d`%d`%c`%c", &name, &scriptCount, &dataCount, &colliderAdded, &physicsAdded);
+
+    printf("header: %s, %d, %d\n", name, scriptCount, dataCount);
+
+    int index = strlen(name) + IntLength(scriptCount) + IntLength(dataCount) + 6;
+
+    EngineObject *objectOut = (EngineObject *)malloc(sizeof(EngineObject));
+    strcpy(objectOut->name, name);
+    objectOut->name[15] = '\0';
+
+    objectOut->scriptCount = scriptCount;
+    objectOut->objectDataCount = dataCount;
+    objectOut->colliderCount = 0;
+    objectOut->objectData = (EngineVar **)malloc(sizeof(EngineVar *) * (3 + COLLIDER_VARS));
+
+    for (int i = 0; i < dataCount; i++)
+    {
+        int type = 0;
+        char data[64];
+        printf("index: %d: %c\n", index, serializedObject[index]);
+        sscanf(serializedObject + index, "`%d`%[^\n]", &type, &data);
+        printf("data type: %d, %s\n", type, data);
+
+        objectOut->objectData[i] = DeserializeVar(type, data);
+        printf("deserialized type: %d\n", objectOut->objectData[i]->currentType);
+
+        index += 3 + IntLength(type) + strlen(data);
+    }
+
+    if (colliderAdded == 't')
+    {
+        strcpy(objectOut->objectData[3]->name,"colliderCenter");
+        strcpy(objectOut->objectData[4]->name,"colliderSize");
+        strcpy(objectOut->objectData[5]->name,"colliderType");
+        strcpy(objectOut->objectData[6]->name,"meshSprite");
+
+
+        RecalculateObjectColliders(objectOut);
+    }
+
+    return objectOut;
+}
+
 void SaveProject(File *file)
 {
     FlushBuffer();
 
     char buffer[512];
-    for (int i = 0; i < 512; i++)
-    {
-        buffer[i] = 0;
-    }
-
-    snprintf(buffer, sizeof(buffer), "%s|%d|%d|%d", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount);
-
-    WriteBlock(file->startBlock, buffer);
 
     for (int i = 0; i < 512; i++)
     {
@@ -329,7 +459,50 @@ void SaveProject(File *file)
 
     free(scriptNames);
 
+    blockChange += ceil((float)scriptNameLength / 512) + 1; // extra empty block for good measure
+    file->startBlock -= ceil((float)scriptNameLength / 512) + 1;
+
+    printf("scene block: %d\n", file->startBlock);
+
+    int sceneNameLength = 1;
+    for (int i = 0; i < sceneCount; i++)
+    {
+        sceneNameLength += strlen(scenes[i].name) + 1;
+    }
+
+    char *sceneNames = malloc(sceneNameLength);
+
+    index = 0;
+    for (int i = 0; i < sceneCount; i++)
+    {
+        printf("Save scene: %s, index: %d\n", scenes[i].name, i);
+        strncpy(sceneNames + index, scenes[i].name, strlen(scenes[i].name));
+
+        sceneNames[index + strlen(scenes[i].name)] = '\n';
+
+        index += strlen(scenes[i].name) + 1;
+    }
+
+    sceneNames[sceneNameLength - 1] = '\0';
+
+    printf("scene names: %s\n", sceneNames);
+
+    WriteFile(file, sceneNames, sceneNameLength);
+
+    print("saved scene names to project");
+
+    free(sceneNames);
+
     file->startBlock += blockChange;
+
+    for (int i = 0; i < 512; i++)
+    {
+        buffer[i] = 0;
+    }
+
+    snprintf(buffer, sizeof(buffer), "%s`%d`%d`%d`%d", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount, file->startBlock - blockChange);
+
+    WriteBlock(file->startBlock, buffer);
 
     DisengageSD();
 }
@@ -340,50 +513,50 @@ void LoadProject(File *file)
     strcpy(currentProjectName, file->name);
 
     FlushBuffer();
-    char *buffer = ReadBlock(file->startBlock);
+    Block buffer = ReadBlock(file->startBlock);
 
     int index = 0;
 
-    while (buffer[index++] != '|')
+    while (buffer.data[index++] != '`')
         ;
 
-    printf("%s", buffer + index);
+    printf("%s", buffer.data + index);
 
-    int v1, v2, v3;
+    int v1, v2, v3, v4;
 
-    sscanf(buffer + index, "%d|%d|%d", &v1, &v2, &v3);
+    sscanf(buffer.data + index, "%d`%d`%d`%d", &v1, &v2, &v3, &v4);
 
     printf("v1: %d\n", v1);
     spriteCount = (uint8_t)v1;
     scriptCount = (uint8_t)v2;
     sceneCount = (uint8_t)v3;
+    int sceneBlockStart = v4;
 
     printf("Sprites: %d\n", spriteCount);
 
-    free(buffer);
-
-    buffer = ReadBlock(file->startBlock - 1);
+    memcpy(buffer.data, ReadBlock(file->startBlock - 1).data, 512);
     for (int i = 0; i < spriteCount; i++)
     {
         if (i % 3 == 0)
         {
-            free(buffer);
-            buffer = ReadBlock(file->startBlock - i / 3 - 1);
+            memcpy(buffer.data, ReadBlock(file->startBlock - i / 3 - 1).data, 512);
         }
         print("\nsprite\n");
 
-        TextToSprite(buffer + (i % 3) * 129);
+        TextToSprite(buffer.data + (i % 3) * 129);
     }
-    free(buffer);
 
     int readScriptOffest = ceil(spriteCount / 3) + 1;
 
+    int originalStartBlock = file->startBlock;
     file->startBlock -= readScriptOffest;
 
     char *scriptsData = ReadFileUntil(file, '\0');
     printf("scripts include: %s\n", scriptsData);
 
     index = 0;
+
+    int scriptsNameLength = 1;
 
     for (int i = 0; i < scriptCount; i++)
     {
@@ -396,14 +569,15 @@ void LoadProject(File *file)
             index++;
         }
         name[nameIndex] = '\0';
+        scriptsNameLength += strlen(name) + 1;
         printf("Script name: %s\n", name);
         index++;
 
         strcpy(scripts[i].name, name);
         scripts[i].ID = i;
 
-        char *fullScriptName = malloc(strlen(name) + 1 + strlen(program->name) + strlen(":ENGINESCRIPT") + 1);
-        sprintf(fullScriptName, "%s:%s:ENGINESCRIPT", name, program->name);
+        char *fullScriptName = malloc(strlen(name) + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
+        sprintf(fullScriptName, "%s`%s`ENGINESCRIPT", name, program->name);
         File *scriptFile = GetFile(fullScriptName);
 
         scripts[i].content = ReadFileUntil(scriptFile, '\0');
@@ -417,7 +591,69 @@ void LoadProject(File *file)
 
     free(scriptsData);
 
-    file->startBlock += readScriptOffest;
+    if (sceneBlockStart != 0)
+    {
+        file->startBlock = sceneBlockStart;
+
+        printf("scene block: %d\n", file->startBlock);
+
+        char *scenesData = ReadFileUntil(file, '\0');
+        printf("scenes include: %s\n", scenesData);
+
+        index = 0;
+        printf("scene count %d\n", sceneCount);
+        for (int i = 0; i < sceneCount; i++)
+        {
+            printf("Scene loop %d\n", i);
+            char name[16];
+            uint8_t nameIndex = 0;
+            while (scenesData[index] != '\n' && scenesData[index] != '\0' && nameIndex < 15)
+            {
+                printf("scene letter: %c\n", scenesData[index]);
+                name[nameIndex++] = scenesData[index];
+                index++;
+            }
+            name[nameIndex] = '\0';
+            printf("scene name: %s\n", name);
+            index++;
+
+            strncpy(scenes[i].name, name, sizeof(scenes[i].name));
+            scenes[i].name[sizeof(scenes[i].name) - 1] = '\0';
+
+            char *sceneFileName = malloc(32);
+            sprintf(sceneFileName, "%s`%s`%s", FILE_IDENTIFIER, currentProjectName, name);
+            File *sceneFile = GetFile(sceneFileName);
+
+            free(sceneFileName);
+
+            char *objectsSerialized = ReadFileUntil(sceneFile, '\0');
+            printf("object header: %s\n", objectsSerialized);
+            int objectCount = 0;
+            sscanf(objectsSerialized, "%d", &objectCount);
+            free(objectsSerialized);
+
+            scenes[i].objectCount = objectCount;
+            scenes[i].objects = malloc(sizeof(EngineObject) * MAX_OBJECTS);
+
+            sceneFile->startBlock -= 1;
+
+            printf("Object count: %d\n", objectCount);
+
+            for (int x = 0; x < objectCount; x++)
+            {
+                printf("setting object %d\n", x);
+                char *objectData = ReadFileUntil(sceneFile, '\0');
+                scenes[i].objects[x] = *DeserializeObject(objectData);
+                free(objectData);
+                sceneFile->startBlock -= 2;
+            }
+
+            free(sceneFile);
+        }
+
+        free(scenesData);
+    }
+    file->startBlock = originalStartBlock;
 
     DisengageSD();
 }
