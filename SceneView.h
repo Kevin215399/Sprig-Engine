@@ -575,7 +575,7 @@ void RenderScene(int offsetX, int offsetY)
             camera = &currentScene->objects[i];
         }
 
-        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i],"position")->data.i,
+        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i,
 
                            80 + offsetX + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x,
                            64 + offsetY + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y,

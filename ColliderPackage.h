@@ -198,7 +198,6 @@ void RecalculateObjectColliders(EngineObject *object)
 }
 void AddColliderToObject(EngineObject *object, uint16_t colliderType, bool calculateColliders)
 {
-    object->objectDataCount+=COLLIDER_VARS;
     object->packages[0]=true;
 
   

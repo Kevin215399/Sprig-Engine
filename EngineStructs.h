@@ -418,6 +418,8 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
+    output->objectDataCount=0;
+    output->objectDataTail=NULL;
 
     memset(output->packages, 0, sizeof(output->packages));
 
@@ -425,12 +427,15 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     AddDataToObject(output, VarConstructor("sprite", strlen("sprite"), TYPE_INT));
     AddDataToObject(output, VarConstructor("scale", strlen("scale"), TYPE_VECTOR));
 
+    print("Added data");
+
     GetObjectDataByName(output, "sprite")->data.i = 0;
     GetObjectDataByName(output, "scale")->data.XY.x = 1;
     GetObjectDataByName(output, "scale")->data.XY.y = 1;
 
     GetObjectDataByName(output, "position")->data.XY.x = 0;
     GetObjectDataByName(output, "position")->data.XY.y = 0;
+    print("set data");
 
     output->colliderCount = 0;
 
