@@ -19,6 +19,8 @@ File *program;
 #include "ProgramSelect.h"
 #include "Editor.h"
 
+
+
 #include "Interpreter.h"
 
 void RenderTest()
@@ -70,13 +72,7 @@ int main()
 
     //sleep_ms(4000);
 
-    gpio_init(28);
-    gpio_set_dir(28,true);
-    gpio_put(28,true);
-
-    gpio_init(4);
-    gpio_set_dir(4,true);
-    gpio_put(4,true);
+    InitializeLights();
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();

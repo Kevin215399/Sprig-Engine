@@ -6,7 +6,9 @@
 #include <string.h>
 // #include "LinkedList.h"
 
-#define MAX_SCRIPTS_PER_OBJECT 5
+#define COLLIDER_VARS 4
+
+#define MAX_SCRIPTS_PER_OBJECT 10
 #define MAX_NAME_LENGTH 16
 #define MAX_PARAMETERS 10
 
@@ -144,18 +146,33 @@ typedef struct ScriptData
 
 } ScriptData;
 
+typedef struct VarNode
+{
+    struct VarNode *next;
+    struct VarNode *previous;
+    uint8_t index;
+    EngineVar *link;
+} VarNode;
+
 // A struct that defines an engine object. holds scripts, a sprite, name, and data
 typedef struct EngineObject
 {
     uint8_t ID;
     char name[MAX_NAME_LENGTH];
-    // uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
+
     uint8_t scriptCount;
 
-    ScriptData **scriptData;
+    ScriptData *scriptData[MAX_SCRIPTS_PER_OBJECT];
+    uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
 
     // Each object has position, sprite, and scale
-    EngineVar **objectData;
+    VarNode *objectDataTail;
+    uint8_t objectDataCount;
+
+    uint8_t colliderCount;
+    uint16_t *colliderBoxes;
+
+    bool packages[2];
 
 } EngineObject;
 
@@ -322,6 +339,66 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
     return output;
 }
 
+void AddDataToObject(EngineObject *object, EngineVar *data)
+{
+    if (object->objectDataTail == NULL)
+    {
+        object->objectDataTail = malloc(sizeof(VarNode));
+        object->objectDataTail->link = data;
+        object->objectDataTail->next = NULL;
+        object->objectDataTail->previous = NULL;
+        object->objectDataTail->index = object->objectDataCount;
+        object->objectDataCount++;
+        return;
+    }
+
+    VarNode *newNode = malloc(sizeof(VarNode));
+
+    object->objectDataTail->next = newNode;
+    newNode->previous = object->objectDataTail;
+
+    newNode->next = NULL;
+    newNode->link = data;
+    newNode->index = object->objectDataCount;
+
+    object->objectDataTail = newNode;
+    object->objectDataCount++;
+}
+
+EngineVar *GetObjectDataByName(EngineObject *obj, char *name)
+{
+    VarNode *current = obj->objectDataTail;
+    while (current != NULL)
+    {
+        if (strcmp(current->link->name, name) == 0)
+        {
+            return current->link;
+        }
+        current = current->previous;
+    }
+    return NULL;
+}
+EngineVar *GetObjectDataByIndex(EngineObject *obj, uint8_t index)
+{
+    VarNode *current = obj->objectDataTail;
+    while (current != NULL)
+    {
+        if (current->index == index)
+        {
+            return current->link;
+        }
+        current = current->previous;
+    }
+    return NULL;
+}
+EngineVar **ObjectDataToList(EngineObject*object){
+    EngineVar** list = (EngineVar**)malloc(sizeof(EngineVar*)*object->objectDataCount);
+    for(int i = 0; i < object->objectDataCount;i++){
+        list[i] = GetObjectDataByIndex(object,i);
+    }
+    return list;
+}
+
 EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 {
     EngineObject *output = (EngineObject *)malloc(sizeof(EngineObject));
@@ -339,18 +416,24 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
         }
     }
 
-    output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
+    // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
 
-    output->objectData = (EngineVar **)malloc(sizeof(EngineVar *) * 3);
-    output->objectData[0] = VarConstructor("position", strlen("position"), TYPE_VECTOR);
-    output->objectData[1] = VarConstructor("sprite", strlen("sprite"), TYPE_INT);
-    output->objectData[2] = VarConstructor("scale", strlen("scale"), TYPE_INT);
-    output->objectData[1]->data.i = 0;
-    output->objectData[2]->data.i = 1;
+    memset(output->packages, 0, sizeof(output->packages));
 
-    output->objectData[0]->data.XY.x = 0;
-    output->objectData[0]->data.XY.y = 0;
+    AddDataToObject(output, VarConstructor("position", strlen("position"), TYPE_VECTOR));
+    AddDataToObject(output, VarConstructor("sprite", strlen("sprite"), TYPE_INT));
+    AddDataToObject(output, VarConstructor("scale", strlen("scale"), TYPE_VECTOR));
+
+    GetObjectDataByName(output, "sprite")->data.i = 0;
+    GetObjectDataByName(output, "scale")->data.XY.x = 1;
+    GetObjectDataByName(output, "scale")->data.XY.y = 1;
+
+    GetObjectDataByName(output, "position")->data.XY.x = 0;
+    GetObjectDataByName(output, "position")->data.XY.y = 0;
+
+    output->colliderCount = 0;
+
     return output;
 }
 

@@ -204,7 +204,7 @@ void EditSprite(uint8_t spriteIndex)
     uint8_t cursorX = 0;
     uint8_t cursorY = 0;
 
-    uint8_t pixelSize = 5;
+    uint8_t pixelSize = 4;
     uint8_t spacing = 2;
 
     uint16_t currentColor = RGBTo16(255, 255, 255);
@@ -245,7 +245,15 @@ void EditSprite(uint8_t spriteIndex)
             {
                 for (int y = 0; y < SPRITE_HEIGHT; y++)
                 {
-                    Rectangle(sprites[spriteIndex].sprite[x][y], 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), pixelSize, pixelSize);
+                    if (sprites[spriteIndex].sprite[x][y] == TRANSPARENT)
+                    {
+                        Rectangle(WHITE, 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), 2, 2);
+                        Rectangle(WHITE, 5 + x * (pixelSize + spacing) + 2, 25 + y * (pixelSize + spacing) + 2, 2, 2);
+                        Rectangle(RGBTo16(100, 100, 100), 5 + x * (pixelSize + spacing) + 2, 25 + y * (pixelSize + spacing), 2, 2);
+                        Rectangle(RGBTo16(100, 100, 100), 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing) + 2, 2, 2);
+                    }
+                    else
+                        Rectangle(sprites[spriteIndex].sprite[x][y], 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), pixelSize, pixelSize);
                 }
             }
 
@@ -374,7 +382,7 @@ void SpriteMode()
                     {
                         for (int y = 0; y < SPRITE_HEIGHT; y++)
                         {
-                            sprites[spriteIndex].sprite[x][y] = BLACK;
+                            sprites[spriteIndex].sprite[x][y] = TRANSPARENT;
                         }
                     }
                     EditSprite(spriteIndex);
@@ -531,9 +539,9 @@ void EditScript(uint8_t scriptIndex)
 
                     FlushBuffer();
 
-                    char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen(":ENGINESCRIPT") + 1);
+                    char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
 
-                    sprintf(saveName, "%s:%s:ENGINESCRIPT", scripts[scriptIndex].name, program->name);
+                    sprintf(saveName, "%s`%s`ENGINESCRIPT", scripts[scriptIndex].name, program->name);
 
                     File *file = GetFile(saveName);
 
@@ -541,7 +549,7 @@ void EditScript(uint8_t scriptIndex)
                     {
                         file = CreateFile(saveName, strlen(saveName), 10);
                     }
-                    currentScriptText[caretPosition] = '\0';
+                    // currentScriptText[caretPosition] = '\0';
                     WriteFile(file, currentScriptText, SCRIPT_LENGTH - 1);
 
                     if (scripts[scriptIndex].content != NULL)
@@ -564,7 +572,7 @@ void EditScript(uint8_t scriptIndex)
             else
             {
                 HandleKeyboardInputs();
-                if (GetButton() == BUTTON_J && caretPosition < SCRIPT_LENGTH)
+                if (GetButton() == BUTTON_J && caretPosition < SCRIPT_LENGTH && animateKeyboard > 55)
                 {
                     if (currentCharacter == UPPERCASE_SYB)
                     {
@@ -651,9 +659,11 @@ int SelectScript()
                 if (i == currentScript)
                 {
                     Rectangle(GREEN, 4, yPos - 1, 152, 9);
-                    WriteWord(scenes[i].name, strlen(scenes[i].name), 6, yPos, 1, BLACK, TRANSPARENT);
-                } else {
-                    WriteWord(scenes[i].name, strlen(scenes[i].name), 6, yPos, 1, WHITE, TRANSPARENT);
+                    WriteWord(scripts[i].name, strlen(scripts[i].name), 6, yPos, 1, BLACK, TRANSPARENT);
+                }
+                else
+                {
+                    WriteWord(scripts[i].name, strlen(scripts[i].name), 6, yPos, 1, WHITE, TRANSPARENT);
                 }
             }
 

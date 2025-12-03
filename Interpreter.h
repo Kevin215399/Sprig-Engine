@@ -15,7 +15,11 @@
 
 #include "MemoryPool.h"
 
-//#define DEBUG 1
+#define LEFT_LIGHT 28
+#define RIGHT_LIGHT 4
+
+#define DEBUG 1
+
 
 #ifdef DEBUG
 #define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
@@ -90,7 +94,7 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 29
+#define OPERATOR_COUNT 31
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
@@ -102,6 +106,9 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"getPosition", 13, 0},
     {"getScale", 13, 0},
     {"getSprite", 13, 0},
+
+    {"rightLED",13, 1},
+    {"leftLED",13,1},
 
     {"setCameraScale", 13, 1},
 
@@ -151,6 +158,16 @@ int IntLength(int value)
     }
     return numberLength;
 }*/
+
+void InitializeLights(){
+    gpio_init(LEFT_LIGHT);
+    gpio_set_dir(LEFT_LIGHT,true);
+    gpio_put(LEFT_LIGHT,false);
+
+    gpio_init(RIGHT_LIGHT);
+    gpio_set_dir(RIGHT_LIGHT,true);
+    gpio_put(RIGHT_LIGHT,false);
+}
 
 char ToLower(char in)
 {
@@ -1116,12 +1133,25 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
                 if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->objectData[2]->currentType == TYPE_INT)
                 {
+                    varPool[result].currentType=NO_TYPE;
                     scriptData->linkedObject->objectData[2]->data.i = varPool[parameters[0]].data.f;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
                 {
+                    varPool[result].currentType=NO_TYPE;
                     scriptData->linkedObject->objectData[1]->data.i = (int)varPool[parameters[0]].data.f;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
+                {
+                    varPool[result].currentType=NO_TYPE;
+                    gpio_put(LEFT_LIGHT,varPool[parameters[0]].data.f!=0);
+                }
+                if (strcmp(stringPool[operandStack[i].atom], "rightLED") == 0 && scriptData->linkedObject != NULL)
+                {
+                    varPool[result].currentType=NO_TYPE;
+                    gpio_put(RIGHT_LIGHT,varPool[parameters[0]].data.f!=0);
                 }
             }
 
@@ -1537,12 +1567,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
     }
     debugPrintf("trimmed line: %s\n", stringPool[trimmedLine]);
 
-    debugPrint("check after trim");
-    for (int i = 0; i < output->lineCount; i++)
-    {
-        debugPrintf("split done line num %d\n", i);
-        debugPrintf("split done line: %s\n", output->lines[i]);
-    }
+
 
     int varType = GetTypeFromString(stringPool[trimmedLine]);
     debugPrintf("got type %d\n", varType);
@@ -1593,12 +1618,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
         }
 
-        debugPrint("check before dec");
-        for (int i = 0; i < output->lineCount; i++)
-        {
-            debugPrintf("split done line num %d\n", i);
-            debugPrintf("split done line: %s\n", output->lines[i]);
-        }
 
         if (stringPool[trimmedLine][index] == '(')
         { // function declare
@@ -1723,12 +1742,8 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             strncpy(output->data[output->variableCount].name, stringPool[entityName], MAX_NAME_LENGTH - 1);
             output->data[output->variableCount].name[MAX_NAME_LENGTH - 1] = '\0';
 
-            debugPrint("check var start");
-            for (int i = 0; i < output->lineCount; i++)
-            {
-                debugPrintf("split done line num %d\n", i);
-                debugPrintf("split done line: %s\n", output->lines[i]);
-            }
+            printf("new var: %s\n",output->data[output->variableCount].name);
+
 
             while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
             {
@@ -1758,12 +1773,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 
             uint32_t error = ShuntYard(stringPool[trimmedLine] + index, strlen(stringPool[trimmedLine] + index), &varPool[assignValue], output);
 
-            debugPrint("check after shunt");
-            for (int i = 0; i < output->lineCount; i++)
-            {
-                debugPrintf("split done line num %d\n", i);
-                debugPrintf("split done line: %s\n", output->lines[i]);
-            }
+
 
             if (error != 0)
             {
@@ -1777,6 +1787,8 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
+                    debugPrintf("indexes: %d, %d\n",output->variableCount,assignValue);
+                    debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
                     output->data[output->variableCount].data.i = varPool[assignValue].data.i;
                 }
                 else if (varPool[assignValue].currentType == TYPE_FLOAT)
@@ -1792,21 +1804,9 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
 
-                debugPrint("check after int");
-                for (int i = 0; i < output->lineCount; i++)
-                {
-                    debugPrintf("split done line num %d\n", i);
-                    debugPrintf("split done line: %s\n", output->lines[i]);
-                }
             }
             else if (output->data[output->variableCount].currentType == TYPE_FLOAT)
             {
-                debugPrint("check before float");
-                for (int i = 0; i < output->lineCount; i++)
-                {
-                    debugPrintf("split done line num %d\n", i);
-                    debugPrintf("split done line: %s\n", output->lines[i]);
-                }
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
                     debugPrintf("indexes: %d, %d\n",output->variableCount,assignValue);
@@ -1825,13 +1825,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                     FreeString(&entityName);
                     FreeVar(&assignValue);
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
-                }
-
-                debugPrint("check after float");
-                for (int i = 0; i < output->lineCount; i++)
-                {
-                    debugPrintf("split done line num %d\n", i);
-                    debugPrintf("split done line: %s\n", output->lines[i]);
                 }
             }
             else if (EqualType(&varPool[assignValue], &output->data[output->variableCount], TYPE_STRING))

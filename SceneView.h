@@ -143,9 +143,8 @@ uint32_t errors[10];
 uint8_t errorCount;
 
 char *packageNames[] = {
-    "Base",
     "Collision"};
-#define PACKAGE_COUNT 2
+#define PACKAGE_COUNT 1
 
 #define NORMAL_FIELD 0
 #define VECTOR_X_FIELD 1
@@ -676,7 +675,7 @@ void RecompileScene()
             FreeString(&error);
         }
 
-        if (currentScene->objects[i].objectData[3] != NULL)
+        if (currentScene->objects[i].packages[0])
         {
             RecalculateObjectColliders(&currentScene->objects[i]);
         }
@@ -1096,70 +1095,34 @@ void ManageSceneUI()
             // Serialize var prototype
             uint16_t SerializeVar(EngineVar * variable);
 
-            uint8_t objectPackageCount = 0;
+            uint8_t objectPackageCount = 1;
             bool doCollider = false;
             bool doPhysics = false;
 
-            if (currentScene->objects[currentObject].objectData[3] != NULL)
+            if (currentScene->objects[currentObject].packages[0])
             {
                 doCollider = true;
                 objectPackageCount++;
             }
 
-            if (currentScene->objects[currentObject].scriptCount + objectPackageCount > 0)
+            if (modulePage == 0)
             {
-                if (doCollider)
-                {
-                    DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &currentScene->objects[currentObject].objectData[3], &buttonIndex, variableLinks);
-                }
-                else
-                {
-                    /*uint8_t scriptIndex = modulePage - objectPackageCount;
-                    uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
-                    SetPanel(&panels[MODULE_PANELS + scriptIndex], 3, height, 154, 15 * (1 + scriptVariables), 6, RGBTo16(70, 70, 70), RGBTo16(120, 120, 120));
-                    DrawPanel(&panels[MODULE_PANELS + scriptIndex]);
-
-                    WriteWord(
-                        (currentScene->objects[currentObject].scriptData[scriptIndex]->script->name),
-                        strlen(currentScene->objects[currentObject].scriptData[scriptIndex]->script->name),
-                        31,
-                        height + 3,
-                        1,
-                        WHITE,
-                        ORANGE);
-
-                    SetButton(&buttons[buttonIndex], 5, 15, 23, 11, 5, BLACK, WHITE, RED, WHITE, NULL, NULL, NULL, NULL);
-                    AddTextToButton(&buttons[buttonIndex], "DEL", RED, 1);
-                    DrawButton(&buttons[buttonIndex]);
-                    buttonIndex++;
-
-                    for (int x = 0; x < scriptVariables; x++)
-                    {
-                        printf("Var button: %d\n", x);
-
-                        variableList[variableCount] = &(currentScene->objects[currentObject].scriptData[scriptIndex]->data[x]);
-
-                        WriteWord(
-                            (variableList[variableCount]->name),
-                            strlen(variableList[variableCount]->name),
-                            6,
-                            height + 15 * (x + 1) + 2,
-                            1,
-                            WHITE,
-                            RGBTo16(0, 0, 80));
-
-                        uint8_t buttonStart = 15 + (FONT_WIDTHS[0] + 1) * strlen(variableList[variableCount]->name);
-
-                        SetButton(&buttons[buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
-                        buttons[buttonIndex].textAnchor = LEFT_ANCHOR;
-                        uint16_t data = SerializeVar(variableList[variableCount]);
-                        AddTextToButton(&buttons[buttonIndex], stringPool[data], WHITE, 1);
-                        FreeString(&data);
-                        DrawButton(&buttons[buttonIndex++]);
-
-                        variableCount++;
-                    }*/
-                }
+                DrawModulePage("Base", 3, &variableCount, currentScene->objects[currentObject].objectData, &buttonIndex, variableLinks);
+            }
+            else if (doCollider && modulePage == 1)
+            {
+                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &currentScene->objects[currentObject].objectData[3], &buttonIndex, variableLinks);
+            }
+            else
+            {
+                uint8_t scriptIndex = modulePage - objectPackageCount;
+                uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
+                DrawModulePage(scripts[currentScene->objects[currentObject].scriptIndexes[scriptIndex]].name,
+                               scriptVariables,
+                               &variableCount,
+                               &currentScene->objects[currentObject].scriptData[scriptIndex]->data,
+                               &buttonIndex,
+                               variableLinks);
             }
 
             if (buttonIndex > MODULE_BUTTONS)
@@ -1546,7 +1509,11 @@ void ManageSceneUI()
                     sleep_ms(100);
                 }
 
-                uint8_t scriptCount = currentScene->objects[currentObject].scriptCount;
+                uint8_t scriptCount = currentScene->objects[currentObject].scriptCount + 1;
+                if(currentScene->objects[currentObject].packages[0]){
+                    print("has collider");
+                    scriptCount++;
+                }
                 if (GetButton() == BUTTON_D)
                 {
                     modulePage++;
