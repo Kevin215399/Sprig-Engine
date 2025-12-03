@@ -1034,15 +1034,15 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     debugPrintf("set pos (%d,%d)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
 
-                    scriptData->linkedObject->objectData[0]->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    scriptData->linkedObject->objectData[0]->data.XY.y = -varPool[parameters[0]].data.XY.y;
+                    GetObjectDataByName(scriptData->linkedObject,"position")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject,"position")->data.XY.y = -varPool[parameters[0]].data.XY.y;
 
                     debugPrint("set");
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->objectData[2]->currentType == TYPE_VECTOR)
+                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL &&  GetObjectDataByName(scriptData->linkedObject,"scale")->currentType == TYPE_VECTOR)
                 {
-                    scriptData->linkedObject->objectData[2]->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    scriptData->linkedObject->objectData[2]->data.XY.y = varPool[parameters[0]].data.XY.y;
+                    GetObjectDataByName(scriptData->linkedObject,"scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                     GetObjectDataByName(scriptData->linkedObject,"scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
                 }
             }
 
@@ -1131,16 +1131,17 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.f = sin(varPool[parameters[0]].data.f);
                 }
 
-                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->objectData[2]->currentType == TYPE_INT)
+                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject,"scale")->currentType == TYPE_INT)
                 {
                     varPool[result].currentType=NO_TYPE;
-                    scriptData->linkedObject->objectData[2]->data.i = varPool[parameters[0]].data.f;
+
+                    GetObjectDataByName(scriptData->linkedObject,"scale")->data.i = varPool[parameters[0]].data.f;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
                 {
                     varPool[result].currentType=NO_TYPE;
-                    scriptData->linkedObject->objectData[1]->data.i = (int)varPool[parameters[0]].data.f;
+                    GetObjectDataByName(scriptData->linkedObject,"sprite")->data.i = (int)varPool[parameters[0]].data.f;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
