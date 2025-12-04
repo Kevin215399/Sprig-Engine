@@ -87,7 +87,7 @@ void CreateProject(char *name)
     print("allocated memory");
     char buffer[512];
 
-    snprintf(buffer, sizeof(buffer), "%s`%d`%d`%d`0", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount);
+    snprintf(buffer, sizeof(buffer), "%s`0`0`0`0`0", FILE_IDENTIFIER);
 
     WriteFile(newFile, buffer, 512);
 
@@ -275,7 +275,7 @@ char *SerializeObject(EngineObject *object)
 
         sprintf(output + index, "`%s\n`%d`%s\n",
                 objectData->name,
-                objectData,
+                objectData->currentType,
                 stringPool[value]);
 
         printf("obj %s\n", output);
@@ -343,7 +343,8 @@ EngineObject *DeserializeObject(char *serializedObject)
     int dataCount = 0;
     char colliderAdded = 'f';
     char physicsAdded = 'f';
-    char name[16];
+    char name[16]={0};
+    
     sscanf(serializedObject, "%[^\n]\n%d`%d`%c`%c", &name, &scriptCount, &dataCount, &colliderAdded, &physicsAdded);
 
     printf("header: %s, %d, %d\n", name, scriptCount, dataCount);
@@ -355,20 +356,25 @@ EngineObject *DeserializeObject(char *serializedObject)
     objectOut->name[15] = '\0';
 
     objectOut->scriptCount = scriptCount;
-    objectOut->objectDataCount = dataCount;
     objectOut->colliderCount = 0;
+
+    objectOut->objectDataCount=0;
+    objectOut->objectDataTail=NULL;
 
     for (int i = 0; i < dataCount; i++)
     {
         int type = 0;
-        char dataName[32];
+        char dataName[32]={0};
         char data[64];
         printf("index: %d: %c\n", index, serializedObject[index]);
         sscanf(serializedObject + index, "`%[^\n]\n`%d`%[^\n]\n",&dataName, &type, &data);
+        printf("name: %s\n",dataName);
         printf("data type: %d, %s\n", type, data);
 
         EngineVar *var = DeserializeVar(type, data);
-        strcpy(var->name,dataName);
+        strncpy(var->name,dataName,16);
+        var->name[15]='\0';
+        print("Deserialized var, adding to object");
         AddDataToObject(objectOut,var);
         
         printf("deserialized type: %d\n", GetObjectDataByIndex(objectOut,i)->currentType);

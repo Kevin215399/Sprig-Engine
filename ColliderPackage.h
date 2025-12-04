@@ -171,7 +171,7 @@ void RecalculateObjectColliders(EngineObject *object)
         object->colliderCount = 0;
     }
 
-    if (object->objectData[5]->data.i == COLLIDER_RECT)
+    if (GetObjectDataByName(object,"colliderType")->data.i == COLLIDER_RECT)
     {
         object->colliderBoxes = (uint16_t *)malloc(sizeof(uint16_t));
         object->colliderCount = 1;
@@ -184,7 +184,7 @@ void RecalculateObjectColliders(EngineObject *object)
     }
     else
     {
-        uint8_t rectsInMesh = SpriteToMesh(&sprites[object->objectData[1]->data.i]);
+        uint8_t rectsInMesh = SpriteToMesh(&sprites[GetObjectDataByName(object,"sprite")->data.i]);
 
         uint16_t *mesh = (uint16_t *)malloc(sizeof(uint16_t) * rectsInMesh);
         for (int i = 0; i < rectsInMesh; i++)
@@ -198,22 +198,28 @@ void RecalculateObjectColliders(EngineObject *object)
 }
 void AddColliderToObject(EngineObject *object, uint16_t colliderType, bool calculateColliders)
 {
-    object->objectDataCount+=COLLIDER_VARS;
     object->packages[0]=true;
 
-    object->objectData[3] = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR);
-    object->objectData[3]->data.XY.x = 0;
-    object->objectData[3]->data.XY.y = 0;
+  
+    EngineVar*center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR);
+    center->data.XY.x = 0;
+    center->data.XY.y = 0;
+    AddDataToObject(object,center);
 
-    object->objectData[4] = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR);
-    object->objectData[4]->data.XY.x = 1;
-    object->objectData[4]->data.XY.y = 1;
+    EngineVar*size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR);
+    size->data.XY.x = 1;
+    size->data.XY.y = 1;
+    AddDataToObject(object,size);
 
-    object->objectData[5] = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT);
-    object->objectData[5]->data.i = colliderType;
+    EngineVar*type = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT);
+    type->data.i = colliderType;
+    AddDataToObject(object,type);
 
-    object->objectData[6] = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT);
-    object->objectData[6]->data.i = object->objectData[1]->data.i;
+    EngineVar*sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT);
+    sprite->data.i = GetObjectDataByName(object,"sprite")->data.i;
+    AddDataToObject(object,sprite);
+    
+
 
     if (calculateColliders)
         RecalculateObjectColliders(object);

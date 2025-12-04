@@ -559,15 +559,15 @@ void RenderScene(int offsetX, int offsetY)
     {
         Vector2 scale;
 
-        if (currentScene->objects[i].objectData[2]->currentType == TYPE_INT)
+        if  (GetObjectDataByName(&currentScene->objects[i],"scale")->currentType == TYPE_INT)
         {
-            scale.x = currentScene->objects[i].objectData[2]->data.i;
-            scale.y = currentScene->objects[i].objectData[2]->data.i;
+            scale.x = GetObjectDataByName(&currentScene->objects[i],"scale")->data.i;
+            scale.y = GetObjectDataByName(&currentScene->objects[i],"scale")->data.i;
         }
         else
         {
-            scale.x = currentScene->objects[i].objectData[2]->data.XY.x;
-            scale.y = currentScene->objects[i].objectData[2]->data.XY.y;
+            scale.x = GetObjectDataByName(&currentScene->objects[i],"scale")->data.XY.x;
+            scale.y = GetObjectDataByName(&currentScene->objects[i],"scale")->data.XY.y;
         }
 
         if (strcmp(currentScene->objects[i].name, "Camera") == 0)
@@ -575,10 +575,10 @@ void RenderScene(int offsetX, int offsetY)
             camera = &currentScene->objects[i];
         }
 
-        DrawSpriteCentered(currentScene->objects[i].objectData[1]->data.i,
+        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i,
 
-                           80 + offsetX + sceneScale * currentScene->objects[i].objectData[0]->data.XY.x,
-                           64 + offsetY + sceneScale * currentScene->objects[i].objectData[0]->data.XY.y,
+                           80 + offsetX + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x,
+                           64 + offsetY + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y,
                            sceneScale * scale.x,
                            sceneScale * scale.y);
 
@@ -589,37 +589,39 @@ void RenderScene(int offsetX, int offsetY)
 
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * currentScene->objects[i].objectData[4]->data.XY.x * (rect->center.x + currentScene->objects[i].objectData[3]->data.XY.x) + currentScene->objects[i].objectData[0]->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * currentScene->objects[i].objectData[4]->data.XY.y * (rect->center.y + currentScene->objects[i].objectData[3]->data.XY.y) + currentScene->objects[i].objectData[0]->data.XY.y),
-                sceneScale * scale.x * rect->scale.x * currentScene->objects[i].objectData[4]->data.XY.x,
-                sceneScale * scale.y * rect->scale.y * currentScene->objects[i].objectData[4]->data.XY.y);
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(&currentScene->objects[i],"colliderCenter")->data.XY.x) + GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(&currentScene->objects[i],"colliderCenter")->data.XY.y) + GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y),
+                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.x,
+                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.y);
         }
     }
 
-    int width = 160 * sceneScale / camera->objectData[2]->data.i;
-    int height = 128 * sceneScale / camera->objectData[2]->data.i;
+    EngineVar* cameraPosition = GetObjectDataByName(camera,"position");
+
+    int width = 160 * sceneScale / GetObjectDataByName(camera,"scale")->data.i;
+    int height = 128 * sceneScale / GetObjectDataByName(camera,"scale")->data.i;
 
     SmartRect(WHITE,
-              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
-              64 + offsetY + camera->objectData[0]->data.XY.y + height / 2,
+              80 + offsetX + cameraPosition->data.XY.x - width / 2,
+              64 + offsetY + cameraPosition->data.XY.y + height / 2,
               width,
               1);
 
     SmartRect(WHITE,
-              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
-              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              80 + offsetX + cameraPosition->data.XY.x - width / 2,
+              64 + offsetY + cameraPosition->data.XY.y - height / 2,
               width,
               1);
 
     SmartRect(WHITE,
-              80 + offsetX + camera->objectData[0]->data.XY.x - width / 2,
-              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              80 + offsetX + cameraPosition->data.XY.x - width / 2,
+              64 + offsetY + cameraPosition->data.XY.y - height / 2,
               1,
               height);
 
     SmartRect(WHITE,
-              80 + offsetX + camera->objectData[0]->data.XY.x + width / 2,
-              64 + offsetY + camera->objectData[0]->data.XY.y - height / 2,
+              80 + offsetX + cameraPosition->data.XY.x + width / 2,
+              64 + offsetY + cameraPosition->data.XY.y - height / 2,
               1,
               height);
 
@@ -1107,11 +1109,15 @@ void ManageSceneUI()
 
             if (modulePage == 0)
             {
-                DrawModulePage("Base", 3, &variableCount, currentScene->objects[currentObject].objectData, &buttonIndex, variableLinks);
+                EngineVar** drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                DrawModulePage("Base", 3, &variableCount, drawVarList, &buttonIndex, variableLinks);
+                free(drawVarList);
             }
             else if (doCollider && modulePage == 1)
             {
-                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &currentScene->objects[currentObject].objectData[3], &buttonIndex, variableLinks);
+                EngineVar** drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[3], &buttonIndex, variableLinks);
+                free(drawVarList);
             }
             else
             {
@@ -1275,8 +1281,8 @@ void ManageSceneUI()
             if (gpio_get(BUTTON_J) == 0)
             {
                 refreshSceneView = true;
-                currentScene->objects[currentObject].objectData[0]->data.XY.x = -scenePosX / sceneScale;
-                currentScene->objects[currentObject].objectData[0]->data.XY.y = -scenePosY / sceneScale;
+                GetObjectDataByName(&currentScene->objects[currentObject],"position")->data.XY.x = -scenePosX / sceneScale;
+                GetObjectDataByName(&currentScene->objects[currentObject],"position")->data.XY.y = -scenePosY / sceneScale;
             }
 
             if (refreshSceneView)
@@ -1902,9 +1908,9 @@ void SceneMenu()
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
                         scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Camera", strlen("Camera"));
-                        scenes[index].objects[scenes[index].objectCount].objectData[2]->currentType = TYPE_INT;
-                        scenes[index].objects[scenes[index].objectCount].objectData[2]->data.i = 2;
-                        scenes[index].objects[scenes[index].objectCount].objectData[1]->data.i = CAMERA_SPRITE;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"scale")->currentType = TYPE_INT;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"scale")->data.i = 2;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"sprite")->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
@@ -1968,38 +1974,38 @@ uint32_t RunProgram()
     while (1)
     {
         uint8_t cameraScale;
-        cameraScale = camera->objectData[2]->data.i;
+        cameraScale = GetObjectDataByName(camera,"scale")->data.i;
 
-        int cameraX = camera->objectData[0]->data.XY.x;
-        int cameraY = camera->objectData[0]->data.XY.y;
+        int cameraX = GetObjectDataByName(camera,"position")->data.XY.x;
+        int cameraY = GetObjectDataByName(camera,"position")->data.XY.y;
 
         SmartClear();
         for (int i = 0; i < currentScene->objectCount; i++)
         {
-            if (currentScene->objects[i].objectData[1]->data.i < 0)
+            if (GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i < 0)
             {
                 continue;
             }
 
             Vector2 scale;
-
-            if (currentScene->objects[i].objectData[2]->currentType == TYPE_INT)
+            EngineVar* objScale = GetObjectDataByName(&currentScene->objects[i],"scale");
+            if (objScale->currentType == TYPE_INT)
             {
-                scale.x = currentScene->objects[i].objectData[2]->data.i;
-                scale.y = currentScene->objects[i].objectData[2]->data.i;
+                scale.x = objScale->data.i;
+                scale.y = objScale->data.i;
             }
             else
             {
-                scale.x = currentScene->objects[i].objectData[2]->data.XY.x;
-                scale.y = currentScene->objects[i].objectData[2]->data.XY.y;
+                scale.x = objScale->data.XY.x;
+                scale.y = objScale->data.XY.y;
             }
 
             printf("Scale: (%d,%d)\n", scale.x, scale.y);
 
             DrawSpriteCentered(
-                currentScene->objects[i].objectData[1]->data.i,
-                80 + sceneScale * currentScene->objects[i].objectData[0]->data.XY.x - cameraX,
-                64 + sceneScale * currentScene->objects[i].objectData[0]->data.XY.y - cameraY,
+                 GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i,
+                80 + sceneScale *  GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x - cameraX,
+                64 + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y - cameraY,
                 cameraScale * scale.x,
                 cameraScale * scale.y);
         }
