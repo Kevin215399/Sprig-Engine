@@ -59,17 +59,22 @@ File *FileInit(char *name, uint8_t nameLength, uint32_t startBlock, uint32_t end
 {
     File *file = (File *)malloc(sizeof(File));
 
-    file->name = (char *)malloc(sizeof(char) * nameLength);
+    file->name = (char *)malloc(sizeof(char) * nameLength + 1);
     for (int i = 0; i < nameLength; i++)
     {
         file->name[i] = name[i];
     }
+    file->name[nameLength] = '\0';
     file->nameLength = nameLength;
     file->startBlock = startBlock;
 
     file->endBlock = endBlock;
     return file;
 }
+typedef struct
+{
+    uint8_t data[512];
+} Block;
 
 File *NULL_FILE;
 
@@ -191,15 +196,25 @@ int GetTotalBlocks()
     return 0;
 }
 
-uint8_t *ReadBlock(uint32_t blockNumber)
+Block ReadBlock(uint32_t blockNumber)
 {
     if (blockNumber >= totalBlocks)
     {
         print("Block number out of range.\n");
-        return NULL; // Return NULL if block number is out of range
+        Block out;
+        return out; // Return NULL if block number is out of range
     }
 
-    Flush();
+    printf("block num %d\n", blockNumber);
+
+    uint8_t token = 0xFF;
+
+    gpio_put(SD_CS, 1);
+    spi_write_blocking(SPI_PORT, &token, 1);
+    spi_write_blocking(SPI_PORT, &token, 1);
+    gpio_put(SD_CS, 0);
+    for (int i = 0; i < 10; i++)
+        spi_write_blocking(SPI_PORT, &token, 1);
 
     uint8_t response = 0;
 
@@ -210,18 +225,56 @@ uint8_t *ReadBlock(uint32_t blockNumber)
                        (blockNumber >> 8) & 0xFF,
                        blockNumber & 0xFF, 0xFF};
 
-    gpio_put(SD_CS, 0); // Select the card
+    print("cmd 17");
     spi_write_blocking(SPI_PORT, cmd17, 6);
 
-    print("Cmd17");
+    print("read");
+
+    do
+    {
+        spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
+    } while (response == 0xFF);
+
+    printf("response: %d\n", response);
+
+    print("waiting for 0xFE");
+
+    do
+    {
+        spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
+
+    } while (response != 0xFE);
+
+    print("got 0xFE");
+
+    uint8_t readBuffer[512];
+    spi_read_blocking(SPI_PORT, 0xFF, readBuffer, 512); // Read the block
+
+    uint8_t crc[2];
+    spi_read_blocking(SPI_PORT, 0xFF, crc, 2);
+
+    spi_write_blocking(SPI_PORT, &token, 1);
+    gpio_put(SD_CS, 1);
+    spi_write_blocking(SPI_PORT, &token, 1);
+
+    Block out;
+    memcpy(out.data, readBuffer, 512);
+
+    return out;
+
+    /*print("Cmd17");
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
     } while (response != 0x00); // Wait for 0x00
 
+    print("got 0x00");
+
     do
     {
-        spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
+        uint8_t x = 0xFF;
+        spi_write_read_blocking(SPI_PORT, &x, &response, 1);
+        printf("wai start: %d\n", response);
     } while (response != 0xFE); // Wait for Block start token
 
     printf("Cmd 17b response: %u\n", response);
@@ -239,10 +292,11 @@ uint8_t *ReadBlock(uint32_t blockNumber)
     uint8_t crc[2];
     spi_read_blocking(SPI_PORT, 0xFF, crc, 2); // cycle 2 crcs
     gpio_put(SD_CS, 1);                        // Deselect the card
+    Flush();
 
     print("read block done");
 
-    return readBuffer; // Return the read block
+    return readBuffer; // Return the read block*/
 }
 
 void WriteBlock(uint32_t blockNumber, uint8_t *data)
@@ -255,7 +309,11 @@ void WriteBlock(uint32_t blockNumber, uint8_t *data)
 
     print("write");
 
-    Flush();
+    uint8_t token = 0xFF;
+
+    spi_write_blocking(SPI_PORT, &token, 1);
+    gpio_put(SD_CS, 0);
+    spi_write_blocking(SPI_PORT, &token, 1);
 
     uint8_t response = 0;
 
@@ -267,50 +325,51 @@ void WriteBlock(uint32_t blockNumber, uint8_t *data)
                        (uint8_t)(blockNumber),
                        0xFF};
 
-    gpio_put(SD_CS, 0);
-
+    print("cmd24");
     spi_write_blocking(SPI_PORT, cmd24, 6);
 
+    print("read response");
     do
     {
-        // spi_write_blocking(SPI_PORT, (uint8_t[]){0xFF}, 1);
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
-    } while (response != 0x00); // Wait for 0x00
-    printf("Cmd 24 00 response: %u\n", response);
+    } while (response != 0x00);
 
-    uint8_t startToken = 0xFE;                    // Start token
-    spi_write_blocking(SPI_PORT, &startToken, 1); // Send start token
+    print("send start token");
+    uint8_t startToken = 0xFE;
+    spi_write_blocking(SPI_PORT, &startToken, 1);
 
+    print("send data");
     spi_write_blocking(SPI_PORT, data, 512);
 
-    uint8_t dummy_crc[2] = {0xFF, 0xFF};
-    spi_write_blocking(SPI_PORT, dummy_crc, 2); // send 2 dummy cycles
-
-    spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
-    printf("dummy response: %u\n", response);
-
+    print("wait response");
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
 
-    } while (response != 0xFF); // Wait for 0xFE
+    } while (response == 0xFF || response & 0x1F != 0x05);
 
+    print("success");
+
+    while (1)
+    {
+        spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
+        if (response != 0x00)
+            break;
+    }
+    print("data written");
+
+    spi_write_blocking(SPI_PORT, &token, 1);
     gpio_put(SD_CS, 1);
+    spi_write_blocking(SPI_PORT, &token, 1);
 }
 
 void SetupTable(bool forceClear)
 {
 
-    uint8_t *data = ReadBlock(0);
+    Block data = ReadBlock(0);
 
-    if (data == NULL)
+    if (data.data[0] == endOfFile && !forceClear)
     {
-        return;
-    }
-
-    if (data[0] == endOfFile && !forceClear)
-    {
-        free(data);
         return;
     }
     print("setting up table");
@@ -332,8 +391,6 @@ void SetupTable(bool forceClear)
     buffer[9] = endOfFile;
 
     WriteBlock(0, buffer);
-
-    free(data);
 }
 
 int InitializeSDCard()
@@ -548,11 +605,11 @@ File *GetFile(char *searchFileName)
     int fileIndex = 9;
     int block = 0;
     int currentFile = 0;
-    uint8_t *buffer = ReadBlock(0);
+    Block buffer = ReadBlock(0);
 
     printf("read block");
 
-    uint32_t files = CombineBytes(buffer + 5);
+    uint32_t files = CombineBytes(buffer.data + 5);
 
     printf("get file setup %u\n", files);
 
@@ -560,40 +617,39 @@ File *GetFile(char *searchFileName)
     {
         print("search");
         fileIndex++;
-        char *fileName = (char *)malloc((buffer[fileIndex] + 1) * sizeof(char));
-        fileName[buffer[fileIndex]] = '\0'; // Null-terminate the string
-        for (int i = 0; i < buffer[fileIndex]; i++)
+        char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
+        fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
+        for (int i = 0; i < buffer.data[fileIndex]; i++)
         {
-            fileName[i] = buffer[fileIndex + 1 + i];
+            fileName[i] = buffer.data[fileIndex + 1 + i];
         }
 
-        if (buffer[fileIndex - 1] != deletedFile && Strcmp(searchFileName, fileName))
+        if (buffer.data[fileIndex - 1] != deletedFile && Strcmp(searchFileName, fileName))
         {
             print("found match");
-            File *file = FileInit(fileName, (buffer[fileIndex] + 1), CombineBytes(buffer + fileIndex + 1 + buffer[fileIndex] + 1), CombineBytes(buffer + fileIndex + 1 + buffer[fileIndex] + 1 + 4) + 1);
+            File *file = FileInit(fileName, (buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1 + 4) + 1);
             free(fileName);
-            free(buffer);
             print("returning");
             return file;
         }
         else
         {
-            fileIndex += buffer[fileIndex] + 10; // Skip the file name length + 10
+            fileIndex += buffer.data[fileIndex] + 10; // Skip the file name length + 10
         }
 
         free(fileName);
 
-        if (buffer[fileIndex] == endOfBlock)
+        if (buffer.data[fileIndex] == endOfBlock)
         {
             block++;
             fileIndex = 0;
-            buffer = ReadBlock(block);
+            memcpy(buffer.data, ReadBlock(block).data, 512);
         }
 
         currentFile++;
     }
     print("file not found");
-    free(buffer);
+
     return NULL_FILE; // Return an empty file if not found
 }
 
@@ -610,17 +666,16 @@ uint8_t *ReadFile(File *file)
     for (int i = 0; i < blocksOccupied; i++)
     {
         printf("Reading block %u\n", file->startBlock - i);
-        uint8_t *blockData = ReadBlock(file->startBlock - i);
-        if (blockData == NULL)
+        Block blockData = ReadBlock(file->startBlock - i);
+        if (blockData.data == NULL)
         {
             free(data);
             return NULL;
         }
         for (int j = 0; j < 512; j++)
         {
-            data[i * 512 + j] = blockData[j];
+            data[i * 512 + j] = blockData.data[j];
         }
-        free(blockData);
     }
 
     return data; // Return the data read from the file
@@ -639,21 +694,48 @@ uint8_t *ReadFileUntil(File *file, char until)
     for (int i = 0; i < blocksOccupied; i++)
     {
         printf("Reading block %u\n", file->startBlock - i);
-        uint8_t *blockData = ReadBlock(file->startBlock - i);
-        if (blockData == NULL)
-        {
-            free(data);
-            return NULL;
-        }
+        Block blockData = ReadBlock(file->startBlock - i);
+
         for (int j = 0; j < 512; j++)
         {
-            data[i * 512 + j] = blockData[j];
-            if(blockData[j] == until){
-                free(blockData);
+            data[i * 512 + j] = blockData.data[j];
+            if (blockData.data[j] == until)
+            {
                 return data;
             }
         }
-        free(blockData);
+    }
+
+    return data; // Return the data read from the file
+}
+
+uint8_t *ReadFileUntilLimited(File *file, char until, uint8_t maxBlocks)
+{
+    uint8_t blocksOccupied = file->startBlock - file->endBlock + 1;
+    if (blocksOccupied > maxBlocks)
+    {
+        blocksOccupied = maxBlocks;
+    }
+    uint8_t *data = (uint8_t *)malloc(blocksOccupied * 512 * sizeof(uint8_t));
+
+    for (int i = 0; i < blocksOccupied * 512; i++)
+    {
+        data[i] = 0;
+    }
+
+    for (int i = 0; i < blocksOccupied; i++)
+    {
+        printf("Reading block %u\n", file->startBlock - i);
+        Block blockData = ReadBlock(file->startBlock - i);
+
+        for (int j = 0; j < 512; j++)
+        {
+            data[i * 512 + j] = blockData.data[j];
+            if (blockData.data[j] == until)
+            {
+                return data;
+            }
+        }
     }
 
     return data; // Return the data read from the file
@@ -684,11 +766,10 @@ void WriteFile(File *file, char *data, uint32_t length)
                 buffer[i] = 0;
             }
         }
+        printf("write file block: %d\n", file->startBlock - b);
         WriteBlock(file->startBlock - b, buffer);
     }
 }
-
-
 
 File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
 {
@@ -703,31 +784,31 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
         return NULL_FILE;
     }
 
-    uint8_t *buffer = ReadBlock(0);
+    Block buffer = ReadBlock(0);
 
-    uint32_t blocksUsed = CombineBytes(buffer + 1);
-    uint32_t files = CombineBytes(buffer + 5);
+    uint32_t blocksUsed = CombineBytes(buffer.data + 1);
+    uint32_t files = CombineBytes(buffer.data + 5);
 
     uint8_t *blockUsedExtracted = ExtractBytes(blocksUsed + requestBlocks);
     uint8_t *filesExtracted = ExtractBytes(files + 1);
     for (int i = 0; i < 4; i++)
     {
-        buffer[i + 1] = blockUsedExtracted[i];
+        buffer.data[i + 1] = blockUsedExtracted[i];
     }
     for (int i = 0; i < 4; i++)
     {
-        buffer[i + 5] = filesExtracted[i];
+        buffer.data[i + 5] = filesExtracted[i];
     }
     free(blockUsedExtracted);
     free(filesExtracted);
 
-    buffer[0] = endOfFile;
+    buffer.data[0] = endOfFile;
 
-    if (buffer[9] != deletedFile)
-        buffer[9] = endOfFile;
+    if (buffer.data[9] != deletedFile)
+        buffer.data[9] = endOfFile;
 
     print("TableSpec updated.\n");
-    WriteBlock(0, buffer);
+    WriteBlock(0, buffer.data);
 
     int fileIndex = 9;
     int currentFile = 0;
@@ -737,12 +818,12 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
     {
         printf("Current file: %u, File index: %u, Write block: %u\n", currentFile, fileIndex, writeBlock);
         fileIndex++;
-        fileIndex += buffer[fileIndex] + 10; // Skip the file name length+ 10
-        if (buffer[fileIndex] == endOfBlock)
+        fileIndex += buffer.data[fileIndex] + 10; // Skip the file name length+ 10
+        if (buffer.data[fileIndex] == endOfBlock)
         {
             writeBlock++;
             fileIndex = 0;
-            buffer = ReadBlock(writeBlock);
+            memcpy(buffer.data, ReadBlock(writeBlock).data, 512);
         }
 
         currentFile++;
@@ -751,8 +832,8 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
 
     if (fileIndex > 450)
     {
-        buffer[fileIndex - 1] = endOfBlock;
-        WriteBlock(writeBlock++, buffer);
+        buffer.data[fileIndex - 1] = endOfBlock;
+        WriteBlock(writeBlock++, buffer.data);
         fileIndex = 0;
         // If there may not be enough space left in this block, write to the next block
     }
@@ -764,32 +845,32 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
 
     printf("Start: %u, End: %u\n", startBlock, endBlock);
 
-    buffer[fileIndex] = fileNameLen;
+    buffer.data[fileIndex] = fileNameLen;
     fileIndex++;
 
     for (int i = 0; i < fileNameLen; i++)
     {
-        buffer[fileIndex + i] = filename[i];
+        buffer.data[fileIndex + i] = filename[i];
     }
-    buffer[fileIndex + fileNameLen] = endOfName; // Mark the end of the name
+    buffer.data[fileIndex + fileNameLen] = endOfName; // Mark the end of the name
 
     uint8_t *startExtracted = ExtractBytes(startBlock);
     uint8_t *endExtracted = ExtractBytes(endBlock);
 
     for (int i = 0; i < 4; i++)
     {
-        buffer[fileIndex + fileNameLen + 1 + i] = startExtracted[i];
+        buffer.data[fileIndex + fileNameLen + 1 + i] = startExtracted[i];
     }
     for (int i = 0; i < 4; i++)
     {
-        buffer[fileIndex + fileNameLen + 1 + i + 4] = endExtracted[i];
+        buffer.data[fileIndex + fileNameLen + 1 + i + 4] = endExtracted[i];
     }
     free(startExtracted);
     free(endExtracted);
 
-    buffer[fileIndex + fileNameLen + 1 + 4 + 4] = endOfFile; // Mark the end of the file
+    buffer.data[fileIndex + fileNameLen + 1 + 4 + 4] = endOfFile; // Mark the end of the file
 
-    WriteBlock(writeBlock, buffer); // Write the updated buffer back to the block
+    WriteBlock(writeBlock, buffer.data); // Write the updated buffer back to the block
 
     uint8_t clearData[512];
     for (int i = 0; i < 512; i++)
@@ -800,7 +881,6 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
     {
         WriteBlock(i, clearData);
     }
-    free(buffer);
     return FileInit(filename, fileNameLen, startBlock, endBlock);
 }
 
@@ -809,47 +889,45 @@ void DeleteFile(char *searchFileName)
     int fileIndex = 9;
     int block = 0;
     int currentFile = 0;
-    uint8_t *buffer = ReadBlock(0);
+    Block buffer = ReadBlock(0);
 
-    uint32_t files = CombineBytes(buffer + 5);
+    uint32_t files = CombineBytes(buffer.data + 5);
 
     while (currentFile < files)
     {
 
         fileIndex++;
-        char *fileName = (char *)malloc((buffer[fileIndex] + 1) * sizeof(char));
-        fileName[buffer[fileIndex]] = '\0'; // Null-terminate the string
-        for (int i = 0; i < buffer[fileIndex]; i++)
+        char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
+        fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
+        for (int i = 0; i < buffer.data[fileIndex]; i++)
         {
-            fileName[i] = buffer[fileIndex + 1 + i];
+            fileName[i] = buffer.data[fileIndex + 1 + i];
         }
 
-        if (Strcmp(searchFileName, fileName) && buffer[fileIndex - 1] != deletedFile)
+        if (Strcmp(searchFileName, fileName) && buffer.data[fileIndex - 1] != deletedFile)
         {
             printf("deleting b%u, i%u", block, fileIndex - 1);
-            buffer[fileIndex - 1] = deletedFile;
-            WriteBlock(block, buffer);
-            free(buffer);
+            buffer.data[fileIndex - 1] = deletedFile;
+            WriteBlock(block, buffer.data);
             free(fileName);
             return;
         }
         else
         {
-            fileIndex += buffer[fileIndex] + 10; // Skip the file name length + 10
+            fileIndex += buffer.data[fileIndex] + 10; // Skip the file name length + 10
         }
 
         free(fileName);
 
-        if (buffer[fileIndex] == endOfBlock)
+        if (buffer.data[fileIndex] == endOfBlock)
         {
             block++;
             fileIndex = 0;
-            buffer = ReadBlock(block);
+            memcpy(buffer.data, ReadBlock(block).data, 512);
         }
 
         currentFile++;
     }
-    free(buffer);
 }
 
 File *GetFileByIndex(int index)
@@ -857,16 +935,15 @@ File *GetFileByIndex(int index)
     int fileIndex = 9;
     int block = 0;
     int currentFile = 0;
-    uint8_t *buffer = ReadBlock(0);
+    Block buffer = ReadBlock(0);
 
-    uint32_t files = CombineBytes(buffer + 5);
+    uint32_t files = CombineBytes(buffer.data + 5);
 
     printf("Files: %u\n", files);
 
     if (index >= files)
     {
         print("file out of range");
-        free(buffer);
         return NULL_FILE; // Return an empty file if not found
     }
 
@@ -874,38 +951,36 @@ File *GetFileByIndex(int index)
     {
 
         fileIndex++;
-        char *fileName = (char *)malloc((buffer[fileIndex] + 1) * sizeof(char));
-        fileName[buffer[fileIndex]] = '\0'; // Null-terminate the string
-        for (int i = 0; i < buffer[fileIndex]; i++)
+        char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
+        fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
+        for (int i = 0; i < buffer.data[fileIndex]; i++)
         {
-            fileName[i] = buffer[fileIndex + 1 + i];
+            fileName[i] = buffer.data[fileIndex + 1 + i];
         }
 
-        if (buffer[fileIndex - 1] != deletedFile)
+        if (buffer.data[fileIndex - 1] != deletedFile)
         {
             if (currentFile == index)
             {
                 printf("found file at: %u\n", fileIndex);
-                File *file = FileInit(fileName, (buffer[fileIndex] + 1), CombineBytes(buffer + fileIndex + 1 + buffer[fileIndex] + 1), CombineBytes(buffer + fileIndex + 1 + buffer[fileIndex] + 1 + 4) + 1);
+                File *file = FileInit(fileName, (buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1 + 4) + 1);
                 free(fileName);
-                free(buffer);
                 return file;
             }
             currentFile++;
         }
 
-        fileIndex += buffer[fileIndex] + 10;
+        fileIndex += buffer.data[fileIndex] + 10;
 
         free(fileName);
 
-        if (buffer[fileIndex] == endOfBlock)
+        if (buffer.data[fileIndex] == endOfBlock)
         {
             block++;
             fileIndex = 0;
-            buffer = ReadBlock(block);
+            memcpy(buffer.data, ReadBlock(block).data, 512);
         }
     }
-    free(buffer);
     return NULL_FILE;
 }
 
@@ -916,44 +991,43 @@ int GetFileCount()
     int currentFile = 0;
     int activeFiles = 0;
     print("SD GetFileCount");
-    uint8_t *buffer = ReadBlock(0);
+    Block buffer = ReadBlock(0);
     print("SD GetFileCount: read block");
 
-    uint32_t files = CombineBytes(buffer + 5);
+    uint32_t files = CombineBytes(buffer.data + 5);
     printf("SD GetFileCount: got file count %u\n", files);
 
     while (currentFile < files)
     {
 
         fileIndex++;
-        char *fileName = (char *)malloc((buffer[fileIndex] + 1) * sizeof(char));
+        char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
         print("SD GetFileCount: malloc name");
-        fileName[buffer[fileIndex]] = '\0'; // Null-terminate the string
-        for (int i = 0; i < buffer[fileIndex]; i++)
+        fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
+        for (int i = 0; i < buffer.data[fileIndex]; i++)
         {
-            fileName[i] = buffer[fileIndex + 1 + i];
+            fileName[i] = buffer.data[fileIndex + 1 + i];
         }
 
         currentFile++;
-        if (buffer[fileIndex - 1] != deletedFile)
+        if (buffer.data[fileIndex - 1] != deletedFile)
         {
 
             activeFiles++;
         }
 
-        fileIndex += buffer[fileIndex] + 10;
+        fileIndex += buffer.data[fileIndex] + 10;
 
         free(fileName);
         print("SD GetFileCount: free");
 
-        if (buffer[fileIndex] == endOfBlock)
+        if (buffer.data[fileIndex] == endOfBlock)
         {
             block++;
             fileIndex = 0;
-            buffer = ReadBlock(block);
+            memcpy(buffer.data, ReadBlock(block).data, 512);
         }
     }
-    free(buffer);
     print("SD GetFileCount: end");
     return activeFiles;
 }

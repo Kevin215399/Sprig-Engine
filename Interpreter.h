@@ -18,8 +18,7 @@
 #define LEFT_LIGHT 28
 #define RIGHT_LIGHT 4
 
-#define DEBUG 1
-
+//#define DEBUG 1
 
 #ifdef DEBUG
 #define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
@@ -107,8 +106,8 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"getScale", 13, 0},
     {"getSprite", 13, 0},
 
-    {"rightLED",13, 1},
-    {"leftLED",13,1},
+    {"rightLED", 13, 1},
+    {"leftLED", 13, 1},
 
     {"setCameraScale", 13, 1},
 
@@ -144,6 +143,7 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"|", 2, 2},
 
 };
+
 /*
 int IntLength(int value)
 {
@@ -159,14 +159,15 @@ int IntLength(int value)
     return numberLength;
 }*/
 
-void InitializeLights(){
+void InitializeLights()
+{
     gpio_init(LEFT_LIGHT);
-    gpio_set_dir(LEFT_LIGHT,true);
-    gpio_put(LEFT_LIGHT,false);
+    gpio_set_dir(LEFT_LIGHT, true);
+    gpio_put(LEFT_LIGHT, false);
 
     gpio_init(RIGHT_LIGHT);
-    gpio_set_dir(RIGHT_LIGHT,true);
-    gpio_put(RIGHT_LIGHT,false);
+    gpio_set_dir(RIGHT_LIGHT, true);
+    gpio_put(RIGHT_LIGHT, false);
 }
 
 char ToLower(char in)
@@ -559,6 +560,10 @@ uint16_t SerializeVar(EngineVar *variable)
     }
     if (variable->currentType == TYPE_FLOAT)
     {
+        debugPrint("serialize float");
+
+        debugPrintf("val: %f\n",variable->data.f);
+        
         int numberLength = FloatLength(variable->data.f);
 
         uint16_t floatChar = PoolString();
@@ -741,7 +746,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         bool atomDone = false;
         for (int operator= 0; operator<OPERATOR_COUNT; operator++)
         {
-             debugPrintf("Operator: %s\n",OPERATOR_PRECEDENT_LIST[operator].operator);
+            // debugPrintf("Operator: %s\n",OPERATOR_PRECEDENT_LIST[operator].operator);
             uint8_t operatorLength = strlen(OPERATOR_PRECEDENT_LIST[operator].operator);
             if (i + operatorLength > equationLength)
             {
@@ -760,13 +765,37 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 atomDone = true;
 
-                setatom(
-                    &allAtoms[atomIndex++],
-                    OPERATOR_ATOM,
-                    OPERATOR_PRECEDENT_LIST[operator].precedence,
-                    OPERATOR_PRECEDENT_LIST[operator].parameters,
-                    OPERATOR_PRECEDENT_LIST[operator].operator
-                );
+                bool isUnarySubtract = false;
+
+                if (equation[i] == '-')
+                {
+                    debugPrint("is subtraction");
+
+                    if (atomIndex == 0 || allAtoms[atomIndex - 1].type == OPERATOR_ATOM)
+                    {
+                        debugPrint("is unary");
+                        isUnarySubtract = true;
+
+                        setatom(
+                            &allAtoms[atomIndex++],
+                            OPERATOR_ATOM,
+                            OPERATOR_PRECEDENT_LIST[operator].precedence,
+                            1,
+                            "@"
+                        );
+                    }
+                }
+
+                if (!isUnarySubtract)
+                {
+                    setatom(
+                        &allAtoms[atomIndex++],
+                        OPERATOR_ATOM,
+                        OPERATOR_PRECEDENT_LIST[operator].precedence,
+                        OPERATOR_PRECEDENT_LIST[operator].parameters,
+                        OPERATOR_PRECEDENT_LIST[operator].operator
+                    );
+                }
 
                 i += operatorLength - 1;
                 debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
@@ -851,7 +880,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             else
             {
                 // If operator is not parenthesis, then move operators to the operands IF the precedence is greater or equal, then push operator
-                if (allAtoms[i].precedence != 0)
+                if (allAtoms[i].precedence != 0 && operandIndex>0)
                 {
                     while (operatorIndex > 0 && operationStack[operatorIndex - 1].precedence >= allAtoms[i].precedence)
                     {
@@ -959,7 +988,9 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 continue;
             }
 
-            if (strcmp(stringPool[operandStack[i].atom], "+") == 0)
+            uint8_t parameterCount = operandStack[i].parameters;
+
+            if (parameterCount == 2 && strcmp(stringPool[operandStack[i].atom], "+") == 0)
             {
                 debugPrint("add");
                 if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
@@ -987,7 +1018,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 }
             }
 
-            if (varPool[parameters[0]].currentType == TYPE_STRING)
+            if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_STRING)
             {
                 if (strcmp(stringPool[operandStack[i].atom], "input") == 0)
                 {
@@ -1028,25 +1059,25 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 }
             }
 
-            if (varPool[parameters[0]].currentType == TYPE_VECTOR)
+            if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_VECTOR)
             {
                 if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
                 {
                     debugPrintf("set pos (%d,%d)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
 
-                    GetObjectDataByName(scriptData->linkedObject,"position")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject,"position")->data.XY.y = -varPool[parameters[0]].data.XY.y;
+                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = -varPool[parameters[0]].data.XY.y;
 
                     debugPrint("set");
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL &&  GetObjectDataByName(scriptData->linkedObject,"scale")->currentType == TYPE_VECTOR)
+                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
                 {
-                    GetObjectDataByName(scriptData->linkedObject,"scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                     GetObjectDataByName(scriptData->linkedObject,"scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
                 }
             }
 
-            if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
+            if (parameterCount == 2 && EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
             {
                 debugPrintf("FLOAT OP: %s\n", stringPool[operandStack[i].atom]);
                 varPool[result].currentType = TYPE_FLOAT;
@@ -1117,7 +1148,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.XY.y = varPool[parameters[1]].data.f;
                 }
             }
-            else if (varPool[parameters[0]].currentType == TYPE_FLOAT)
+            else if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_FLOAT)
             {
                 varPool[result].currentType = TYPE_FLOAT;
                 if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
@@ -1131,28 +1162,34 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.f = sin(varPool[parameters[0]].data.f);
                 }
 
-                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject,"scale")->currentType == TYPE_INT)
+                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
                 {
-                    varPool[result].currentType=NO_TYPE;
+                    varPool[result].currentType = NO_TYPE;
 
-                    GetObjectDataByName(scriptData->linkedObject,"scale")->data.i = varPool[parameters[0]].data.f;
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
                 {
-                    varPool[result].currentType=NO_TYPE;
-                    GetObjectDataByName(scriptData->linkedObject,"sprite")->data.i = (int)varPool[parameters[0]].data.f;
+                    varPool[result].currentType = NO_TYPE;
+                    GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)varPool[parameters[0]].data.f;
                 }
 
                 if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
                 {
-                    varPool[result].currentType=NO_TYPE;
-                    gpio_put(LEFT_LIGHT,varPool[parameters[0]].data.f!=0);
+                    varPool[result].currentType = NO_TYPE;
+                    gpio_put(LEFT_LIGHT, varPool[parameters[0]].data.f != 0);
                 }
                 if (strcmp(stringPool[operandStack[i].atom], "rightLED") == 0 && scriptData->linkedObject != NULL)
                 {
-                    varPool[result].currentType=NO_TYPE;
-                    gpio_put(RIGHT_LIGHT,varPool[parameters[0]].data.f!=0);
+                    varPool[result].currentType = NO_TYPE;
+                    gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
+                }
+
+                if (stringPool[operandStack[i].atom][0]=='@')
+                {
+                    debugPrint("UNARY NEGATE OP");
+                    varPool[result].data.f = -varPool[parameters[0]].data.f;
                 }
             }
 
@@ -1162,7 +1199,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 varPool[result].data.f = 3.14159265459;
             }
 
-            if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
+            if (parameterCount == 2 && EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
             {
                 if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
                 {
@@ -1183,8 +1220,6 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].currentType = TYPE_FLOAT;
                 }
             }
-
-            uint8_t parameterCount = operandStack[i].parameters;
 
             if (parameterCount > 0)
             {
@@ -1568,8 +1603,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
     }
     debugPrintf("trimmed line: %s\n", stringPool[trimmedLine]);
 
-
-
     int varType = GetTypeFromString(stringPool[trimmedLine]);
     debugPrintf("got type %d\n", varType);
     if (varType != NO_TYPE)
@@ -1618,7 +1651,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             FreeString(&trimmedLine);
             return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
         }
-
 
         if (stringPool[trimmedLine][index] == '(')
         { // function declare
@@ -1743,8 +1775,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             strncpy(output->data[output->variableCount].name, stringPool[entityName], MAX_NAME_LENGTH - 1);
             output->data[output->variableCount].name[MAX_NAME_LENGTH - 1] = '\0';
 
-            printf("new var: %s\n",output->data[output->variableCount].name);
-
+            printf("new var: %s\n", output->data[output->variableCount].name);
 
             while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
             {
@@ -1774,8 +1805,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 
             uint32_t error = ShuntYard(stringPool[trimmedLine] + index, strlen(stringPool[trimmedLine] + index), &varPool[assignValue], output);
 
-
-
             if (error != 0)
             {
                 FreeString(&trimmedLine);
@@ -1788,7 +1817,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
-                    debugPrintf("indexes: %d, %d\n",output->variableCount,assignValue);
+                    debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
                     debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
                     output->data[output->variableCount].data.i = varPool[assignValue].data.i;
                 }
@@ -1804,20 +1833,19 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                     FreeVar(&assignValue);
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
-
             }
             else if (output->data[output->variableCount].currentType == TYPE_FLOAT)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
-                    debugPrintf("indexes: %d, %d\n",output->variableCount,assignValue);
+                    debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
                     debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
-                    //float floatVal = (float)varPool[assignValue].data.i;
-                    output->data[output->variableCount].data.f = 0;
+                     float floatVal = (float)varPool[assignValue].data.i;
+                    output->data[output->variableCount].data.f = floatVal;
                 }
                 else if (varPool[assignValue].currentType == TYPE_FLOAT)
                 {
-                    
+
                     output->data[output->variableCount].data.f = varPool[assignValue].data.f;
                 }
                 else
@@ -1843,14 +1871,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 
             FreeVar(&assignValue);
 
-            debugPrint("check end");
-            for (int i = 0; i < output->lineCount; i++)
-            {
-                debugPrintf("split done line num %d\n", i);
-                debugPrintf("split done line: %s\n", output->lines[i]);
-            }
-
-            debugPrintf("variable declared: %d\n", output->data[output->variableCount].currentType);
+            debugPrintf("variable declared: %s=%d\n", output->data[output->variableCount].name, output->data[output->variableCount].currentType);
             output->variableCount++;
             FreeString(&trimmedLine);
             FreeString(&entityName);
@@ -2077,8 +2098,26 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
         char buffer[50];
 
-        sprintf(buffer, "%s%c%s", scriptData->data[varIndex].name, assignType, stringPool[trimmedLine] + index);
+        const char mutators[] = {'+', '-', '*', '%', '/', '|', '^', '&'};
+        bool doMutate = false;
 
+        for (int i = 0; i < sizeof(mutators); i++)
+        {
+            if (mutators[i] == assignType)
+            {
+                doMutate = true;
+                break;
+            }
+        }
+
+        if (doMutate)
+        {
+            sprintf(buffer, "%s%c%s", scriptData->data[varIndex].name, assignType, stringPool[trimmedLine] + index);
+        }
+        else
+        {
+            strcpy(buffer, stringPool[trimmedLine] + index);
+        }
         uint32_t error = ShuntYard(buffer, strlen(buffer), &varPool[value], scriptData);
 
         if (error != 0)
@@ -2129,377 +2168,6 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             scriptData->data[varIndex].data.objID = varPool[value].data.objID;
         }
 
-        /*switch (assignType)
-        {
-        default:
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = varPool[value].data.b;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                scriptData->data[varIndex].data.f = varPool[value].data.f;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                uint16_t temp = PoolString();
-                sprintf(stringPool[temp], "%s", stringPool[varPool[value].data.s]);
-
-                FreeString(&scriptData->data[varIndex].data.s);
-                FreeString(&varPool[value].data.s);
-
-                scriptData->data[varIndex].data.s = temp;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                scriptData->data[varIndex].data.objID = varPool[value].data.objID;
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '+':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = varPool[value].data.b | scriptData->data[varIndex].data.b;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x + scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y + scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                scriptData->data[varIndex].data.f = varPool[value].data.f + scriptData->data[varIndex].data.f;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i + scriptData->data[varIndex].data.i;
-                debugPrintf("added to int: %d\n", scriptData->data[varIndex].data.i);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                uint16_t temp = PoolString();
-                sprintf(stringPool[temp], "%s%s", stringPool[scriptData->data[varIndex].data.s], stringPool[varPool[value].data.s]);
-
-                FreeString(&scriptData->data[varIndex].data.s);
-                FreeString(&varPool[value].data.s);
-
-                scriptData->data[varIndex].data.s = temp;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '-':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = (varPool[value].data.b & !scriptData->data[varIndex].data.b);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x - scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y - scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                scriptData->data[varIndex].data.f = varPool[value].data.f - scriptData->data[varIndex].data.f;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i - scriptData->data[varIndex].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '*':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = (varPool[value].data.b & scriptData->data[varIndex].data.b);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x * scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y * scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                scriptData->data[varIndex].data.f = varPool[value].data.f * scriptData->data[varIndex].data.f;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i * scriptData->data[varIndex].data.i;
-                debugPrintf("multiplied ints: %d\n", scriptData->data[varIndex].data.i);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '/':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x / scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y / scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                scriptData->data[varIndex].data.f = varPool[value].data.f / scriptData->data[varIndex].data.f;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i / scriptData->data[varIndex].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '|':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = (varPool[value].data.b || scriptData->data[varIndex].data.b);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x | scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y | scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i | scriptData->data[varIndex].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '&':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = (varPool[value].data.b && scriptData->data[varIndex].data.b);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x & scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y & scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i & scriptData->data[varIndex].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        case '^':
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_BOOL))
-            {
-                scriptData->data[varIndex].data.b = (varPool[value].data.b ^ scriptData->data[varIndex].data.b);
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_VECTOR))
-            {
-                scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x ^ scriptData->data[varIndex].data.XY.x;
-                scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y ^ scriptData->data[varIndex].data.XY.y;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_INT))
-            {
-                scriptData->data[varIndex].data.i = varPool[value].data.i ^ scriptData->data[varIndex].data.i;
-                break;
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(VARIABLE_ERROR, OPERATOR_CANNOT_BE_USED_WITH_TYPE, scriptData->currentLine);
-            }
-            FreeString(&trimmedLine);
-            if (varPool[value].currentType == TYPE_STRING)
-                FreeString(&varPool[value].data.s);
-            FreeVar(&value);
-            return CreateError(VARIABLE_ERROR, TYPE_MISMATCH, scriptData->currentLine);
-            break;
-        }*/
         if (varPool[value].currentType == TYPE_STRING)
             FreeString(&varPool[value].data.s);
         FreeVar(&value);

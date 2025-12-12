@@ -29,6 +29,7 @@
 #define PARENTHESIS 1
 
 #define MAX_OBJECTS 40
+#define VARS_PER_SCRIPT 80
 
 bool CharCmpr(char *str1, char *str2)
 {
@@ -135,6 +136,9 @@ typedef struct ScriptData
 
     EngineVar *data;
     uint8_t variableCount;
+
+    EngineVar *backupData;
+    uint8_t backupVarCount;
 
     EngineFunction *functions[40];
     uint8_t functionCount;
@@ -324,12 +328,14 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
 {
     ScriptData *output = (ScriptData *)malloc(sizeof(ScriptData));
 
-    output->data = malloc(sizeof(EngineVar) * 80);
+    output->data = malloc(sizeof(EngineVar) * VARS_PER_SCRIPT);
+    output->backupData = NULL;
 
     output->script = script;
 
     // output->data = variables;
     output->variableCount = 0;
+    output->backupVarCount = 0;
     output->functionCount = 0;
     output->bracketPairs = 0;
     output->currentLine = 0;
@@ -338,6 +344,8 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
 
     return output;
 }
+
+
 
 void AddDataToObject(EngineObject *object, EngineVar *data)
 {
@@ -391,10 +399,12 @@ EngineVar *GetObjectDataByIndex(EngineObject *obj, uint8_t index)
     }
     return NULL;
 }
-EngineVar **ObjectDataToList(EngineObject*object){
-    EngineVar** list = (EngineVar**)malloc(sizeof(EngineVar*)*object->objectDataCount);
-    for(int i = 0; i < object->objectDataCount;i++){
-        list[i] = GetObjectDataByIndex(object,i);
+EngineVar **ObjectDataToList(EngineObject *object)
+{
+    EngineVar **list = (EngineVar **)malloc(sizeof(EngineVar *) * object->objectDataCount);
+    for (int i = 0; i < object->objectDataCount; i++)
+    {
+        list[i] = GetObjectDataByIndex(object, i);
     }
     return list;
 }
@@ -418,8 +428,8 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
-    output->objectDataCount=0;
-    output->objectDataTail=NULL;
+    output->objectDataCount = 0;
+    output->objectDataTail = NULL;
 
     memset(output->packages, 0, sizeof(output->packages));
 

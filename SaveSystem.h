@@ -270,7 +270,7 @@ char *SerializeObject(EngineObject *object)
     int index = strlen(output);
     for (int i = 0; i < object->objectDataCount; i++)
     {
-        EngineVar* objectData = GetObjectDataByIndex(object,i);
+        EngineVar *objectData = GetObjectDataByIndex(object, i);
         uint16_t value = SerializeVar(objectData);
 
         sprintf(output + index, "`%s\n`%d`%s\n",
@@ -343,8 +343,8 @@ EngineObject *DeserializeObject(char *serializedObject)
     int dataCount = 0;
     char colliderAdded = 'f';
     char physicsAdded = 'f';
-    char name[16]={0};
-    
+    char name[16] = {0};
+
     sscanf(serializedObject, "%[^\n]\n%d`%d`%c`%c", &name, &scriptCount, &dataCount, &colliderAdded, &physicsAdded);
 
     printf("header: %s, %d, %d\n", name, scriptCount, dataCount);
@@ -358,26 +358,26 @@ EngineObject *DeserializeObject(char *serializedObject)
     objectOut->scriptCount = scriptCount;
     objectOut->colliderCount = 0;
 
-    objectOut->objectDataCount=0;
-    objectOut->objectDataTail=NULL;
+    objectOut->objectDataCount = 0;
+    objectOut->objectDataTail = NULL;
 
     for (int i = 0; i < dataCount; i++)
     {
         int type = 0;
-        char dataName[32]={0};
+        char dataName[32] = {0};
         char data[64];
         printf("index: %d: %c\n", index, serializedObject[index]);
-        sscanf(serializedObject + index, "`%[^\n]\n`%d`%[^\n]\n",&dataName, &type, &data);
-        printf("name: %s\n",dataName);
+        sscanf(serializedObject + index, "`%[^\n]\n`%d`%[^\n]\n", &dataName, &type, &data);
+        printf("name: %s\n", dataName);
         printf("data type: %d, %s\n", type, data);
 
         EngineVar *var = DeserializeVar(type, data);
-        strncpy(var->name,dataName,16);
-        var->name[15]='\0';
+        strncpy(var->name, dataName, 16);
+        var->name[15] = '\0';
         print("Deserialized var, adding to object");
-        AddDataToObject(objectOut,var);
-        
-        printf("deserialized type: %d\n", GetObjectDataByIndex(objectOut,i)->currentType);
+        AddDataToObject(objectOut, var);
+
+        printf("deserialized type: %d\n", GetObjectDataByIndex(objectOut, i)->currentType);
 
         index += 5 + IntLength(type) + strlen(data) + strlen(dataName);
     }
@@ -422,6 +422,7 @@ void SaveProject(File *file)
         {
             printf("\n%d blcok num\n", file->startBlock - i / 3);
             WriteBlock(file->startBlock - i / 3, buffer);
+            memset(buffer, 0, sizeof(buffer));
             bufferIndex = 0;
         }
         char *sprite = SpriteToText(i);
@@ -581,7 +582,7 @@ void LoadProject(File *file)
         index = 0;
 
         int scriptsNameLength = 1;
-        
+
         for (int i = 0; i < scriptCount; i++)
         {
             char name[16];
@@ -650,7 +651,7 @@ void LoadProject(File *file)
 
             free(sceneFileName);
 
-            char *objectsSerialized = ReadFileUntil(sceneFile, '\0');
+            char *objectsSerialized = ReadFileUntilLimited(sceneFile, '\0',1);
             printf("object header: %s\n", objectsSerialized);
             int objectCount = 0;
             sscanf(objectsSerialized, "%d", &objectCount);
@@ -666,7 +667,7 @@ void LoadProject(File *file)
             for (int x = 0; x < objectCount; x++)
             {
                 printf("setting object %d\n", x);
-                char *objectData = ReadFileUntil(sceneFile, '\0');
+                char *objectData = ReadFileUntilLimited(sceneFile, '\0', 2);
                 scenes[i].objects[x] = *DeserializeObject(objectData);
                 free(objectData);
                 sceneFile->startBlock -= 2;

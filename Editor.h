@@ -124,8 +124,6 @@ bool UI_PrintToScreen(char *message, bool isError)
     return true;
 }
 
-///////////////////////////////////////////////////////////////////////// SCENE EDITOR /////////////////////////////////////////////////////////////////
-
 //////////////////////////////////////////////////////////////////////// SPRITE EDITOR /////////////////////////////////////////////////////////////////
 uint8_t SelectSprite()
 {
@@ -405,6 +403,205 @@ void SpriteMode()
 
 //////////////////////////////////////////////////////////////////////// SCRIPT EDITOR /////////////////////////////////////////////////////////////////
 
+// shortcuts
+#pragma region
+
+#define SHORTCUT_CONDITIONAL 0
+#define SHORTCUT_TYPES 1
+#define SHORTCUT_MATH 2
+#define SHORTCUT_OBJECT 3
+#define SHORTCUT_COLLIDER 4
+#define SHORTCUT_PHYSICS 5
+#define SHORTCUT_IO 6
+#define SHORTCUT_SCREEN 7
+
+#define SHORTCUT_CATEGORY_COUNT 8
+char *SC_CATEGORY_NAMES[] = {
+    "Conditions",
+    "Types",
+    "Math",
+    "Object",
+    "Collider",
+    "Physics",
+    "Output",
+    "Display"};
+
+#define SC_CONDITION_COUNT 4
+char *SC_CONDITION_SHORTCUTS[] = {
+    "if () {",
+    "} else {",
+    "while () {",
+    "break"};
+
+#define SC_TYPES_COUNT 6
+char *SC_TYPE_SHORTCUTS[] = {
+    "void",
+    "bool",
+    "int",
+    "float",
+    "string",
+    "Vector(,)"};
+
+#define SC_MATH_COUNT 5
+char *SC_MATH_SHORTCUTS[] = {
+    "PI",
+    "pow",
+    "sin",
+    "cos",
+    "deltaTime"};
+
+#define SC_OBJECT_COUNT 7
+char *SC_OBJECT_SHORTCUTS[] = {
+    "setPosition()",
+    "setScale()",
+    "setSprite()",
+    "setCameraScale()",
+
+    "getPosition()",
+    "getScale()",
+    "getSprite()"};
+
+// collider here
+
+// physic here
+
+#define SC_IO_COUNT 3
+char *SC_IO_SHORTCUTS[] = {
+    "input(\"\")",
+
+    "leftLED()",
+    "rightLED()"};
+
+#pragma endregion
+
+int shortcutCategory = -1;
+uint8_t shortcutPage = 0;
+
+void PrintListOnKeyboard(char **list, uint8_t count, uint8_t currentPage, uint8_t selected)
+{
+    for (int i = 5 * currentPage; i < min(count, 5 * currentPage + 5); i++)
+    {
+        if (selected == i)
+        {
+            Rectangle(YELLOW, 4, 69 + (i - 5 * currentPage) * 10, strlen(list[i]) * (FONT_WIDTHS[0] + 1) + 2, 9);
+            WriteWord(list[i], strlen(list[i]), 5, 70 + (i - 5 * currentPage) * 10, 1, BLACK, TRANSPARENT);
+        }
+        else
+        {
+            WriteWord(list[i], strlen(list[i]), 5, 70 + (i - 5 * currentPage) * 10, 1, YELLOW, TRANSPARENT);
+        }
+    }
+}
+
+char *HandleShortcuts()
+{
+    bool refresh = true;
+    uint8_t selected = 0;
+    char *output = malloc(32);
+    selected = 0;
+    shortcutPage = 0;
+    while (1)
+    {
+        uint8_t count = 0;
+
+        if (refresh)
+        {
+            Rectangle(RGBTo16(0, 0, 60), 0, 68, 160, 60);
+            switch (shortcutCategory)
+            {
+            case -1:
+                PrintListOnKeyboard(SC_CATEGORY_NAMES, SHORTCUT_CATEGORY_COUNT, shortcutPage, selected);
+                count = SHORTCUT_CATEGORY_COUNT;
+                break;
+
+            case SHORTCUT_CONDITIONAL:
+                PrintListOnKeyboard(SC_CONDITION_SHORTCUTS, SC_CONDITION_COUNT, shortcutPage, selected);
+                count = SC_CONDITION_COUNT;
+                strcpy(output, SC_CONDITION_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_TYPES:
+                PrintListOnKeyboard(SC_TYPE_SHORTCUTS, SC_TYPES_COUNT, shortcutPage, selected);
+                count = SC_TYPES_COUNT;
+                strcpy(output, SC_TYPE_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_MATH:
+                PrintListOnKeyboard(SC_MATH_SHORTCUTS, SC_MATH_COUNT, shortcutPage, selected);
+                count = SC_MATH_COUNT;
+                strcpy(output, SC_MATH_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_OBJECT:
+                PrintListOnKeyboard(SC_OBJECT_SHORTCUTS, SC_OBJECT_COUNT, shortcutPage, selected);
+                count = SC_OBJECT_COUNT;
+                strcpy(output, SC_OBJECT_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_IO:
+                PrintListOnKeyboard(SC_IO_SHORTCUTS, SC_IO_COUNT, shortcutPage, selected);
+                count = SC_IO_COUNT;
+                strcpy(output, SC_IO_SHORTCUTS[selected]);
+                break;
+            }
+            sleep_ms(120);
+            refresh = false;
+        }
+        uint8_t buttonPressed = GetButton();
+        if (buttonPressed != 0)
+        {
+            refresh = true;
+            if (buttonPressed == BUTTON_D && shortcutPage < ceil(count / 5))
+            {
+                shortcutPage++;
+                selected = shortcutPage * 5;
+            }
+            if (buttonPressed == BUTTON_A && shortcutPage > 0)
+            {
+                shortcutPage--;
+                selected = shortcutPage * 5;
+            }
+            if (buttonPressed == BUTTON_W && selected > shortcutPage * 5)
+            {
+                selected--;
+            }
+            if (buttonPressed == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
+            {
+                selected++;
+            }
+
+            if (shortcutCategory == -1)
+            {
+                if (buttonPressed == BUTTON_J)
+                {
+                    shortcutCategory = selected;
+                    selected = 0;
+                    shortcutPage = 0;
+                }
+                if (buttonPressed == BUTTON_L)
+                {
+                    free(output);
+                    return NULL;
+                }
+            }
+            else
+            {
+                if (buttonPressed == BUTTON_J)
+                {
+                    return output;
+                }
+                if (buttonPressed == BUTTON_L)
+                {
+                    shortcutCategory = -1;
+                    selected = 0;
+                    shortcutPage = 0;
+                }
+            }
+            printf("selected: %d\n", selected);
+        }
+    }
+}
+
 void EditScript(uint8_t scriptIndex)
 {
     bool refresh = true;
@@ -425,6 +622,8 @@ void EditScript(uint8_t scriptIndex)
     strcpy(currentScriptText, scripts[scriptIndex].content);
 
     printf("Loaded content: %s\n", currentScriptText);
+
+    keyboard[0] = HAMBURGER_SYB;
 
     while (1)
     {
@@ -533,8 +732,6 @@ void EditScript(uint8_t scriptIndex)
                 if (GetButton() == BUTTON_L)
                 {
 
-                    ///////////////////////////////////////// WORKING HERE ON SCRIPT SAVE AND LOAD. SAVING DONE BUT UNTESTED
-
                     print("saving file");
 
                     FlushBuffer();
@@ -565,7 +762,7 @@ void EditScript(uint8_t scriptIndex)
                     print("Save complete");
 
                     SaveProject(program);
-
+                    keyboard[0] = '@';
                     return;
                 }
             }
@@ -574,7 +771,18 @@ void EditScript(uint8_t scriptIndex)
                 HandleKeyboardInputs();
                 if (GetButton() == BUTTON_J && caretPosition < SCRIPT_LENGTH && animateKeyboard > 55)
                 {
-                    if (currentCharacter == UPPERCASE_SYB)
+                    if (currentCharacter == HAMBURGER_SYB)
+                    {
+                        char *shortcut = HandleShortcuts();
+                        if (shortcut != NULL)
+                        {
+                            strcpy(&currentScriptText[caretPosition], shortcut);
+                            caretPosition += strlen(shortcut);
+                            free(shortcut);
+                        }
+                        continue;
+                    }
+                    else if (currentCharacter == UPPERCASE_SYB)
                     {
                         uppercase = true;
                     }
@@ -730,8 +938,6 @@ charArray *CreateScriptMenu()
     unsigned long blinkTime = millis();
     bool scriptAlreadyExists = false;
     bool drawCaret = true;
-
-    uint8_t maxCharacterBlocks = 5;
 
     while (1)
     {

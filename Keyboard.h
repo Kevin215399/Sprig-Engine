@@ -9,11 +9,13 @@
 uint8_t keyboardX = 0;
 uint8_t keyboardY = 0;
 
+
+
 char keyboard[] = {
+    '@',
     '|',
     '~',
     '!',
-    '@',
     '#',
     '$',
     '%',

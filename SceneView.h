@@ -23,83 +23,20 @@
 
 #include "ColliderPackage.h"
 
+#include "GUI.h"
+
 #define CAMERA_SPRITE -1
 
 // Func prototypes
 uint32_t RunProgram();
 
+
+
 ///////////////////////// SCENE VIEW
 #pragma region
 
-#define CENTER_ANCHOR 0
-#define LEFT_ANCHOR 1
-#define RIGHT_ANCHOR 2
 
-uint8_t anchorType = CENTER_ANCHOR;
 
-typedef struct UIButton
-{
-    uint8_t x;
-    uint8_t y;
-
-    uint8_t width;
-    uint8_t height;
-
-    uint8_t curveRadius;
-
-    uint16_t fillColor;
-    uint16_t normalOutline;
-    uint16_t focusOutline;
-    uint16_t pressedFill;
-
-    bool isFocused;
-    bool isPressed;
-    bool lastPressedState;
-
-    struct UIButton *upNext;
-    struct UIButton *leftNext;
-    struct UIButton *rightNext;
-    struct UIButton *downNext;
-
-    char *text;
-    uint16_t fontColor;
-    uint8_t fontSize;
-    uint16_t icon[16][16];
-
-    uint8_t textAnchor;
-
-    bool hasText;
-    bool hasIcon;
-
-    bool onPressDown;
-
-    bool visible;
-} UIButton;
-
-typedef struct
-{
-    uint8_t x;
-    uint8_t y;
-
-    uint8_t width;
-    uint8_t height;
-
-    uint8_t curveRadius;
-
-    uint16_t fillColor;
-    uint16_t outline;
-
-    char *text;
-    uint16_t fontColor;
-    uint8_t fontSize;
-    uint16_t icon[16][16];
-
-    bool hasText;
-    bool hasIcon;
-
-    bool visible;
-
-} UIPanel;
 
 #define SELECT_OBJECTS_UI 0
 #define SELECT_LAYOUT_UI 1
@@ -113,7 +50,7 @@ typedef struct
 
 #define RENDER_MODE_BUTTON 7
 
-#define ADD_SCRIPT_BUTTON 8
+#define ADD_THING_BUTTON 8
 
 #define OBJECT_BUTTONS 9
 
@@ -156,155 +93,6 @@ typedef struct
     EngineVar *link;
     uint8_t specialMode;
 } InputFieldLink;
-
-// Button and Panel functions
-#pragma region
-
-void DrawButton(UIButton *button)
-{
-    if (!button->visible)
-    {
-        return;
-    }
-
-    uint16_t outline = button->isFocused ? button->focusOutline : button->normalOutline;
-    uint16_t fill = button->isPressed ? button->pressedFill : button->fillColor;
-
-    // horizontal fill
-    Rectangle(fill, button->x + 1, button->y + button->curveRadius, button->width - 2, button->height - button->curveRadius * 2);
-
-    // corners
-    for (int i = 0; i < 90; i += 5)
-    {
-        float radians = i * (M_PI / 180);
-
-        float x = cos(radians) * button->curveRadius;
-        float y = sin(radians) * button->curveRadius;
-
-        // top
-        Rectangle(fill, button->x + button->curveRadius - x + 1, button->y + button->curveRadius - y, (button->x + button->width - button->curveRadius + x) - (button->x + button->curveRadius - x) - 1, 1);
-
-        // bottom
-        Rectangle(fill, button->x + button->curveRadius - x + 1, button->y + button->height - button->curveRadius + y, (button->x + button->width - button->curveRadius + x) - (button->x + button->curveRadius - x) - 1, 1);
-
-        // TR
-        SetPixel(min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), max(button->y + button->curveRadius - y, button->y), outline);
-        // TL
-        SetPixel(max(button->x + button->curveRadius - x, button->x), max(button->y + button->curveRadius - y, button->y), outline);
-        // BL
-        SetPixel(max(button->x + button->curveRadius - x, button->x), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), outline);
-        // BR
-        SetPixel(min(button->x + button->width - button->curveRadius + x, button->x + button->width - 1), min(button->y + button->height - button->curveRadius + y, button->y + button->height - 1), outline);
-    }
-
-    // left wall
-    Rectangle(outline, button->x, button->y + button->curveRadius, 1, button->height - button->curveRadius * 2);
-    // right wall
-    Rectangle(outline, button->x + button->width - 1, button->y + button->curveRadius, 1, button->height - button->curveRadius * 2);
-
-    // top wall
-    Rectangle(outline, button->x + button->curveRadius, button->y, button->width - button->curveRadius * 2, 1);
-    // bottom wall
-    Rectangle(outline, button->x + button->curveRadius, button->y + button->height - 1, button->width - button->curveRadius * 2, 1);
-
-    if (button->hasText)
-    {
-        WriteWord(button->text,
-                  strlen(button->text),
-                  (button->x + (button->width / 2)) - (strlen(button->text) * (FONT_WIDTHS[button->fontSize - 1] + 1) / 2),
-                  (button->y + (button->height / 2)) - (FONT_HEIGHTS[button->fontSize - 1] / 2),
-                  button->fontSize,
-                  button->fontColor,
-                  TRANSPARENT);
-    }
-    if (button->hasIcon)
-    {
-        for (int x = 0; x < 16; x++)
-        {
-            for (int y = 0; y < 16; y++)
-            {
-                if (button->icon[y][x] == TRANSPARENT)
-                {
-                    continue;
-                }
-                Rectangle(button->icon[y][x], (button->x + button->width / 2) + x - 8, (button->y + button->height / 2) + y - 8, 1, 1);
-            }
-        }
-    }
-}
-
-void DrawPanel(UIPanel *panel)
-{
-    if (!panel->visible)
-    {
-        return;
-    }
-
-    uint16_t outline = panel->outline;
-    uint16_t fill = panel->fillColor;
-
-    // horizontal fill
-    Rectangle(fill, panel->x + 1, panel->y + panel->curveRadius, panel->width - 2, panel->height - panel->curveRadius * 2);
-
-    // corners
-    for (int i = 0; i < 90; i += 1)
-    {
-        float radians = i * (M_PI / 180);
-
-        float x = cos(radians) * panel->curveRadius;
-        float y = sin(radians) * panel->curveRadius;
-
-        // top
-        Rectangle(fill, panel->x + panel->curveRadius - x + 1, panel->y + panel->curveRadius - y, (panel->x + panel->width - panel->curveRadius + x) - (panel->x + panel->curveRadius - x) - 1, 1);
-
-        // bottom
-        Rectangle(fill, panel->x + panel->curveRadius - x + 1, panel->y + panel->height - panel->curveRadius + y, (panel->x + panel->width - panel->curveRadius + x) - (panel->x + panel->curveRadius - x) - 1, 1);
-
-        // TR
-        Rectangle(outline, min(panel->x + panel->width - panel->curveRadius + x, panel->x + panel->width - 1), max(panel->y + panel->curveRadius - y, panel->y), 1, 1);
-        // TL
-        Rectangle(outline, max(panel->x + panel->curveRadius - x, panel->x), max(panel->y + panel->curveRadius - y, panel->y), 1, 1);
-        // BL
-        Rectangle(outline, max(panel->x + panel->curveRadius - x, panel->x), min(panel->y + panel->height - panel->curveRadius + y, panel->y + panel->height - 1), 1, 1);
-        // BR
-        Rectangle(outline, min(panel->x + panel->width - panel->curveRadius + x, panel->x + panel->width - 1), min(panel->y + panel->height - panel->curveRadius + y, panel->y + panel->height - 1), 1, 1);
-    }
-
-    // left wall
-    Rectangle(outline, panel->x, panel->y + panel->curveRadius, 1, panel->height - panel->curveRadius * 2);
-    // right wall
-    Rectangle(outline, panel->x + panel->width - 1, panel->y + panel->curveRadius, 1, panel->height - panel->curveRadius * 2);
-
-    // top wall
-    Rectangle(outline, panel->x + panel->curveRadius, panel->y, panel->width - panel->curveRadius * 2, 1);
-    // bottom wall
-    Rectangle(outline, panel->x + panel->curveRadius, panel->y + panel->height - 1, panel->width - panel->curveRadius * 2, 1);
-
-    if (panel->hasText)
-    {
-        WriteWord(panel->text,
-                  strlen(panel->text),
-                  (panel->x + (panel->width / 2)) - (strlen(panel->text) * (FONT_WIDTHS[panel->fontSize - 1] + 1) / 2),
-                  (panel->y + (panel->height / 2)) - (FONT_HEIGHTS[panel->fontSize - 1] / 2),
-                  panel->fontSize,
-                  panel->fontColor,
-                  TRANSPARENT);
-    }
-    if (panel->hasIcon)
-    {
-        for (int x = 0; x < 16; x++)
-        {
-            for (int y = 0; y < 16; y++)
-            {
-                if (panel->icon[y][x] == TRANSPARENT)
-                {
-                    continue;
-                }
-                Rectangle(panel->icon[y][x], (panel->x + panel->width / 2) + x - 8, (panel->y + panel->height / 2) + y - 8, 1, 1);
-            }
-        }
-    }
-}
 
 void UpdateUIButtons()
 {
@@ -382,84 +170,6 @@ void UpdateUIButtons()
     }
 }
 
-void SetButton(UIButton *button,
-               uint8_t x,
-               uint8_t y,
-               uint8_t width,
-               uint8_t height,
-               uint8_t curveRadius,
-               uint16_t fillColor,
-               uint16_t pressedFill,
-               uint16_t normalOutline,
-               uint16_t focusOutline,
-               UIButton *up,
-               UIButton *right,
-               UIButton *down,
-               UIButton *left)
-{
-    button->x = x;
-    button->y = y;
-    button->width = width;
-    button->height = height;
-    button->curveRadius = curveRadius;
-    button->fillColor = fillColor;
-    button->pressedFill = pressedFill;
-    button->normalOutline = normalOutline;
-    button->focusOutline = focusOutline;
-    button->upNext = up;
-    button->rightNext = right;
-    button->downNext = down;
-    button->leftNext = left;
-    button->visible = true;
-}
-
-void SetPanel(UIPanel *panel,
-              uint8_t x,
-              uint8_t y,
-              uint8_t width,
-              uint8_t height,
-              uint8_t curveRadius,
-              uint16_t fillColor,
-              uint16_t outline)
-{
-    panel->x = x;
-    panel->y = y;
-    panel->width = width;
-    panel->height = height;
-    panel->curveRadius = curveRadius;
-    panel->fillColor = fillColor;
-    panel->outline = outline;
-    panel->visible = true;
-}
-
-void AddTextToButton(UIButton *button, char *text, uint16_t color, uint8_t fontSize)
-{
-    button->text = malloc(strlen(text) + 1);
-    strcpy(button->text, text);
-    button->fontColor = color;
-    button->fontSize = fontSize;
-    button->hasText = true;
-}
-void AddIconToButton(UIButton *button, const uint16_t icon[16][16])
-{
-    memcpy(button->icon, icon, sizeof(uint16_t) * 16 * 16);
-    button->hasIcon = true;
-}
-
-void AddTextToPanel(UIPanel *panel, char *text, uint16_t color, uint8_t fontSize)
-{
-    panel->text = text;
-    panel->fontColor = color;
-    panel->fontSize = fontSize;
-    panel->hasText = true;
-}
-void AddIconToPanel(UIPanel *panel, const uint16_t icon[16][16])
-{
-    memcpy(panel->icon, icon, sizeof(uint16_t) * 16 * 16);
-    panel->hasIcon = true;
-}
-
-#pragma endregion
 
 // Scene renderers
 #pragma region
@@ -559,15 +269,15 @@ void RenderScene(int offsetX, int offsetY)
     {
         Vector2 scale;
 
-        if  (GetObjectDataByName(&currentScene->objects[i],"scale")->currentType == TYPE_INT)
+        if (GetObjectDataByName(&currentScene->objects[i], "scale")->currentType == TYPE_INT)
         {
-            scale.x = GetObjectDataByName(&currentScene->objects[i],"scale")->data.i;
-            scale.y = GetObjectDataByName(&currentScene->objects[i],"scale")->data.i;
+            scale.x = GetObjectDataByName(&currentScene->objects[i], "scale")->data.i;
+            scale.y = GetObjectDataByName(&currentScene->objects[i], "scale")->data.i;
         }
         else
         {
-            scale.x = GetObjectDataByName(&currentScene->objects[i],"scale")->data.XY.x;
-            scale.y = GetObjectDataByName(&currentScene->objects[i],"scale")->data.XY.y;
+            scale.x = GetObjectDataByName(&currentScene->objects[i], "scale")->data.XY.x;
+            scale.y = GetObjectDataByName(&currentScene->objects[i], "scale")->data.XY.y;
         }
 
         if (strcmp(currentScene->objects[i].name, "Camera") == 0)
@@ -575,10 +285,10 @@ void RenderScene(int offsetX, int offsetY)
             camera = &currentScene->objects[i];
         }
 
-        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i,
+        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i,
 
-                           80 + offsetX + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x,
-                           64 + offsetY + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y,
+                           80 + offsetX + sceneScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x,
+                           64 + offsetY + sceneScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y,
                            sceneScale * scale.x,
                            sceneScale * scale.y);
 
@@ -589,41 +299,25 @@ void RenderScene(int offsetX, int offsetY)
 
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(&currentScene->objects[i],"colliderCenter")->data.XY.x) + GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(&currentScene->objects[i],"colliderCenter")->data.XY.y) + GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y),
-                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.x,
-                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(&currentScene->objects[i],"colliderSize")->data.XY.y);
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(&currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(&currentScene->objects[i], "colliderCenter")->data.XY.y) + GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y),
+                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.x,
+                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.y);
         }
     }
 
-    EngineVar* cameraPosition = GetObjectDataByName(camera,"position");
+    EngineVar *cameraPosition = GetObjectDataByName(camera, "position");
 
-    int width = 160 * sceneScale / GetObjectDataByName(camera,"scale")->data.i;
-    int height = 128 * sceneScale / GetObjectDataByName(camera,"scale")->data.i;
+    int width = 160 * sceneScale / GetObjectDataByName(camera, "scale")->data.i;
+    int height = 128 * sceneScale / GetObjectDataByName(camera, "scale")->data.i;
 
-    SmartRect(WHITE,
-              80 + offsetX + cameraPosition->data.XY.x - width / 2,
-              64 + offsetY + cameraPosition->data.XY.y + height / 2,
-              width,
-              1);
+    DrawRectOutline(
+        WHITE,
+        80 + offsetX + sceneScale * cameraPosition->data.XY.x - width / 2,
+        64 + offsetY + sceneScale * cameraPosition->data.XY.y - height / 2,
+        width,
+        height);
 
-    SmartRect(WHITE,
-              80 + offsetX + cameraPosition->data.XY.x - width / 2,
-              64 + offsetY + cameraPosition->data.XY.y - height / 2,
-              width,
-              1);
-
-    SmartRect(WHITE,
-              80 + offsetX + cameraPosition->data.XY.x - width / 2,
-              64 + offsetY + cameraPosition->data.XY.y - height / 2,
-              1,
-              height);
-
-    SmartRect(WHITE,
-              80 + offsetX + cameraPosition->data.XY.x + width / 2,
-              64 + offsetY + cameraPosition->data.XY.y - height / 2,
-              1,
-              height);
 
     SmartShow();
 
@@ -655,7 +349,7 @@ void RecompileScene()
         {
 
             currentScene->objects[i].scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i].scriptIndexes[s]]);
-            currentScene->objects[i].scriptData[s]->linkedObject = &currentScene->objects[currentObject];
+            currentScene->objects[i].scriptData[s]->linkedObject = &currentScene->objects[i];
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -666,6 +360,15 @@ void RecompileScene()
                 &scripts[currentScene->objects[i].scriptData[s]->script->ID],
                 currentScene->objects[i].scriptData[s],
                 0);
+
+            for (int t = 0; t < currentScene->objects[i].scriptData[s]->variableCount; t++)
+            {
+                printf("set scr variable out: %s\n", currentScene->objects[i].scriptData[s]->data[t].name);
+
+                if(currentScene->objects[i].scriptData[s]->data[t].currentType==TYPE_FLOAT){
+                    printf("is float: %f\n", currentScene->objects[i].scriptData[s]->data[t].data.f);
+                }
+            }
 
             if (errorNum != 0)
             {
@@ -852,6 +555,7 @@ void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *varia
     for (int x = 0; x < totalVariableCount; x++)
     {
         printf("Var button: %d\n", x);
+        printf("var link: %s\n", linkVars[x]->name);
 
         variableLinks[*variableCount].link = linkVars[x];
 
@@ -912,6 +616,167 @@ void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *varia
     }
 }
 
+char *NewObject()
+{
+    bool refresh = true;
+    bool modifyName = false;
+    uint8_t option = 0;
+    char *name = (char *)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
+    for (int i = 0; i <= MAX_NAME_LENGTH; i++)
+    {
+        name[i] = '\0';
+    }
+    char keyboardSelect = '\0';
+    uint8_t animateKeyboard = 0;
+    uint8_t caretPosition = 0;
+    unsigned long blinkTime = millis();
+    bool drawCaret = true;
+
+    while (1)
+    {
+        if (refresh)
+        {
+            refresh = false;
+            Clear();
+            WriteWord("New Object", strlen("New Object"), 1, 1, 2, RGBTo16(0, 255, 200), TRANSPARENT);
+
+            Rectangle(RGBTo16(0, 255, 200), 0, 18, 160, 1);
+
+            WriteWord("Object Name", strlen("Object Name"), 2, 31, 1, WHITE, TRANSPARENT);
+
+            Rectangle((option == 0) ? WHITE : RGBTo16(150, 150, 150), 2, 40, 156, 11);
+            Rectangle((option == 0) ? RGBTo16(0, 0, 100) : BLACK, 3, 41, 154, 9);
+
+            WriteWord(name, strlen(name), 4, 42, 1, WHITE, TRANSPARENT);
+
+            if (modifyName)
+            {
+                Rectangle(RGBTo16(0, 0, 60), 0, 128 - animateKeyboard, 160, animateKeyboard);
+                keyboardSelect = PrintKeyboard(keyboardX, keyboardY, 5, 65 - animateKeyboard);
+                if (animateKeyboard < 55)
+                {
+                    animateKeyboard += 10;
+
+                    refresh = true;
+
+                    sleep_ms(20);
+                }
+                else
+                {
+                    sleep_ms(160);
+                }
+            }
+            else
+            {
+                animateKeyboard = 0;
+
+                WriteWord(">Done", strlen(">Done"), (option == 1) ? 10 : 2, 75, 2, (option == 1) ? GREEN : RGBTo16(0, 100, 0), TRANSPARENT);
+
+                WriteWord("W/S - Navigate", strlen("W/S - Navigate"), 1, 99, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+                WriteWord("J - Select/Edit", strlen("J - Select/Edit"), 1, 109, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+                WriteWord("L - Exit", strlen("L - Exit"), 1, 119, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+                while (GetButton() != 0)
+                    sleep_ms(10);
+            }
+        }
+
+        if (GetButton() != 0)
+        {
+            if (modifyName && animateKeyboard >= 55)
+            {
+                HandleKeyboardInputs();
+                if (GetButton() == BUTTON_J && caretPosition < MAX_NAME_LENGTH)
+                {
+                    if (keyboardSelect == UPPERCASE_SYB)
+                    {
+                        uppercase = true;
+                    }
+                    else if (keyboardSelect == LOWERCASE_SYB)
+                    {
+                        uppercase = false;
+                    }
+                    else
+                    {
+                        if (keyboardSelect >= 65 && keyboardSelect <= 90 && !uppercase)
+                        {
+                            keyboardSelect += 32;
+                        }
+                        name[caretPosition] = keyboardSelect;
+                        caretPosition++;
+                    }
+                }
+                if (GetButton() == BUTTON_K && caretPosition > 0)
+                {
+                    caretPosition--;
+                    name[caretPosition] = '\0';
+                }
+                if (GetButton() == BUTTON_L)
+                {
+                    modifyName = false;
+                }
+                if (GetButton() == BUTTON_I)
+                {
+                    name[caretPosition] = ' ';
+                    caretPosition++;
+                }
+            }
+            else
+            {
+                if (GetButton() == BUTTON_W)
+                {
+                    option = 0;
+                }
+                if (GetButton() == BUTTON_S)
+                {
+                    option = 1;
+                }
+                if (GetButton() == BUTTON_J)
+                {
+                    if (option == 1)
+                    {
+
+                        char *output = malloc(caretPosition + 1);
+                        strcpy(output, name);
+                        free(name);
+                        return output;
+                    }
+                    else if (option == 0)
+                    {
+                        modifyName = true;
+                    }
+                }
+                if (GetButton() == BUTTON_L)
+                {
+                    free(name);
+
+                    return NULL;
+                }
+            }
+            refresh = true;
+        }
+
+        if (modifyName)
+        {
+            if (millis() - blinkTime < 10)
+            {
+                if (drawCaret)
+                {
+                    WriteLetter('_', 4 + (strlen(name) * 6), 42, 1, WHITE, RGBTo16(0, 0, 100));
+                }
+                else
+                {
+                    Rectangle(RGBTo16(0, 0, 100), 4 + (strlen(name) * 6), 42, 5, 7);
+                }
+            }
+            if (millis() - blinkTime > 250)
+            {
+                blinkTime = millis();
+                drawCaret = !drawCaret;
+            }
+        }
+    }
+}
+
 void ManageSceneUI()
 {
 
@@ -931,7 +796,7 @@ void ManageSceneUI()
 
     SetButton(&buttons[OPEN_NAV_PANEL], 150, 0, 10, 20, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
 
-    SetButton(&buttons[ADD_SCRIPT_BUTTON], 0, 118, 20, 10, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
+    SetButton(&buttons[ADD_THING_BUTTON], 0, 118, 20, 10, 5, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
 
     AddTextToButton(&buttons[SELECT_OBJECTS_UI], "Objects", WHITE, 1);
     AddTextToButton(&buttons[SELECT_LAYOUT_UI], "Layout", WHITE, 1);
@@ -941,7 +806,7 @@ void ManageSceneUI()
     AddTextToButton(&buttons[PLAY_SCENE_UI], "Play", WHITE, 1);
     AddTextToButton(&buttons[EXIT_EDITOR_UI], "Exit", WHITE, 1);
 
-    AddTextToButton(&buttons[ADD_SCRIPT_BUTTON], "Add", WHITE, 1);
+    AddTextToButton(&buttons[ADD_THING_BUTTON], "Add", WHITE, 1);
 
     UpdateRenderButton(false);
 
@@ -1039,6 +904,11 @@ void ManageSceneUI()
                 {
                     bottom = &buttons[OBJECT_BUTTONS + i + 1];
                 }
+                else
+                {
+                    bottom = &buttons[ADD_THING_BUTTON];
+                    buttons[ADD_THING_BUTTON].upNext = &buttons[OBJECT_BUTTONS + i];
+                }
                 SetButton(&buttons[OBJECT_BUTTONS + i], 10, 10 + i * 17, 140, 15, 6, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, top, &buttons[OPEN_NAV_PANEL], bottom, NULL);
                 AddTextToButton(&buttons[OBJECT_BUTTONS + i], currentScene->objects[i].name, WHITE, 1);
             }
@@ -1049,6 +919,8 @@ void ManageSceneUI()
             }
 
             SetNavPanelVisibility(false);
+            buttons[ADD_THING_BUTTON].visible = true;
+            DrawButton(&buttons[ADD_THING_BUTTON]);
             sleep_ms(100);
         }
 
@@ -1109,32 +981,48 @@ void ManageSceneUI()
 
             if (modulePage == 0)
             {
-                EngineVar** drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                EngineVar **drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
                 DrawModulePage("Base", 3, &variableCount, drawVarList, &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else if (doCollider && modulePage == 1)
             {
-                EngineVar** drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                EngineVar **drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
                 DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[3], &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else
             {
                 uint8_t scriptIndex = modulePage - objectPackageCount;
+                printf("count: %d\n", currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
                 uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
+
+                EngineVar **passVars = (EngineVar **)malloc(sizeof(EngineVar *) * scriptVariables);
+
+                for (int i = 0; i < scriptVariables; i++)
+                {
+                    passVars[i] = &currentScene->objects[currentObject].scriptData[scriptIndex]->data[i];
+                    
+                    printf("passing data: %s\n", passVars[i]->name);
+
+                    if(passVars[i]->currentType == TYPE_FLOAT){
+                        printf("is float: %f\n",currentScene->objects[currentObject].scriptData[scriptIndex]->data[i].data.f);
+                    } else {
+                        print("isn't float");
+                    }
+                }
                 DrawModulePage(scripts[currentScene->objects[currentObject].scriptIndexes[scriptIndex]].name,
                                scriptVariables,
                                &variableCount,
-                               &currentScene->objects[currentObject].scriptData[scriptIndex]->data,
+                               passVars,
                                &buttonIndex,
                                variableLinks);
+                free(passVars);
             }
 
             if (buttonIndex > MODULE_BUTTONS)
             {
-                buttons[OPEN_NAV_PANEL].downNext = &buttons[MODULE_BUTTONS];
-                buttons[MODULE_BUTTONS].upNext = &buttons[OPEN_NAV_PANEL];
+                buttons[OPEN_NAV_PANEL].downNext = &buttons[SCRIPT_DELETE_BUTTON];
 
                 for (int i = MODULE_BUTTONS; i < buttonIndex; i++)
                 {
@@ -1142,24 +1030,30 @@ void ManageSceneUI()
                     {
                         buttons[i].upNext = &buttons[i - 1];
                     }
+                    else
+                    {
+                        buttons[i].upNext = &buttons[SCRIPT_DELETE_BUTTON];
+                        buttons[SCRIPT_DELETE_BUTTON].downNext = &buttons[i];
+                    }
                     if (i < buttonIndex - 1)
                     {
                         buttons[i].downNext = &buttons[i + 1];
                     }
                     else
                     {
-                        buttons[i].downNext = &buttons[ADD_SCRIPT_BUTTON];
-                        buttons[ADD_SCRIPT_BUTTON].upNext = &buttons[i];
+                        buttons[i].downNext = &buttons[ADD_THING_BUTTON];
+                        buttons[ADD_THING_BUTTON].upNext = &buttons[i];
                     }
                 }
             }
             else
             {
-                buttons[OPEN_NAV_PANEL].downNext = &buttons[ADD_SCRIPT_BUTTON];
-                buttons[ADD_SCRIPT_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
+                buttons[OPEN_NAV_PANEL].downNext = &buttons[ADD_THING_BUTTON];
+                buttons[ADD_THING_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
             }
-            buttons[ADD_SCRIPT_BUTTON].visible = true;
-            DrawButton(&buttons[ADD_SCRIPT_BUTTON]);
+            buttons[SCRIPT_DELETE_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
+            buttons[ADD_THING_BUTTON].visible = true;
+            DrawButton(&buttons[ADD_THING_BUTTON]);
             sleep_ms(100);
         }
 
@@ -1197,7 +1091,7 @@ void ManageSceneUI()
 
             if (scene->startBlock == 0)
             {
-                scene = CreateFile(fileName, strlen(fileName), currentScene->objectCount * 2 + 2);
+                scene = CreateFile(fileName, strlen(fileName), MAX_OBJECTS * 2 + 2);
             }
 
             print("starting object save");
@@ -1281,8 +1175,8 @@ void ManageSceneUI()
             if (gpio_get(BUTTON_J) == 0)
             {
                 refreshSceneView = true;
-                GetObjectDataByName(&currentScene->objects[currentObject],"position")->data.XY.x = -scenePosX / sceneScale;
-                GetObjectDataByName(&currentScene->objects[currentObject],"position")->data.XY.y = -scenePosY / sceneScale;
+                GetObjectDataByName(&currentScene->objects[currentObject], "position")->data.XY.x = -scenePosX / sceneScale;
+                GetObjectDataByName(&currentScene->objects[currentObject], "position")->data.XY.y = -scenePosY / sceneScale;
             }
 
             if (refreshSceneView)
@@ -1420,6 +1314,14 @@ void ManageSceneUI()
                                     {
                                         inputLink->link->data.f = output->data.f;
                                     }
+                                    if (inputLink->link->currentType == TYPE_FLOAT && output->currentType == TYPE_INT)
+                                    {
+                                        inputLink->link->data.f = output->data.i;
+                                    }
+                                    if (inputLink->link->currentType == TYPE_INT && output->currentType == TYPE_FLOAT)
+                                    {
+                                        inputLink->link->data.i = (int)output->data.f;
+                                    }
                                     if (EqualType(inputLink->link, output, TYPE_INT))
                                     {
                                         inputLink->link->data.i = output->data.i;
@@ -1471,7 +1373,7 @@ void ManageSceneUI()
                     }
                 }
 
-                if (buttons[ADD_SCRIPT_BUTTON].isPressed)
+                if (buttons[ADD_THING_BUTTON].isPressed)
                 {
                     int script = SelectScriptToAdd();
 
@@ -1500,6 +1402,11 @@ void ManageSceneUI()
                             currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount],
                             0);
 
+                        for (int t = 0; t < currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->variableCount; t++)
+                        {
+                            printf("set scr variable out: %s\n", currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->data[t].name);
+                        }
+
                         if (errorNum != 0)
                         {
                             errors[errorCount++] = errorNum;
@@ -1516,7 +1423,8 @@ void ManageSceneUI()
                 }
 
                 uint8_t scriptCount = currentScene->objects[currentObject].scriptCount + 1;
-                if(currentScene->objects[currentObject].packages[0]){
+                if (currentScene->objects[currentObject].packages[0])
+                {
                     print("has collider");
                     scriptCount++;
                 }
@@ -1573,6 +1481,23 @@ void ManageSceneUI()
                     break;
                 }
             }
+
+            if (buttons[ADD_THING_BUTTON].isPressed)
+            {
+                char *name = NewObject();
+                print("returned");
+                if (name != NULL)
+                {
+                    print("adding obj");
+                    currentScene->objects[currentScene->objectCount] = *ObjectConstructor(0, name, strlen(name));
+                    currentScene->objectCount++;
+                    free(name);
+                } else {
+                    print("is null");
+                }
+                sleep_ms(120);
+                refresh = true;
+            }
         }
     }
 }
@@ -1580,29 +1505,6 @@ void ManageSceneUI()
 void EditScene(int sceneIndex)
 {
     currentScene = &scenes[sceneIndex];
-
-    /*EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x=0;setPosition(Vector(0,sin(x*PI/180)*40));setScale(Vector(5,((x/24)%2+1)*2));setSprite((x/48)%2);x+=6;");
-
-    currentScene->objects[currentScene->objectCount].scriptData[0] = ScriptDataConstructor(script);
-
-    currentScene->objects[currentScene->objectCount].scriptData[0]->linkedObject = &currentScene->objects[currentScene->objectCount];
-
-    currentScene->objects[currentScene->objectCount].objectData[2]->data.XY.x = 5;
-
-    currentScene->objects[currentScene->objectCount].scriptCount++;
-
-    // Function prototypes
-    uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
-    uint16_t UnpackErrorMessage(uint32_t error);
-    //
-
-    uint32_t errorNum = SetScriptData(script, currentScene->objects[currentScene->objectCount].scriptData[0], 0);
-
-    uint16_t error = UnpackErrorMessage(errorNum);
-
-    printf("set script error: %s\n", error);
-    FreeString(&error);*/
 
     RecompileScene();
 
@@ -1625,8 +1527,6 @@ char *CreateNewScene()
     unsigned long blinkTime = millis();
     bool sceneAlreadyExists = false;
     bool drawCaret = true;
-
-    uint8_t maxCharacterBlocks = 5;
 
     while (1)
     {
@@ -1908,9 +1808,9 @@ void SceneMenu()
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
                         scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Camera", strlen("Camera"));
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"scale")->currentType = TYPE_INT;
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"scale")->data.i = 2;
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount],"sprite")->data.i = CAMERA_SPRITE;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
+                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
@@ -1967,6 +1867,42 @@ uint32_t RunProgram()
         return CreateError(SCENE_ERROR, NO_CAMERA_DEFINED, 0);
     }
 
+    for (int obj = 0; obj < currentScene->objectCount; obj++)
+    {
+        for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+        {
+
+            printf("backup: obj:%d, scr:%d\n", obj, scr);
+            printf("scrdata lines: %d\n", currentScene->objects[obj].scriptData[scr]->lineCount);
+            ScriptData *scrData = currentScene->objects[obj].scriptData[scr];
+            print("got scr data");
+            if (scrData == NULL)
+            {
+                print("null scr data");
+            }
+            if (scrData->backupData != NULL)
+            {
+                print("free backup data");
+                free(scrData->backupData);
+            }
+            print("freed");
+            scrData->backupData = malloc(sizeof(EngineVar) * scrData->variableCount);
+            print("malloced");
+            scrData->backupVarCount = scrData->variableCount;
+            for (int var = 0; var < scrData->variableCount; var++)
+            {
+                printf("backup: %d\n", var);
+                strcpy(scrData->backupData[var].name, scrData->data[var].name);
+                scrData->backupData[var].currentType = scrData->data[var].currentType;
+
+                scrData->backupData[var].data = scrData->data[var].data;
+            }
+            print("backed up!");
+        }
+        printf("object %d fin\n", obj);
+    }
+    print("fin");
+
     Clear();
     SmartClear();
     SmartShowAll();
@@ -1974,21 +1910,21 @@ uint32_t RunProgram()
     while (1)
     {
         uint8_t cameraScale;
-        cameraScale = GetObjectDataByName(camera,"scale")->data.i;
+        cameraScale = GetObjectDataByName(camera, "scale")->data.i;
 
-        int cameraX = GetObjectDataByName(camera,"position")->data.XY.x;
-        int cameraY = GetObjectDataByName(camera,"position")->data.XY.y;
+        int cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
+        int cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
 
         SmartClear();
         for (int i = 0; i < currentScene->objectCount; i++)
         {
-            if (GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i < 0)
+            if (GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i < 0)
             {
                 continue;
             }
 
             Vector2 scale;
-            EngineVar* objScale = GetObjectDataByName(&currentScene->objects[i],"scale");
+            EngineVar *objScale = GetObjectDataByName(&currentScene->objects[i], "scale");
             if (objScale->currentType == TYPE_INT)
             {
                 scale.x = objScale->data.i;
@@ -2003,9 +1939,9 @@ uint32_t RunProgram()
             printf("Scale: (%d,%d)\n", scale.x, scale.y);
 
             DrawSpriteCentered(
-                 GetObjectDataByName(&currentScene->objects[i],"sprite")->data.i,
-                80 + sceneScale *  GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.x - cameraX,
-                64 + sceneScale * GetObjectDataByName(&currentScene->objects[i],"position")->data.XY.y - cameraY,
+                GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i,
+                80 + cameraScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x - cameraX,
+                64 + cameraScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y - cameraY,
                 cameraScale * scale.x,
                 cameraScale * scale.y);
         }
@@ -2038,14 +1974,34 @@ uint32_t RunProgram()
         if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
         {
             print("exiting");
-            if (millis() - exitHoldTime > 5000)
+            if (millis() - exitHoldTime > 2000)
             {
-                return 0;
+                break;
             }
         }
         else
         {
             exitHoldTime = millis();
+        }
+    }
+
+    for (int obj = 0; obj < currentScene->objectCount; obj++)
+    {
+        for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+        {
+
+            ScriptData *scrData = currentScene->objects[obj].scriptData[scr];
+
+            scrData->variableCount = scrData->backupVarCount;
+            for (int var = 0; var < scrData->variableCount; var++)
+            {
+                strcpy(scrData->data[var].name, scrData->backupData[var].name);
+                scrData->data[var].currentType = scrData->backupData[var].currentType;
+
+                scrData->data[var].data = scrData->backupData[var].data;
+            }
+
+            free(scrData->backupData);
         }
     }
 
