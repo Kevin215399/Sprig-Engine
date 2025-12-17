@@ -16,7 +16,7 @@
 
 char FILE_IDENTIFIER[] = "SPRIG-ENGINE1";
 
-char *currentProjectName;
+char *currentProjectName = NULL;
 
 typedef struct
 {
@@ -87,7 +87,7 @@ void CreateProject(char *name)
     print("allocated memory");
     char buffer[512];
 
-    snprintf(buffer, sizeof(buffer), "%s`0`0`0`0`0", FILE_IDENTIFIER);
+    snprintf(buffer, sizeof(buffer), "%s`0`0`0`0`0`0", FILE_IDENTIFIER);
 
     WriteFile(newFile, buffer, 512);
 
@@ -361,6 +361,8 @@ EngineObject *DeserializeObject(char *serializedObject)
     objectOut->objectDataCount = 0;
     objectOut->objectDataTail = NULL;
 
+    objectOut->colliderBoxes = NULL;
+
     for (int i = 0; i < dataCount; i++)
     {
         int type = 0;
@@ -387,12 +389,20 @@ EngineObject *DeserializeObject(char *serializedObject)
         objectOut->packages[0] = true;
         RecalculateObjectColliders(objectOut);
     }
+    else
+    {
+        objectOut->packages[0] = false;
+    }
 
     for (int i = 0; i < scriptCount; i++)
     {
+        int script = 0;
+
         sscanf(serializedObject + index,
                "`%d",
-               objectOut->scriptIndexes[i]);
+               &script);
+
+        objectOut->scriptIndexes[i] = script;
 
         index = IntLength(objectOut->scriptIndexes[i]) + 1;
         printf("added script %d\n", objectOut->scriptIndexes[i]);
@@ -523,15 +533,65 @@ void SaveProject(File *file)
 
     file->startBlock = originalBlock;
 
-    snprintf(buffer, sizeof(buffer), "%s`%d`%d`%d`%d`%d", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount, scriptBlock, sceneBlock);
+    snprintf(buffer, sizeof(buffer), "%s`%d`%d`%d`%d`%d`%d", FILE_IDENTIFIER, spriteCount, scriptCount, sceneCount, scriptBlock, sceneBlock, sceneBlock - (sceneNameLength / 512) - 1);
 
     WriteBlock(file->startBlock, buffer);
 
     DisengageSD();
 }
 
+void ClearProject()
+{
+    for (int s = 0; s < sceneCount; s++)
+    {
+        
+        for (int o = 0; o < scenes[s].objectCount; o++)
+        {
+            printf("scene: %d obj: %d\n",s,o);
+            print("clear data");
+            if (scenes[s].objects[o] != NULL)
+                ClearDataFromObject(scenes[s].objects[o]);
+            else{
+                print("null object");
+                continue;
+            }
+
+            print("clear colliders");
+            if (scenes[s].objects[o]->colliderBoxes != NULL)
+                free(scenes[s].objects[o]->colliderBoxes);
+            print("clear object");
+
+            free(scenes[s].objects[o]);
+            print("cleared object");
+        }
+        print("clearing obj array");
+        free(scenes[s].objects);
+        print("cleared obj array");
+    }
+
+    for (int i = 0; i < MAX_SPRITES; i++)
+    {
+        memset(&sprites[i], 0, sizeof(sprites[i]));
+    }
+
+    for (int i = 0; i < scriptCount; i++)
+    {
+        if (scripts[i].content != NULL)
+        {
+            free(scripts[i].content);
+        }
+        memset(scripts[i].name, 0, sizeof(scripts[i].name));
+        scripts[i].ID = 0;
+    }
+}
+
 void LoadProject(File *file)
 {
+
+    if (currentProjectName != NULL)
+    {
+        free(currentProjectName);
+    }
     currentProjectName = malloc(file->nameLength + 1);
     strcpy(currentProjectName, file->name);
 
@@ -545,9 +605,9 @@ void LoadProject(File *file)
 
     printf("%s", buffer.data + index);
 
-    int v1, v2, v3, scriptBlockStart, sceneBlockStart;
+    int v1, v2, v3, scriptBlockStart, sceneBlockStart, end;
 
-    sscanf(buffer.data + index, "%d`%d`%d`%d`%d", &v1, &v2, &v3, &scriptBlockStart, &sceneBlockStart);
+    sscanf(buffer.data + index, "%d`%d`%d`%d`%d`%d", &v1, &v2, &v3, &scriptBlockStart, &sceneBlockStart, &end);
 
     printf("v1: %d\n", v1);
     spriteCount = (uint8_t)v1;
@@ -576,7 +636,7 @@ void LoadProject(File *file)
 
     if (scriptBlockStart != 0)
     {
-        char *scriptsData = ReadFileUntil(file, '\0');
+        char *scriptsData = ReadFileUntilLimited(file, '\0', scriptBlockStart - sceneBlockStart);
         printf("scripts include: %s\n", scriptsData);
 
         index = 0;
@@ -622,7 +682,7 @@ void LoadProject(File *file)
 
         printf("scene block: %d\n", file->startBlock);
 
-        char *scenesData = ReadFileUntil(file, '\0');
+        char *scenesData = ReadFileUntilLimited(file, '\0', sceneBlockStart - end);
         printf("scenes include: %s\n", scenesData);
 
         index = 0;
@@ -651,14 +711,14 @@ void LoadProject(File *file)
 
             free(sceneFileName);
 
-            char *objectsSerialized = ReadFileUntilLimited(sceneFile, '\0',1);
+            char *objectsSerialized = ReadFileUntilLimited(sceneFile, '\0', 1);
             printf("object header: %s\n", objectsSerialized);
             int objectCount = 0;
             sscanf(objectsSerialized, "%d", &objectCount);
             free(objectsSerialized);
 
             scenes[i].objectCount = objectCount;
-            scenes[i].objects = malloc(sizeof(EngineObject) * MAX_OBJECTS);
+            scenes[i].objects = (EngineObject **)malloc(sizeof(EngineObject *) * MAX_OBJECTS);
 
             sceneFile->startBlock -= 1;
 
@@ -668,7 +728,8 @@ void LoadProject(File *file)
             {
                 printf("setting object %d\n", x);
                 char *objectData = ReadFileUntilLimited(sceneFile, '\0', 2);
-                scenes[i].objects[x] = *DeserializeObject(objectData);
+                EngineObject *obj = DeserializeObject(objectData);
+                scenes[i].objects[x] = obj;
                 free(objectData);
                 sceneFile->startBlock -= 2;
             }

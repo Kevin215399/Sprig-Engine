@@ -181,6 +181,13 @@ int main()
             }
             CreateProject(projectName);
 
+            /*program = GetFile(projectName);
+
+            if (program != NULL_FILE)
+            {
+                EditorMainScreen();
+            }*/
+
             free(projectName);
         }
         else if (menuOption == OPEN_PROGRAM)

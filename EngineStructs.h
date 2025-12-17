@@ -183,7 +183,7 @@ typedef struct EngineObject
 typedef struct
 {
     char name[MAX_NAME_LENGTH];
-    EngineObject *objects;
+    EngineObject **objects;
     uint8_t objectCount;
 } EngineScene;
 
@@ -345,8 +345,6 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
     return output;
 }
 
-
-
 void AddDataToObject(EngineObject *object, EngineVar *data)
 {
     if (object->objectDataTail == NULL)
@@ -371,6 +369,29 @@ void AddDataToObject(EngineObject *object, EngineVar *data)
 
     object->objectDataTail = newNode;
     object->objectDataCount++;
+}
+
+void ClearDataFromObject(EngineObject *object)
+{
+    printf("clear obj %s\n", object->name);
+    VarNode *currentData = object->objectDataTail;
+    while (currentData->previous != NULL)
+    {
+        currentData = currentData->previous;
+        if (currentData->next->link != NULL)
+        {
+            printf("clearing %s\n", currentData->next->link->name);
+            free(currentData->next->link);
+        }
+        free(currentData->next);
+    }
+    if (currentData != NULL)
+    {
+        free(currentData->link);
+        free(currentData);
+    }
+    currentData = NULL;
+    object->objectDataCount = 0;
 }
 
 EngineVar *GetObjectDataByName(EngineObject *obj, char *name)
@@ -430,6 +451,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     output->scriptCount = 0;
     output->objectDataCount = 0;
     output->objectDataTail = NULL;
+    output->colliderBoxes = NULL;
 
     memset(output->packages, 0, sizeof(output->packages));
 
@@ -508,7 +530,7 @@ uint8_t CreateScene(char *name, uint8_t nameLength)
         }
     }
     scenes[sceneCount].objectCount = 0;
-    scenes[sceneCount].objects = malloc(sizeof(EngineObject) * MAX_OBJECTS);
+    scenes[sceneCount].objects = (EngineObject **)malloc(sizeof(EngineObject*) * MAX_OBJECTS);
     return sceneCount++;
 }
 

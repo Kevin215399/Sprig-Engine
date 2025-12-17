@@ -776,6 +776,10 @@ void EditScript(uint8_t scriptIndex)
                         char *shortcut = HandleShortcuts();
                         if (shortcut != NULL)
                         {
+                            for (int i = strlen(currentScriptText) + strlen(shortcut); i > caretPosition; i--)
+                            {
+                                currentScriptText[i] = currentScriptText[i - strlen(shortcut)];
+                            }
                             strcpy(&currentScriptText[caretPosition], shortcut);
                             caretPosition += strlen(shortcut);
                             free(shortcut);
@@ -1191,20 +1195,20 @@ void EditorMainScreen()
             while (GetButton() != 0)
                 sleep_ms(10);
         }
-
-        if (GetButton() != 0)
+        int button = GetButton();
+        if (button != 0)
         {
             refresh = true;
-            if (GetButton() == BUTTON_W && option > 0)
+            if (button == BUTTON_W && option > 0)
             {
                 option--;
             }
-            if (GetButton() == BUTTON_S && option < 2)
+            if (button == BUTTON_S && option < 2)
             {
                 option++;
             }
 
-            if (GetButton() == BUTTON_J)
+            if (button == BUTTON_J)
             {
                 switch (option)
                 {
@@ -1221,6 +1225,13 @@ void EditorMainScreen()
                     ScriptMenu();
                     break;
                 }
+            }
+
+            if (button == BUTTON_L)
+            {
+                SaveProject(program);
+                ClearProject();
+                return;
             }
             editorView = 0;
         }

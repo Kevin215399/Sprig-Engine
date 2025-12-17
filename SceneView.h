@@ -30,13 +30,8 @@
 // Func prototypes
 uint32_t RunProgram();
 
-
-
 ///////////////////////// SCENE VIEW
 #pragma region
-
-
-
 
 #define SELECT_OBJECTS_UI 0
 #define SELECT_LAYOUT_UI 1
@@ -170,7 +165,6 @@ void UpdateUIButtons()
     }
 }
 
-
 // Scene renderers
 #pragma region
 
@@ -269,40 +263,40 @@ void RenderScene(int offsetX, int offsetY)
     {
         Vector2 scale;
 
-        if (GetObjectDataByName(&currentScene->objects[i], "scale")->currentType == TYPE_INT)
+        if (GetObjectDataByName(currentScene->objects[i], "scale")->currentType == TYPE_INT)
         {
-            scale.x = GetObjectDataByName(&currentScene->objects[i], "scale")->data.i;
-            scale.y = GetObjectDataByName(&currentScene->objects[i], "scale")->data.i;
+            scale.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
+            scale.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
         }
         else
         {
-            scale.x = GetObjectDataByName(&currentScene->objects[i], "scale")->data.XY.x;
-            scale.y = GetObjectDataByName(&currentScene->objects[i], "scale")->data.XY.y;
+            scale.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.x;
+            scale.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.y;
         }
 
-        if (strcmp(currentScene->objects[i].name, "Camera") == 0)
+        if (strcmp(currentScene->objects[i]->name, "Camera") == 0)
         {
-            camera = &currentScene->objects[i];
+            camera = currentScene->objects[i];
         }
 
-        DrawSpriteCentered(GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i,
+        DrawSpriteCentered(GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
 
-                           80 + offsetX + sceneScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x,
-                           64 + offsetY + sceneScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y,
+                           80 + offsetX + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x,
+                           64 + offsetY + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y,
                            sceneScale * scale.x,
                            sceneScale * scale.y);
 
-        for (int x = 0; x < currentScene->objects[i].colliderCount; x++)
+        for (int x = 0; x < currentScene->objects[i]->colliderCount; x++)
         {
 
-            Rect *rect = GetRectByID(currentScene->objects[i].colliderBoxes[x]);
+            Rect *rect = GetRectByID(currentScene->objects[i]->colliderBoxes[x]);
 
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(&currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(&currentScene->objects[i], "colliderCenter")->data.XY.y) + GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y),
-                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.x,
-                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(&currentScene->objects[i], "colliderSize")->data.XY.y);
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
+                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x,
+                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y);
         }
     }
 
@@ -318,7 +312,6 @@ void RenderScene(int offsetX, int offsetY)
         width,
         height);
 
-
     SmartShow();
 
     leftBound = 0;
@@ -333,10 +326,10 @@ void DecompileScene()
 {
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        for (int s = 0; s < currentScene->objects[i].scriptCount; s++)
+        for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
         {
             printf("obj: %d, scr: %d\n", i, s);
-            FreeScriptData(currentScene->objects[i].scriptData[s], false);
+            FreeScriptData(currentScene->objects[i]->scriptData[s], false);
         }
     }
 }
@@ -345,11 +338,11 @@ void RecompileScene()
 {
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        for (int s = 0; s < currentScene->objects[i].scriptCount; s++)
+        for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
         {
 
-            currentScene->objects[i].scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i].scriptIndexes[s]]);
-            currentScene->objects[i].scriptData[s]->linkedObject = &currentScene->objects[i];
+            currentScene->objects[i]->scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i]->scriptIndexes[s]]);
+            currentScene->objects[i]->scriptData[s]->linkedObject = currentScene->objects[i];
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -357,16 +350,23 @@ void RecompileScene()
 
             printf("obj: %d, scr: %d\n", i, s);
             uint32_t errorNum = SetScriptData(
-                &scripts[currentScene->objects[i].scriptData[s]->script->ID],
-                currentScene->objects[i].scriptData[s],
+                &scripts[currentScene->objects[i]->scriptData[s]->script->ID],
+                currentScene->objects[i]->scriptData[s],
                 0);
+            
+            printf("data set reutn %d\n",errorNum);
 
-            for (int t = 0; t < currentScene->objects[i].scriptData[s]->variableCount; t++)
+            printf("scene name: %s\n",currentScene->name);
+            printf("obj name: %s\n",currentScene->objects[i]->name);
+            printf("var count: %d\n",currentScene->objects[i]->scriptData[s]->variableCount);
+
+            for (int t = 0; t < currentScene->objects[i]->scriptData[s]->variableCount; t++)
             {
-                printf("set scr variable out: %s\n", currentScene->objects[i].scriptData[s]->data[t].name);
+                printf("set scr variable out: %s\n", currentScene->objects[i]->scriptData[s]->data[t].name);
 
-                if(currentScene->objects[i].scriptData[s]->data[t].currentType==TYPE_FLOAT){
-                    printf("is float: %f\n", currentScene->objects[i].scriptData[s]->data[t].data.f);
+                if (currentScene->objects[i]->scriptData[s]->data[t].currentType == TYPE_FLOAT)
+                {
+                    printf("is float: %f\n", currentScene->objects[i]->scriptData[s]->data[t].data.f);
                 }
             }
 
@@ -378,11 +378,16 @@ void RecompileScene()
             uint16_t error = UnpackErrorMessage(errorNum);
             printf("set script error: %s\n", stringPool[error]);
             FreeString(&error);
+            print("freed error");
         }
+        print("object's scripts set");
 
-        if (currentScene->objects[i].packages[0])
+        if (currentScene->objects[i]->packages[0])
         {
-            RecalculateObjectColliders(&currentScene->objects[i]);
+            print("is collider");
+            RecalculateObjectColliders(currentScene->objects[i]);
+        } else {
+            print("no collider");
         }
     }
 }
@@ -910,7 +915,7 @@ void ManageSceneUI()
                     buttons[ADD_THING_BUTTON].upNext = &buttons[OBJECT_BUTTONS + i];
                 }
                 SetButton(&buttons[OBJECT_BUTTONS + i], 10, 10 + i * 17, 140, 15, 6, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, top, &buttons[OPEN_NAV_PANEL], bottom, NULL);
-                AddTextToButton(&buttons[OBJECT_BUTTONS + i], currentScene->objects[i].name, WHITE, 1);
+                AddTextToButton(&buttons[OBJECT_BUTTONS + i], currentScene->objects[i]->name, WHITE, 1);
             }
 
             if (currentScene->objectCount > 0)
@@ -959,12 +964,12 @@ void ManageSceneUI()
 
             SetNavPanelVisibility(false);
 
-            WriteWord(currentScene->objects[currentObject].name, strlen(currentScene->objects[currentObject].name), 3, 3, 1, WHITE, BLUE);
+            WriteWord(currentScene->objects[currentObject]->name, strlen(currentScene->objects[currentObject]->name), 3, 3, 1, WHITE, BLUE);
 
             int height = 13;
             uint8_t buttonIndex = MODULE_BUTTONS;
             variableCount = 0;
-            printf("Script count: %d\n", currentScene->objects[currentObject].scriptCount);
+            printf("Script count: %d\n", currentScene->objects[currentObject]->scriptCount);
 
             // Serialize var prototype
             uint16_t SerializeVar(EngineVar * variable);
@@ -973,7 +978,7 @@ void ManageSceneUI()
             bool doCollider = false;
             bool doPhysics = false;
 
-            if (currentScene->objects[currentObject].packages[0])
+            if (currentScene->objects[currentObject]->packages[0])
             {
                 doCollider = true;
                 objectPackageCount++;
@@ -981,37 +986,40 @@ void ManageSceneUI()
 
             if (modulePage == 0)
             {
-                EngineVar **drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
                 DrawModulePage("Base", 3, &variableCount, drawVarList, &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else if (doCollider && modulePage == 1)
             {
-                EngineVar **drawVarList = ObjectDataToList(&currentScene->objects[currentObject]);
+                EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
                 DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[3], &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else
             {
                 uint8_t scriptIndex = modulePage - objectPackageCount;
-                printf("count: %d\n", currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
-                uint8_t scriptVariables = (currentScene->objects[currentObject].scriptData[scriptIndex]->variableCount);
+                printf("count: %d\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
+                uint8_t scriptVariables = (currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
 
                 EngineVar **passVars = (EngineVar **)malloc(sizeof(EngineVar *) * scriptVariables);
 
                 for (int i = 0; i < scriptVariables; i++)
                 {
-                    passVars[i] = &currentScene->objects[currentObject].scriptData[scriptIndex]->data[i];
-                    
+                    passVars[i] = &currentScene->objects[currentObject]->scriptData[scriptIndex]->data[i];
+
                     printf("passing data: %s\n", passVars[i]->name);
 
-                    if(passVars[i]->currentType == TYPE_FLOAT){
-                        printf("is float: %f\n",currentScene->objects[currentObject].scriptData[scriptIndex]->data[i].data.f);
-                    } else {
+                    if (passVars[i]->currentType == TYPE_FLOAT)
+                    {
+                        printf("is float: %f\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->data[i].data.f);
+                    }
+                    else
+                    {
                         print("isn't float");
                     }
                 }
-                DrawModulePage(scripts[currentScene->objects[currentObject].scriptIndexes[scriptIndex]].name,
+                DrawModulePage(scripts[currentScene->objects[currentObject]->scriptIndexes[scriptIndex]].name,
                                scriptVariables,
                                &variableCount,
                                passVars,
@@ -1103,7 +1111,7 @@ void ManageSceneUI()
             scene->startBlock -= 1;
             for (int obj = 0; obj < currentScene->objectCount; obj++)
             {
-                char *serializedObject = SerializeObject(&currentScene->objects[obj]);
+                char *serializedObject = SerializeObject(currentScene->objects[obj]);
                 print("obj serialized");
                 WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
                 scene->startBlock -= 2;
@@ -1118,6 +1126,8 @@ void ManageSceneUI()
             print("saved scene to project");
 
             SaveProject(program);
+
+            
             return;
         }
 
@@ -1175,8 +1185,8 @@ void ManageSceneUI()
             if (gpio_get(BUTTON_J) == 0)
             {
                 refreshSceneView = true;
-                GetObjectDataByName(&currentScene->objects[currentObject], "position")->data.XY.x = -scenePosX / sceneScale;
-                GetObjectDataByName(&currentScene->objects[currentObject], "position")->data.XY.y = -scenePosY / sceneScale;
+                GetObjectDataByName(currentScene->objects[currentObject], "position")->data.XY.x = -scenePosX / sceneScale;
+                GetObjectDataByName(currentScene->objects[currentObject], "position")->data.XY.y = -scenePosY / sceneScale;
             }
 
             if (refreshSceneView)
@@ -1379,7 +1389,7 @@ void ManageSceneUI()
 
                     if (script == 0)
                     {
-                        AddColliderToObject(&currentScene->objects[currentObject], COLLIDER_MESH, true);
+                        AddColliderToObject(currentScene->objects[currentObject], COLLIDER_MESH, true);
                         script = -1;
                     }
                     else
@@ -1389,9 +1399,9 @@ void ManageSceneUI()
 
                     if (script != -1)
                     {
-                        currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount] = ScriptDataConstructor(&scripts[script]);
-                        currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->linkedObject = &currentScene->objects[currentObject];
-                        currentScene->objects[currentObject].scriptIndexes[currentScene->objects[currentObject].scriptCount] = script;
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount] = ScriptDataConstructor(&scripts[script]);
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->linkedObject = currentScene->objects[currentObject];
+                        currentScene->objects[currentObject]->scriptIndexes[currentScene->objects[currentObject]->scriptCount] = script;
                         // Function prototypes
                         uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
                         uint16_t UnpackErrorMessage(uint32_t error);
@@ -1399,12 +1409,12 @@ void ManageSceneUI()
 
                         uint32_t errorNum = SetScriptData(
                             &scripts[script],
-                            currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount],
+                            currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount],
                             0);
 
-                        for (int t = 0; t < currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->variableCount; t++)
+                        for (int t = 0; t < currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variableCount; t++)
                         {
-                            printf("set scr variable out: %s\n", currentScene->objects[currentObject].scriptData[currentScene->objects[currentObject].scriptCount]->data[t].name);
+                            printf("set scr variable out: %s\n", currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->data[t].name);
                         }
 
                         if (errorNum != 0)
@@ -1416,14 +1426,15 @@ void ManageSceneUI()
                         printf("set script error: %s\n", stringPool[error]);
                         FreeString(&error);
 
-                        currentScene->objects[currentObject].scriptCount++;
+
+                        currentScene->objects[currentObject]->scriptCount++;
                     }
                     refresh = true;
                     sleep_ms(100);
                 }
 
-                uint8_t scriptCount = currentScene->objects[currentObject].scriptCount + 1;
-                if (currentScene->objects[currentObject].packages[0])
+                uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1;
+                if (currentScene->objects[currentObject]->packages[0])
                 {
                     print("has collider");
                     scriptCount++;
@@ -1489,10 +1500,12 @@ void ManageSceneUI()
                 if (name != NULL)
                 {
                     print("adding obj");
-                    currentScene->objects[currentScene->objectCount] = *ObjectConstructor(0, name, strlen(name));
+                    currentScene->objects[currentScene->objectCount] = ObjectConstructor(0, name, strlen(name));
                     currentScene->objectCount++;
                     free(name);
-                } else {
+                }
+                else
+                {
                     print("is null");
                 }
                 sleep_ms(120);
@@ -1807,14 +1820,14 @@ void SceneMenu()
                     if (sceneName != NULL)
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
-                        scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Camera", strlen("Camera"));
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
-                        GetObjectDataByName(&scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Camera", strlen("Camera"));
+                        GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
+                        GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
+                        GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
-                        scenes[index].objects[scenes[index].objectCount] = *ObjectConstructor(0, "Object1", strlen("Object1"));
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Object1", strlen("Object1"));
                         scenes[index].objectCount++;
 
                         EditScene(index);
@@ -1855,9 +1868,9 @@ uint32_t RunProgram()
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        if (strcmp(currentScene->objects[i].name, "Camera") == 0)
+        if (strcmp(currentScene->objects[i]->name, "Camera") == 0)
         {
-            camera = &currentScene->objects[i];
+            camera = currentScene->objects[i];
             break;
         }
     }
@@ -1869,12 +1882,12 @@ uint32_t RunProgram()
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
-        for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+        for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
         {
 
             printf("backup: obj:%d, scr:%d\n", obj, scr);
-            printf("scrdata lines: %d\n", currentScene->objects[obj].scriptData[scr]->lineCount);
-            ScriptData *scrData = currentScene->objects[obj].scriptData[scr];
+            printf("scrdata lines: %d\n", currentScene->objects[obj]->scriptData[scr]->lineCount);
+            ScriptData *scrData = currentScene->objects[obj]->scriptData[scr];
             print("got scr data");
             if (scrData == NULL)
             {
@@ -1918,13 +1931,13 @@ uint32_t RunProgram()
         SmartClear();
         for (int i = 0; i < currentScene->objectCount; i++)
         {
-            if (GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i < 0)
+            if (GetObjectDataByName(currentScene->objects[i], "sprite")->data.i < 0)
             {
                 continue;
             }
 
             Vector2 scale;
-            EngineVar *objScale = GetObjectDataByName(&currentScene->objects[i], "scale");
+            EngineVar *objScale = GetObjectDataByName(currentScene->objects[i], "scale");
             if (objScale->currentType == TYPE_INT)
             {
                 scale.x = objScale->data.i;
@@ -1939,9 +1952,9 @@ uint32_t RunProgram()
             printf("Scale: (%d,%d)\n", scale.x, scale.y);
 
             DrawSpriteCentered(
-                GetObjectDataByName(&currentScene->objects[i], "sprite")->data.i,
-                80 + cameraScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.x - cameraX,
-                64 + cameraScale * GetObjectDataByName(&currentScene->objects[i], "position")->data.XY.y - cameraY,
+                GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
+                80 + cameraScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x - cameraX,
+                64 + cameraScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y - cameraY,
                 cameraScale * scale.x,
                 cameraScale * scale.y);
         }
@@ -1950,12 +1963,12 @@ uint32_t RunProgram()
 
         for (int obj = 0; obj < currentScene->objectCount; obj++)
         {
-            for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+            for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
             {
-                currentScene->objects[obj].scriptData[scr]->currentLine = 0;
-                while (currentScene->objects[obj].scriptData[scr]->currentLine < currentScene->objects[obj].scriptData[scr]->lineCount)
+                currentScene->objects[obj]->scriptData[scr]->currentLine = 0;
+                while (currentScene->objects[obj]->scriptData[scr]->currentLine < currentScene->objects[obj]->scriptData[scr]->lineCount)
                 {
-                    uint32_t errorNum = ExecuteLine(currentScene->objects[obj].scriptData[scr]->script, currentScene->objects[obj].scriptData[scr]);
+                    uint32_t errorNum = ExecuteLine(currentScene->objects[obj]->scriptData[scr]->script, currentScene->objects[obj]->scriptData[scr]);
                     uint16_t error = UnpackErrorMessage(errorNum);
                     printf("Execute line result: %s\n", stringPool[error]);
                     if (errorNum != 0)
@@ -1987,10 +2000,10 @@ uint32_t RunProgram()
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
-        for (int scr = 0; scr < currentScene->objects[obj].scriptCount; scr++)
+        for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
         {
 
-            ScriptData *scrData = currentScene->objects[obj].scriptData[scr];
+            ScriptData *scrData = currentScene->objects[obj]->scriptData[scr];
 
             scrData->variableCount = scrData->backupVarCount;
             for (int var = 0; var < scrData->variableCount; var++)
