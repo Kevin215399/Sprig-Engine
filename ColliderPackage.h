@@ -9,52 +9,100 @@
 #define COLLIDER_RECT 0
 #define COLLIDER_MESH 1
 
+#define STATIC 0
+#define DYNAMIC 1
+
+#define DEBUG 1
+
+#ifdef DEBUG
+#define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
+#define debugPrint(x) printf("%s\n", x)
+#else
+#define debugPrintf(...) \
+    do                   \
+    {                    \
+    } while (0)
+#define debugPrint(x) \
+    do                \
+    {                 \
+    } while (0)
+#endif
+
 typedef struct Rect
 {
-    Vector2 center;
+    Vector2 topLeft;
     Vector2 scale;
     struct Rect *previous;
     struct Rect *next;
 
+    EngineObject *link;
+
     uint16_t ID;
 } Rect;
 
-Rect *rectTail;
+typedef struct RectReferer
+{
+
+    Rect *ref;
+
+    struct RectReferer *previous;
+    struct RectReferer *next;
+} RectReferer;
+
+Vector2 cellSize;
+
+typedef struct Cell
+{
+    Vector2 topleft;
+
+    RectReferer *rectsWithinCell;
+    uint16_t rectCount;
+
+    struct Cell *previous;
+    struct Cell *next;
+} Cell;
+
+Cell *cells = NULL;
+uint16_t cellCount = 0;
+
+Rect *colliderRects = NULL;
 uint16_t rectCount = 0;
 
-uint16_t NewRect(int x, int y, int w, int h)
+/////////////////////////// RECT HELPERS //////////////////////
+#pragma region
+uint16_t NewRect(int x, int y, int w, int h, Rect **rectTail, uint16_t *count)
 {
-    if (rectTail == NULL)
+    if ((*rectTail) == NULL)
     {
-        rectTail = (Rect *)malloc(sizeof(Rect));
+        (*rectTail) = (Rect *)malloc(sizeof(Rect));
 
-        rectTail->previous = NULL;
-        rectTail->next = NULL;
+        (*rectTail)->previous = NULL;
+        (*rectTail)->next = NULL;
     }
     else
     {
         Rect *newRect = (Rect *)malloc(sizeof(Rect));
-        rectTail->next = newRect;
-        newRect->previous = rectTail;
+        (*rectTail)->next = newRect;
+        newRect->previous = (*rectTail);
         newRect->next = NULL;
 
-        rectTail = newRect;
+        (*rectTail) = newRect;
     }
 
-    printf("new rect: %d,%d: %d,%d\n", x, y, w, h);
+    debugPrintf("new rect: %d,%d: %d,%d ID:%d\n", x, y, w, h, *count);
 
-    rectTail->center.x = x;
-    rectTail->center.y = y;
-    rectTail->scale.x = w;
-    rectTail->scale.y = h;
-    rectTail->ID = rectCount;
-    return rectCount++;
+    (*rectTail)->topLeft.x = x;
+    (*rectTail)->topLeft.y = y;
+    (*rectTail)->scale.x = w;
+    (*rectTail)->scale.y = h;
+    (*rectTail)->ID = *count;
+    return (*count)++;
 }
 
-Rect *GetRectByID(uint16_t ID)
+Rect *GetRectByID(uint16_t ID, Rect *rectTail)
 {
     Rect *currentRect = rectTail;
-    while (rectTail != NULL)
+    while (currentRect != NULL)
     {
         if (currentRect->ID == ID)
         {
@@ -65,9 +113,9 @@ Rect *GetRectByID(uint16_t ID)
     return NULL;
 }
 
-void DeleteRect(uint16_t ID)
+void DeleteRect(uint16_t ID, Rect *rectTail)
 {
-    Rect *rectToDelete = GetRectByID(ID);
+    Rect *rectToDelete = GetRectByID(ID, rectTail);
 
     rectToDelete->previous->next = rectToDelete->previous;
     rectToDelete->next->previous = rectToDelete->previous;
@@ -77,19 +125,163 @@ void DeleteRect(uint16_t ID)
     free(rectToDelete);
 }
 
-void ClearAllRects()
+void ClearAllRects(Rect **rectTail, uint16_t *count)
 {
-    Rect *currentRect = rectTail;
-    while (rectTail->previous != NULL)
+    Rect *currentRect = *rectTail;
+    while (currentRect->previous != NULL)
     {
         currentRect = currentRect->previous;
         free(currentRect->next);
         currentRect->next = NULL;
     }
     free(currentRect);
-    rectCount = 0;
-    rectTail = NULL;
+    count = 0;
+    *rectTail = NULL;
 }
+#pragma endregion
+
+/////////////////////////// RECT REFERER HELPERS //////////////////////
+#pragma region
+uint16_t NewRectReferer(Rect *ref, Cell *cell)
+{
+    if (cell->rectsWithinCell == NULL)
+    {
+        cell->rectsWithinCell = (RectReferer *)malloc(sizeof(RectReferer));
+
+        cell->rectsWithinCell->previous = NULL;
+        cell->rectsWithinCell->next = NULL;
+    }
+    else
+    {
+        RectReferer *newRect = (RectReferer *)malloc(sizeof(RectReferer));
+        cell->rectsWithinCell->next = newRect;
+        newRect->previous = cell->rectsWithinCell;
+        newRect->next = NULL;
+
+        cell->rectsWithinCell = newRect;
+    }
+
+    cell->rectsWithinCell->ref = ref;
+    debugPrintf("new referer: %d", ref->ID);
+    return cell->rectCount++;
+}
+
+RectReferer *GetRectRefererInCell(int index, Cell *cell)
+{
+    RectReferer *currentCell = cell->rectsWithinCell;
+    for (int i = 0; i < index; i++)
+    {
+        currentCell = currentCell->previous;
+        if (currentCell == NULL)
+        {
+            return NULL;
+        }
+    }
+    return currentCell;
+}
+
+void ClearRectReferersInCell(Cell *cell)
+{
+    RectReferer *currentCell = cell->rectsWithinCell;
+    while (currentCell->previous != NULL)
+    {
+        currentCell = currentCell->previous;
+        free(currentCell->next);
+        currentCell->next = NULL;
+    }
+    free(currentCell);
+    cell->rectCount = 0;
+    cell->rectsWithinCell = NULL;
+}
+#pragma endregion
+
+/////////////////////////// CELL HELPERS //////////////////////
+#pragma region
+uint16_t NewCell(int x, int y, Cell **cellTail)
+{
+    if ((*cellTail) == NULL)
+    {
+        (*cellTail) = (Cell *)malloc(sizeof(Cell));
+
+        (*cellTail)->previous = NULL;
+        (*cellTail)->next = NULL;
+    }
+    else
+    {
+        Cell *newRect = (Cell *)malloc(sizeof(Cell));
+        (*cellTail)->next = newRect;
+        newRect->previous = (*cellTail);
+        newRect->next = NULL;
+
+        (*cellTail) = newRect;
+    }
+
+    debugPrintf("new cell: %d,%d\n", x, y);
+
+    (*cellTail)->topleft.x = x;
+    (*cellTail)->topleft.y = y;
+
+    (*cellTail)->rectsWithinCell = NULL;
+    (*cellTail)->rectCount = 0;
+
+    return cellCount++;
+}
+
+Cell *GetCellByPosition(int x, int y, Cell *cellTail)
+{
+    Cell *currentCell = cellTail;
+    while (currentCell != NULL)
+    {
+        if (currentCell->topleft.x == x && currentCell->topleft.y == y)
+        {
+            return currentCell;
+        }
+        currentCell = currentCell->previous;
+    }
+    return NULL;
+}
+
+Cell *GetCellByIndex(int index, Cell *cellTail)
+{
+    Cell *currentCell = cellTail;
+    for (int i = 0; i < index; i++)
+    {
+        currentCell = currentCell->previous;
+        if (currentCell == NULL)
+        {
+            return NULL;
+        }
+    }
+    return currentCell;
+}
+
+void ClearAllCells(Cell **cellTail)
+{
+    Cell *currentCell = *cellTail;
+    while (currentCell->previous != NULL)
+    {
+        currentCell = currentCell->previous;
+        free(currentCell->next);
+        currentCell->next = NULL;
+    }
+    free(currentCell);
+    cellCount = 0;
+    *cellTail = NULL;
+}
+#pragma endregion
+
+Rect RectToWorld(Rect *rect)
+{
+    Rect output;
+    output.topLeft.x = (rect->topLeft.x) * GetObjectDataByName(rect->link, "scale")->data.XY.x + GetObjectDataByName(rect->link, "position")->data.XY.x;
+    output.topLeft.y = (rect->topLeft.y) * GetObjectDataByName(rect->link, "scale")->data.XY.y + GetObjectDataByName(rect->link, "position")->data.XY.y;
+
+    output.scale.x = rect->scale.x * GetObjectDataByName(rect->link, "scale")->data.XY.x;
+    output.scale.y = rect->scale.y * GetObjectDataByName(rect->link, "scale")->data.XY.x;
+
+    return output;
+}
+
 // Converts a shape into a series of rectangles. Efficient, but CPU heavy
 uint8_t SpriteToMesh(EngineSprite *sprite)
 {
@@ -152,26 +344,28 @@ uint8_t SpriteToMesh(EngineSprite *sprite)
                 }
             }
 
-            NewRect(x - SPRITE_WIDTH / 2, y - SPRITE_HEIGHT / 2, width, height);
+            NewRect(x - SPRITE_WIDTH / 2, -y + SPRITE_HEIGHT / 2, width, height, &colliderRects, &rectCount);
+            debugPrintf("rect count: %d\n", rectCount);
             rectsInMesh++;
         }
     }
 
     return rectsInMesh;
 }
+
 void RecalculateObjectColliders(EngineObject *object)
 {
     if (object->colliderCount > 0)
     {
         for (int i = 0; i < object->colliderCount; i++)
         {
-            DeleteRect(object->colliderBoxes[i]);
+            DeleteRect(object->colliderBoxes[i], colliderRects);
         }
         free(object->colliderBoxes);
         object->colliderCount = 0;
     }
 
-    if (GetObjectDataByName(object,"colliderType")->data.i == COLLIDER_RECT)
+    if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)
     {
         object->colliderBoxes = (uint16_t *)malloc(sizeof(uint16_t));
         object->colliderCount = 1;
@@ -180,49 +374,308 @@ void RecalculateObjectColliders(EngineObject *object)
             -SPRITE_WIDTH / 2,
             -SPRITE_HEIGHT / 2,
             SPRITE_WIDTH,
-            SPRITE_HEIGHT);
+            SPRITE_HEIGHT,
+            &colliderRects,
+            &rectCount);
+
+        GetRectByID(0, colliderRects)->link = object;
     }
     else
     {
-        uint8_t rectsInMesh = SpriteToMesh(&sprites[GetObjectDataByName(object,"sprite")->data.i]);
+        uint8_t rectsInMesh = SpriteToMesh(&sprites[GetObjectDataByName(object, "sprite")->data.i]);
 
         uint16_t *mesh = (uint16_t *)malloc(sizeof(uint16_t) * rectsInMesh);
         for (int i = 0; i < rectsInMesh; i++)
         {
             mesh[i] = rectCount - rectsInMesh + i;
+            GetRectByID(rectCount - rectsInMesh + i, colliderRects)->link = object;
         }
 
         object->colliderBoxes = mesh;
         object->colliderCount = rectsInMesh;
     }
 }
-void AddColliderToObject(EngineObject *object, uint16_t colliderType, bool calculateColliders)
-{
-    object->packages[0]=true;
 
-  
-    EngineVar*center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR);
+void AddColliderToObject(EngineObject *object, uint16_t meshTypeSet, bool calculateColliders)
+{
+    object->packages[0] = true;
+
+    EngineVar *center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR, true);
     center->data.XY.x = 0;
     center->data.XY.y = 0;
-    AddDataToObject(object,center);
+    AddDataToObject(object, center);
 
-    EngineVar*size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR);
+    EngineVar *size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR, true);
     size->data.XY.x = 1;
     size->data.XY.y = 1;
-    AddDataToObject(object,size);
+    AddDataToObject(object, size);
 
-    EngineVar*type = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT);
-    type->data.i = colliderType;
-    AddDataToObject(object,type);
+    EngineVar *meshType = VarConstructor("meshType", strlen("meshType"), TYPE_INT, true);
+    meshType->data.i = meshTypeSet;
+    AddDataToObject(object, meshType);
 
-    EngineVar*sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT);
-    sprite->data.i = GetObjectDataByName(object,"sprite")->data.i;
-    AddDataToObject(object,sprite);
-    
+    EngineVar *collisionType = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT, true);
+    collisionType->data.i = DYNAMIC;
+    AddDataToObject(object, collisionType);
 
+    EngineVar *mass = VarConstructor("mass", strlen("mass"), TYPE_INT, true);
+    mass->data.i = 1;
+    AddDataToObject(object, mass);
+
+    EngineVar *sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT, true);
+    sprite->data.i = GetObjectDataByName(object, "sprite")->data.i;
+    AddDataToObject(object, sprite);
 
     if (calculateColliders)
         RecalculateObjectColliders(object);
+}
+
+void AverageCellSize()
+{
+    cellSize.x = 0;
+    cellSize.y = 0;
+    Rect *currentRect = colliderRects;
+    while (currentRect != NULL)
+    {
+        debugPrintf("added rect");
+        cellSize.x += RectToWorld(currentRect).scale.x;
+        cellSize.y += RectToWorld(currentRect).scale.y;
+        currentRect = currentRect->previous;
+    }
+    cellSize.x /= rectCount;
+    cellSize.y /= rectCount;
+
+    debugPrintf("cell size averaged: (%f,%f)\n", cellSize.x, cellSize.y);
+}
+
+Vector2 NearestCell(int x, int y)
+{
+    Vector2 out;
+    out.x = floor(x / cellSize.x) * cellSize.x;
+    out.y = ceil(y / cellSize.y) * cellSize.y;
+    return out;
+}
+
+void CreateCells()
+{
+    Rect *currentRect = colliderRects;
+    while (currentRect != NULL)
+    {
+
+        Rect worldRect = RectToWorld(currentRect);
+
+        Vector2 leftTopCell = NearestCell(worldRect.topLeft.x, worldRect.topLeft.y);
+        Vector2 rightTopCell = NearestCell(worldRect.topLeft.x + worldRect.scale.x, worldRect.topLeft.y);
+        Vector2 leftBottomCell = NearestCell(worldRect.topLeft.x, worldRect.topLeft.y - worldRect.scale.y);
+        Vector2 rightBottomCell = NearestCell(worldRect.topLeft.x + worldRect.scale.x, worldRect.topLeft.y - worldRect.scale.y);
+
+        for (int x = leftBottomCell.x; x <= rightTopCell.x; x += cellSize.x)
+        {
+            for (int y = leftBottomCell.y; y <= rightTopCell.y; y += cellSize.y)
+            {
+                debugPrintf("(%f,%f)", x, y);
+
+                if (GetCellByPosition(x, y, cells) == NULL)
+                {
+                    NewCell(x, y, &cells);
+                }
+
+                NewRectReferer(currentRect, GetCellByPosition(x, y, cells));
+                debugPrintf("added rect to cell");
+            }
+        }
+
+        currentRect = currentRect->previous;
+    }
+    debugPrintf("cells created");
+}
+
+bool AABB(Rect *a, Rect *b)
+{
+    Rect worldA = RectToWorld(a);
+    Rect worldB = RectToWorld(b);
+
+    if (worldA.topLeft.x < worldB.topLeft.x + worldB.scale.x &&
+        worldA.topLeft.x + worldA.scale.x > worldB.topLeft.x &&
+        worldA.topLeft.y > worldB.topLeft.y - worldB.scale.y &&
+        worldA.topLeft.y - worldA.scale.y < worldB.topLeft.y)
+        return true;
+    return false;
+}
+
+void ResolveCollision(Rect *a, Rect *b)
+{
+    float aForce = 0;
+    float bForce = 0;
+
+    float massA = (float)GetObjectDataByName(a->link, "mass")->data.i;
+    float massB = (float)GetObjectDataByName(b->link, "mass")->data.i;
+
+    int typeA = GetObjectDataByName(a->link, "colliderType")->data.i;
+    int typeB = GetObjectDataByName(b->link, "colliderType")->data.i;
+
+    if (typeA == STATIC)
+    {
+        aForce = 0;
+    }
+    else if (typeA == DYNAMIC)
+    {
+        if (typeB == STATIC)
+            aForce = 1;
+        else
+            aForce = massB / (massA + massB);
+    }
+
+    if (typeB == STATIC)
+    {
+        bForce = 0;
+    }
+    else if (typeB == DYNAMIC)
+    {
+        if (typeA == STATIC)
+            bForce = 1;
+        else
+            bForce = massA / (massA + massB);
+    }
+
+    debugPrintf("aForce: %f\n", aForce);
+    debugPrintf("bForce: %f\n", bForce);
+
+    if (aForce == 0 && bForce == 0)
+    {
+        return;
+    }
+
+    Rect worldA = RectToWorld(a);
+    debugPrintf("a pos: (%f,%f)\n", worldA.topLeft.x, worldA.topLeft.y);
+
+    Rect worldB = RectToWorld(b);
+    debugPrintf("b pos: (%f,%f)\n", worldB.topLeft.x, worldB.topLeft.y);
+
+    int direction = 0;
+    int costs[4];
+
+    costs[0] = abs((worldB.topLeft.y + worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
+    costs[2] = abs((worldB.topLeft.y - worldB.scale.y - worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
+
+    debugPrintf("calculated y costs");
+
+    costs[1] = abs((worldB.topLeft.x + worldB.scale.x + worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
+    costs[3] = abs((worldB.topLeft.x - worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
+
+    debugPrintf("calculated x costs");
+
+    int lowestCost = -1;
+    for (int i = 0; i < 4; i++)
+    {
+        debugPrintf("check dir %d: %d, lowest: %d\n", i, costs[i], lowestCost);
+        if (lowestCost == -1 || costs[i] < lowestCost)
+        {
+            direction = i;
+            lowestCost = costs[i];
+        }
+    }
+
+    debugPrintf("Direction: %d\n", direction);
+
+    EngineVar *aPos = GetObjectDataByName(a->link, "position");
+    EngineVar *bPos = GetObjectDataByName(b->link, "position");
+
+    switch (direction)
+    {
+    case 0:
+        debugPrintf("0: a-%f, b-%f\n", (float)costs[0] * aForce, -(float)costs[0] * bForce);
+        aPos->data.XY.y += (float)costs[0] * aForce;
+        bPos->data.XY.y -= (float)costs[0] * bForce;
+        break;
+    case 1:
+        debugPrintf("1: a-%f, b-%f\n", (float)costs[1] * aForce, -(float)costs[1] * bForce);
+        aPos->data.XY.x += (float)costs[1] * aForce;
+        bPos->data.XY.x -= (float)costs[1] * bForce;
+        break;
+    case 2:
+        debugPrintf("2: a-%f, b-%f\n", -(float)costs[2] * aForce, (float)costs[2] * bForce);
+        aPos->data.XY.y -= (float)costs[2] * aForce;
+        bPos->data.XY.y += (float)costs[2] * bForce;
+        break;
+    case 3:
+        debugPrintf("3: a-%f, b-%f\n", -(float)costs[3] * aForce, (float)costs[3] * bForce);
+        aPos->data.XY.x -= (float)costs[3] * aForce;
+        bPos->data.XY.x += (float)costs[3] * bForce;
+        break;
+    }
+    debugPrintf("resolved");
+}
+
+bool CheckCell(Cell *cell)
+{
+    if (cell->rectCount <= 1)
+    {
+        return false;
+    }
+    bool isCollision = false;
+    for (int a = 0; a < cell->rectCount; a++)
+    {
+        for (int b = a; b < cell->rectCount; b++)
+        {
+            debugPrintf("a: %d, b: %d\n", a, b);
+            if (a == b)
+            {
+                continue;
+            }
+
+            Rect *rectA = GetRectRefererInCell(a, cell)->ref;
+            Rect *rectB = GetRectRefererInCell(b, cell)->ref;
+
+            bool isCollide = AABB(rectA, rectB);
+            if (isCollide)
+            {
+                debugPrintf("hit: %d and %d\n", rectA->ID, rectB->ID);
+                ResolveCollision(rectA, rectB);
+                isCollision = true;
+            }
+        }
+    }
+
+    debugPrintf("cell checked");
+    return isCollision;
+}
+
+void ColliderStep()
+{
+
+    debugPrintf("rect count: %d\n", rectCount);
+    if(rectCount==0){
+        return;
+    }
+    AverageCellSize();
+
+    for (int x = 0; x < 5; x++)
+    {
+        bool didCollide = false;
+        debugPrintf("COLLISION ITERATION %d\n", x);
+        CreateCells();
+
+        for (int i = 0; i < cellCount; i++)
+        {
+            debugPrintf("get cell: %d\n", i);
+            Cell *cell = GetCellByIndex(i, cells);
+            if (CheckCell(cell))
+            {
+                didCollide = true;
+            }
+
+            ClearRectReferersInCell(cell);
+        }
+        ClearAllCells(&cells);
+
+        if (!didCollide)
+        {
+            break;
+        }
+    }
+
+    cells = NULL;
 }
 
 #endif

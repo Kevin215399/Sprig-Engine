@@ -18,7 +18,7 @@ File *program;
 #include "ProgramCreate.h"
 #include "ProgramSelect.h"
 #include "Editor.h"
-
+#include "Extras/FireWork.h"
 
 
 #include "Interpreter.h"
@@ -72,6 +72,9 @@ int main()
     //sleep_ms(4000);
 
     InitializeLights();
+
+    //sleep_ms(1000);
+    //FireworkShow();
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();

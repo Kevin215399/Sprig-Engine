@@ -6,7 +6,8 @@
 #include <string.h>
 // #include "LinkedList.h"
 
-#define COLLIDER_VARS 4
+#define COLLIDER_VARS 6
+#define BASE_VARS 5
 
 #define MAX_SCRIPTS_PER_OBJECT 10
 #define MAX_NAME_LENGTH 16
@@ -54,8 +55,8 @@ bool CharCmpr(char *str1, char *str2)
 // A struct for position
 typedef struct
 {
-    int x;
-    int y;
+    float x;
+    float y;
 } Vector2;
 
 // A union that holds all supported types
@@ -76,6 +77,7 @@ typedef struct
     char name[MAX_NAME_LENGTH];
     uint8_t currentType;
     VariableUnion data;
+    bool serialized;
 } EngineVar;
 
 typedef struct
@@ -270,7 +272,7 @@ uint8_t sceneCount;
 
 /////////////////////////////// HELPER FUNCTIONS /////////////////////////////////
 
-EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType)
+EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType, bool serialized)
 {
     EngineVar *output = (EngineVar *)malloc(sizeof(EngineVar));
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
@@ -285,6 +287,7 @@ EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType)
         }
     }
     output->currentType = dataType;
+    output->serialized = serialized;
     return output;
 }
 
@@ -455,9 +458,12 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     memset(output->packages, 0, sizeof(output->packages));
 
-    AddDataToObject(output, VarConstructor("position", strlen("position"), TYPE_VECTOR));
-    AddDataToObject(output, VarConstructor("sprite", strlen("sprite"), TYPE_INT));
-    AddDataToObject(output, VarConstructor("scale", strlen("scale"), TYPE_VECTOR));
+    AddDataToObject(output, VarConstructor("position", strlen("position"), TYPE_VECTOR, true));
+    AddDataToObject(output, VarConstructor("sprite", strlen("sprite"), TYPE_INT, true));
+    AddDataToObject(output, VarConstructor("scale", strlen("scale"), TYPE_VECTOR, true));
+
+    AddDataToObject(output, VarConstructor("velocity", strlen("velocity"), TYPE_VECTOR, false));
+    AddDataToObject(output, VarConstructor("drag", strlen("drag"), TYPE_INT, true));
 
     print("Added data");
 
@@ -467,6 +473,12 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     GetObjectDataByName(output, "position")->data.XY.x = 0;
     GetObjectDataByName(output, "position")->data.XY.y = 0;
+
+    GetObjectDataByName(output, "velocity")->data.XY.x = 0;
+    GetObjectDataByName(output, "velocity")->data.XY.y = 0;
+
+   // GetObjectDataByName(output, "drag")->data.i = 10;
+
     print("set data");
 
     output->colliderCount = 0;
@@ -477,7 +489,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 // Put dummy data into NULL_SCRIPT, NULL_SPRITE, NULL_OBJECT, and NULL_VAR
 void CreateNullStructs()
 {
-    NULL_VAR = VarConstructor("", 0, 0);
+    NULL_VAR = VarConstructor("", 0, 0, false);
     NULL_SCRIPT = ScriptConstructor(0, "", "");
     NULL_SCRIPT_DATA = ScriptDataConstructor(NULL_SCRIPT);
     uint16_t emptySprite[SPRITE_WIDTH][SPRITE_HEIGHT];

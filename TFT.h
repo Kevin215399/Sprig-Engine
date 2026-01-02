@@ -517,6 +517,12 @@ uint8_t WriteWord(char *word, int len, int x, int y, uint8_t scale, uint16_t col
             xOffset = 0;
             currentLine++;
         }
+        if (word[i] == '\n')
+        {
+            xOffset = 0;
+            currentLine++;
+            continue;
+        }
         if (background != TRANSPARENT)
         {
             uint8_t bufferHeight = 7 * scale + (scale - 1) * 2;

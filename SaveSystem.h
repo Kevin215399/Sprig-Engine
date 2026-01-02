@@ -273,9 +273,10 @@ char *SerializeObject(EngineObject *object)
         EngineVar *objectData = GetObjectDataByIndex(object, i);
         uint16_t value = SerializeVar(objectData);
 
-        sprintf(output + index, "`%s\n`%d`%s\n",
+        sprintf(output + index, "`%s\n`%d`%c`%s\n",
                 objectData->name,
                 objectData->currentType,
+                (objectData->serialized) ? 't' : 'f',
                 stringPool[value]);
 
         printf("obj %s\n", output);
@@ -304,7 +305,7 @@ char *SerializeObject(EngineObject *object)
 
 EngineVar *DeserializeVar(uint8_t type, char *serializedVar)
 {
-    EngineVar *output = VarConstructor("", 0, NO_TYPE);
+    EngineVar *output = VarConstructor("", 0, NO_TYPE, false);
     switch (type)
     {
     case TYPE_BOOL:
@@ -326,7 +327,7 @@ EngineVar *DeserializeVar(uint8_t type, char *serializedVar)
         break;
     case TYPE_VECTOR:
         output->currentType = TYPE_VECTOR;
-        sscanf(serializedVar, "(%d, %d)", &output->data.XY.x, &output->data.XY.y);
+        sscanf(serializedVar, "(%f,%f)", &output->data.XY.x, &output->data.XY.y);
         break;
 
     default:
@@ -368,20 +369,24 @@ EngineObject *DeserializeObject(char *serializedObject)
         int type = 0;
         char dataName[32] = {0};
         char data[64];
+        char serialized = 'f';
         printf("index: %d: %c\n", index, serializedObject[index]);
-        sscanf(serializedObject + index, "`%[^\n]\n`%d`%[^\n]\n", &dataName, &type, &data);
+        sscanf(serializedObject + index, "`%[^\n]\n`%d`%c`%[^\n]\n", &dataName, &type,&serialized, &data);
         printf("name: %s\n", dataName);
         printf("data type: %d, %s\n", type, data);
 
         EngineVar *var = DeserializeVar(type, data);
         strncpy(var->name, dataName, 16);
         var->name[15] = '\0';
+
+        var->serialized = serialized=='t'?1:0;
+
         print("Deserialized var, adding to object");
         AddDataToObject(objectOut, var);
 
         printf("deserialized type: %d\n", GetObjectDataByIndex(objectOut, i)->currentType);
 
-        index += 5 + IntLength(type) + strlen(data) + strlen(dataName);
+        index += 7 + IntLength(type) + strlen(data) + strlen(dataName);
     }
 
     if (colliderAdded == 't')

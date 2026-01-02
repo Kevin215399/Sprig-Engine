@@ -18,7 +18,7 @@
 #define LEFT_LIGHT 28
 #define RIGHT_LIGHT 4
 
-//#define DEBUG 1
+// #define DEBUG 1
 
 #ifdef DEBUG
 #define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
@@ -93,7 +93,7 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 31
+#define OPERATOR_COUNT 34
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
@@ -109,11 +109,14 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"rightLED", 13, 1},
     {"leftLED", 13, 1},
 
-    {"setCameraScale", 13, 1},
-
     {"setPosition", 13, 1},
     {"setScale", 13, 1},
     {"setSprite", 13, 1},
+    {"setVelocity", 13, 1},
+
+    {"addPosition", 13, 1},
+    {"addScale", 13, 1},
+    {"addVelocity", 13, 1},
 
     {"PI", 12, 0},
 
@@ -311,7 +314,14 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
 
     for (int i = 0; i < strlen(script->content); i++)
     {
-        debugPrintf("%c\n", script->content[i]);
+        if (script->content[i] > 32)
+        {
+            debugPrintf("%c\n", script->content[i]);
+        }
+        else
+        {
+            debugPrintf("%d\n", (int)script->content[i]);
+        }
         lineLength++;
         if (script->content[i] == ';')
         {
@@ -335,6 +345,8 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
     uint16_t caret = 0;
     for (int i = 0; i < strlen(script->content); i++)
     {
+        debugPrintf("%d\n", i);
+        debugPrintf("char: %c\n", script->content[i]);
         if (script->content[i] != ';')
             lines[currentLine][caret++] = script->content[i];
         // debugPrintf("line %d, %c\n", currentLine, script->content[i]);
@@ -346,18 +358,30 @@ void SplitScript(EngineScript *script, ScriptData *scriptData)
             caret = 0;
             if (currentLine < lineCount)
             {
-                // debugPrintf("Line: %d, index: %d\n", currentLine, i + 1);
+                debugPrintf("Line: %d, index: %d\n", currentLine, i + 1);
                 lineIndexes[currentLine] = i + 1;
+            }
+            else
+            {
+                break;
             }
         }
     }
     // lines[lineCount - 1][caret] = '\0';
 
+    debugPrint("assigning split");
+
     scriptData->lines = lines;
+    debugPrint("assigned to lines");
+
     scriptData->lineIndexes = lineIndexes;
+    debugPrint("assigned to lineIndexes");
+
     scriptData->lineCount = lineCount;
+    debugPrint("assigned to lineCount");
 
     scriptData->script = script;
+    debugPrint("assigned to script");
 }
 
 uint32_t CalculateBrackets(EngineScript *script, ScriptData *output)
@@ -443,8 +467,6 @@ uint32_t CalculateBrackets(EngineScript *script, ScriptData *output)
     return 0;
 }
 
-
-
 bool IsNumber(char value)
 {
     if (value <= 57 && value >= 48)
@@ -524,8 +546,8 @@ uint16_t SerializeVar(EngineVar *variable)
     {
         debugPrint("serialize float");
 
-        debugPrintf("val: %f\n",variable->data.f);
-        
+        debugPrintf("val: %f\n", variable->data.f);
+
         int numberLength = FloatLength(variable->data.f);
 
         uint16_t floatChar = PoolString();
@@ -551,7 +573,7 @@ uint16_t SerializeVar(EngineVar *variable)
     {
         uint16_t vectorChar = PoolString();
 
-        sprintf(stringPool[vectorChar], "(%d, %d)", variable->data.XY.x, variable->data.XY.y);
+        sprintf(stringPool[vectorChar], "(%f,%f)", variable->data.XY.x, variable->data.XY.y);
         return vectorChar;
     }
 
@@ -842,7 +864,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             else
             {
                 // If operator is not parenthesis, then move operators to the operands IF the precedence is greater or equal, then push operator
-                if (allAtoms[i].precedence != 0 && operandIndex>0)
+                if (allAtoms[i].precedence != 0 && operandIndex > 0)
                 {
                     while (operatorIndex > 0 && operationStack[operatorIndex - 1].precedence >= allAtoms[i].precedence)
                     {
@@ -917,10 +939,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     else if (operandStack[i - x - 1].type == TYPE_VECTOR)
                     {
                         debugPrint("vector param");
-                        int vectX = 0;
-                        int vectY = 0;
-                        sscanf((stringPool[operandStack[i - x - 1].atom]), "(%d, %d)", &vectX, &vectY);
-                        debugPrintf("v:%d,%d\n", vectX, vectY);
+                        float vectX = 0;
+                        float vectY = 0;
+                        sscanf((stringPool[operandStack[i - x - 1].atom]), "(%f,%f)", &vectX, &vectY);
+                        debugPrintf("v:%f,%f\n", vectX, vectY);
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.x = vectX;
                         varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.y = vectY;
                         varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_VECTOR;
@@ -1025,10 +1047,10 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             {
                 if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
                 {
-                    debugPrintf("set pos (%d,%d)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
+                    debugPrintf("set pos (%f,%f)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
 
                     GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = -varPool[parameters[0]].data.XY.y;
+                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = varPool[parameters[0]].data.XY.y;
 
                     debugPrint("set");
                 }
@@ -1036,6 +1058,32 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
                     GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "setVelocity") == 0 && scriptData->linkedObject != NULL)
+                {
+                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y = varPool[parameters[0]].data.XY.y;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "addPosition") == 0 && scriptData->linkedObject != NULL)
+                {
+                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y += varPool[parameters[0]].data.XY.y;
+                    printf("new pos (%f,%f)\n",
+                           GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x,
+                           GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y);
+                }
+                if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                {
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y += varPool[parameters[0]].data.XY.y;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "addVelocity") == 0 && scriptData->linkedObject != NULL)
+                {
+                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y += varPool[parameters[0]].data.XY.y;
                 }
             }
 
@@ -1124,7 +1172,14 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     varPool[result].data.f = sin(varPool[parameters[0]].data.f);
                 }
 
-                if (strcmp(stringPool[operandStack[i].atom], "setCameraScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                {
+                    varPool[result].currentType = NO_TYPE;
+
+                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
+                }
+
+                if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
                 {
                     varPool[result].currentType = NO_TYPE;
 
@@ -1148,7 +1203,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
                 }
 
-                if (stringPool[operandStack[i].atom][0]=='@')
+                if (stringPool[operandStack[i].atom][0] == '@')
                 {
                     debugPrint("UNARY NEGATE OP");
                     varPool[result].data.f = -varPool[parameters[0]].data.f;
@@ -1387,8 +1442,6 @@ bool IsAlphaNumeric(char c)
     }
     return false;
 }
-
-
 
 uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 {
@@ -1637,7 +1690,7 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                 {
                     debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
                     debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
-                     float floatVal = (float)varPool[assignValue].data.i;
+                    float floatVal = (float)varPool[assignValue].data.i;
                     output->data[output->variableCount].data.f = floatVal;
                 }
                 else if (varPool[assignValue].currentType == TYPE_FLOAT)
@@ -2167,7 +2220,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                     for (int x = 0; x < scriptData->lineCount - 1; x++)
                     {
 
-                        debugPrintf("(%d,%d): %d\n", scriptData->lineIndexes[x], scriptData->lineIndexes[x + 1], scriptData->brackets[i].endPos);
+                        debugPrintf("(%f,%f): %d\n", scriptData->lineIndexes[x], scriptData->lineIndexes[x + 1], scriptData->brackets[i].endPos);
                         if (
                             scriptData->lineIndexes[x] <= scriptData->brackets[i].endPos &&
                             scriptData->lineIndexes[x + 1] > scriptData->brackets[i].endPos)
@@ -2291,6 +2344,5 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 
     return 0;
 }
-
 
 #endif

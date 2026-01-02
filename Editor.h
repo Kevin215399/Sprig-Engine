@@ -18,6 +18,8 @@
 
 #include "SceneView.h"
 
+#include "Keybinds.h"
+
 #define PALLETE_WIDTH 12
 #define PALLETE_HEIGHT 15
 
@@ -423,7 +425,7 @@ char *SC_CATEGORY_NAMES[] = {
     "Object",
     "Collider",
     "Physics",
-    "Output",
+    "IO",
     "Display"};
 
 #define SC_CONDITION_COUNT 4
@@ -450,12 +452,16 @@ char *SC_MATH_SHORTCUTS[] = {
     "cos",
     "deltaTime"};
 
-#define SC_OBJECT_COUNT 7
+#define SC_OBJECT_COUNT 10
 char *SC_OBJECT_SHORTCUTS[] = {
     "setPosition()",
     "setScale()",
     "setSprite()",
-    "setCameraScale()",
+    "setVelocity()",
+
+    "addPosition()",
+    "addScale()",
+    "addVelocity()",
 
     "getPosition()",
     "getScale()",
@@ -498,7 +504,6 @@ char *HandleShortcuts()
     bool refresh = true;
     uint8_t selected = 0;
     char *output = malloc(32);
-    selected = 0;
     shortcutPage = 0;
     while (1)
     {
@@ -506,6 +511,7 @@ char *HandleShortcuts()
 
         if (refresh)
         {
+            refresh = false;
             Rectangle(RGBTo16(0, 0, 60), 0, 68, 160, 60);
             switch (shortcutCategory)
             {
@@ -544,41 +550,43 @@ char *HandleShortcuts()
                 strcpy(output, SC_IO_SHORTCUTS[selected]);
                 break;
             }
-            sleep_ms(120);
-            refresh = false;
+            sleep_ms(100);
         }
-        uint8_t buttonPressed = GetButton();
-        if (buttonPressed != 0)
+
+        int buttonPress = GetButton();
+        if (buttonPress != 0)
         {
             refresh = true;
-            if (buttonPressed == BUTTON_D && shortcutPage < ceil(count / 5))
+            if (buttonPress == BUTTON_D && shortcutPage < ceil(count / 5))
             {
                 shortcutPage++;
                 selected = shortcutPage * 5;
             }
-            if (buttonPressed == BUTTON_A && shortcutPage > 0)
+            if (buttonPress == BUTTON_A && shortcutPage > 0)
             {
                 shortcutPage--;
                 selected = shortcutPage * 5;
             }
-            if (buttonPressed == BUTTON_W && selected > shortcutPage * 5)
+            if (buttonPress == BUTTON_W && selected > shortcutPage * 5)
             {
+                print("w");
                 selected--;
             }
-            if (buttonPressed == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
+            if (buttonPress == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
             {
+                print("s");
                 selected++;
             }
 
             if (shortcutCategory == -1)
             {
-                if (buttonPressed == BUTTON_J)
+                if (buttonPress == BUTTON_J)
                 {
                     shortcutCategory = selected;
                     selected = 0;
                     shortcutPage = 0;
                 }
-                if (buttonPressed == BUTTON_L)
+                if (buttonPress == BUTTON_L)
                 {
                     free(output);
                     return NULL;
@@ -586,22 +594,34 @@ char *HandleShortcuts()
             }
             else
             {
-                if (buttonPressed == BUTTON_J)
+                if (buttonPress == BUTTON_J)
                 {
                     return output;
                 }
-                if (buttonPressed == BUTTON_L)
+                if (buttonPress == BUTTON_L)
                 {
                     shortcutCategory = -1;
                     selected = 0;
                     shortcutPage = 0;
                 }
             }
-            printf("selected: %d\n", selected);
         }
     }
 }
-
+void RecalculateCaret(int *caretX, int *caretY, int *caretPos)
+{
+    (*caretX) = 0;
+    (*caretY) = 0;
+    for (int i = 0; i < (*caretPos); i++)
+    {
+        (*caretX)++;
+        if (currentScriptText[i] == '\n')
+        {
+            (*caretX) = 0;
+            (*caretY)++;
+        }
+    }
+}
 void EditScript(uint8_t scriptIndex)
 {
     bool refresh = true;
@@ -610,6 +630,10 @@ void EditScript(uint8_t scriptIndex)
     uint8_t animateKeyboard = 0;
 
     int caretPosition = 0;
+
+    int caretX = 0;
+    int caretY = 0;
+
     uint16_t line = 0;
     unsigned long blinkTime = millis();
     bool drawCaret = true;
@@ -624,6 +648,14 @@ void EditScript(uint8_t scriptIndex)
     printf("Loaded content: %s\n", currentScriptText);
 
     keyboard[0] = HAMBURGER_SYB;
+
+    bool isSelecting = false;
+
+    int startSelectCaret = 0;
+    int startSelectX = 0;
+    int startSelectY = 0;
+
+    char copyBuffer[SCRIPT_LENGTH / 2 + 2];
 
     while (1)
     {
@@ -671,12 +703,50 @@ void EditScript(uint8_t scriptIndex)
             }
             content[SCRIPT_LENGTH] = '\0';
 
+            if (isSelecting && caretPosition != startSelectCaret)
+            {
+                uint16_t selectColor = RGBTo16(0, 80, 150);
+                if (caretY == startSelectY)
+                {
+                    if (startSelectCaret < caretPosition)
+                    {
+                        Rectangle(selectColor, startSelectX * 6, caretY * 8, abs(caretX * 6 - startSelectX * 6), 8);
+                    }
+                    else
+                    {
+                        Rectangle(selectColor, (caretX + 1) * 6, caretY * 8, abs(caretX - startSelectX) * 6, 8);
+                    }
+                }
+                else
+                {
+                    if (startSelectCaret < caretPosition)
+                    {
+                        Rectangle(selectColor, startSelectX * 6, startSelectY * 8, 160 - startSelectX * 6, 8);
+                        for (int y = startSelectY + 1; y < caretY; y++)
+                        {
+                            Rectangle(selectColor, 0, y * 8, 160, 8);
+                        }
+                        Rectangle(selectColor, 0, caretY * 8, caretX * 6, 8);
+                    }
+                    else
+                    {
+                        Rectangle(selectColor, caretX * 6, caretY * 8, 160 - caretX * 6, 8);
+                        for (int y = caretY + 1; y < startSelectY; y++)
+                        {
+                            Rectangle(selectColor, 0, y * 8, 160, 8);
+                        }
+                        Rectangle(selectColor, 0, startSelectY * 8, startSelectX * 6, 8);
+                    }
+                }
+            }
+
             WriteWord(content + contentStartIndex, min((SCRIPT_LENGTH + 1 - contentStartIndex), 416), 0, 0, 1, WHITE, TRANSPARENT);
 
             if (writing)
             {
                 Rectangle(RGBTo16(0, 0, 60), 0, 128 - animateKeyboard, 160, animateKeyboard);
                 currentCharacter = PrintKeyboard(keyboardX, keyboardY, 5, 65 - animateKeyboard);
+                PrintKeybinds(animateKeyboard, KB_SCRIPT_EDIT, RGBTo16(100, 100, 100));
                 if (animateKeyboard < 55)
                 {
                     animateKeyboard += 10;
@@ -692,6 +762,14 @@ void EditScript(uint8_t scriptIndex)
             }
             else
             {
+                if (isSelecting)
+                {
+                    PrintKeybinds(0, KB_SCRIPT_SELECTED, RGBTo16(100, 100, 100));
+                }
+                else
+                {
+                    PrintKeybinds(0, KB_SCRIPT_VIEW, RGBTo16(100, 100, 100));
+                }
                 sleep_ms(100);
             }
         }
@@ -705,24 +783,132 @@ void EditScript(uint8_t scriptIndex)
 
                     if (caretPosition >= strlen(currentScriptText))
                     {
-                        currentScriptText[caretPosition] = ' ';
+                        for (int i = strlen(currentScriptText) + 1; i > caretPosition; i--)
+                        {
+                            currentScriptText[i] = currentScriptText[i - 1];
+                        }
+                        currentScriptText[caretPosition] = '\n';
+                        caretPosition++;
+                        caretX = 0;
+                        caretY++;
                     }
-                    caretPosition++;
+                    else
+                    {
+                        if (currentScriptText[caretPosition] == '\n')
+                        {
+                            caretPosition++;
+                            caretX = 0;
+                            caretY++;
+                        }
+                        else
+                        {
+                            caretPosition++;
+                            caretX++;
+                        }
+                    }
                 }
                 if (GetButton() == BUTTON_A)
                 {
                     if (caretPosition > 0)
                     {
                         caretPosition--;
+                        caretX--;
+                        if (currentScriptText[caretPosition] == '\n')
+                        {
+
+                            int lineLength = 0;
+
+                            caretPosition--;
+                            printf("char: %d\n", currentScriptText[caretPosition]);
+                            while (currentScriptText[caretPosition] != '\n' && caretPosition > 0)
+                            {
+                                caretPosition--;
+                                printf("char: %d\n", currentScriptText[caretPosition]);
+                                lineLength++;
+                            }
+
+                            caretX = lineLength;
+                            if (caretPosition == 0)
+                            {
+                                caretX++;
+                            }
+
+                            caretPosition += lineLength + 1;
+
+                            caretY--;
+
+                            printf("(%d,%d)\n", caretX, caretY);
+                        }
                     }
                 }
                 if (GetButton() == BUTTON_S && caretPosition < SCRIPT_LENGTH - 24)
                 {
-                    caretPosition += 24;
+                    int originalCaret = caretPosition;
+                    while (currentScriptText[caretPosition] != '\n' && caretPosition < strlen(currentScriptText))
+                    {
+                        caretPosition++;
+                    }
+                    if (caretPosition >= strlen(currentScriptText))
+                    {
+                        for (int i = strlen(currentScriptText) + 1; i > caretPosition; i--)
+                        {
+                            currentScriptText[i] = currentScriptText[i - 1];
+                        }
+                        currentScriptText[caretPosition] = '\n';
+                        caretPosition++;
+                        caretX = 0;
+                        caretY++;
+                    }
+                    else
+                    {
+                        originalCaret = ++caretPosition;
+                        while (currentScriptText[caretPosition] != '\n' && caretPosition < strlen(currentScriptText))
+                        {
+                            caretPosition++;
+                        }
+                        int length = (caretPosition - originalCaret);
+
+                        caretPosition = originalCaret + min(caretX, length);
+                        caretX = min(caretX, length);
+
+                        caretY++;
+                    }
                 }
-                if (GetButton() == BUTTON_W && caretPosition >= 24)
+                if (GetButton() == BUTTON_W)
                 {
-                    caretPosition -= 24;
+                    int originalCaretPos = caretPosition;
+                    caretPosition--;
+                    printf("char: %d\n", currentScriptText[caretPosition]);
+                    while (currentScriptText[caretPosition] != '\n' && caretPosition > 0)
+                    {
+                        caretPosition--;
+                        printf("char: %d\n", currentScriptText[caretPosition]);
+                    }
+                    if (caretPosition == 0)
+                    {
+                        caretPosition = originalCaretPos;
+                    }
+                    else
+                    {
+
+                        int lineLength = 0;
+
+                        caretPosition--;
+                        printf("char: %d\n", currentScriptText[caretPosition]);
+                        while (currentScriptText[caretPosition] != '\n' && caretPosition > 0)
+                        {
+                            caretPosition--;
+                            printf("char: %d\n", currentScriptText[caretPosition]);
+                            lineLength++;
+                        }
+
+                        if (caretPosition > 0)
+                            caretPosition++;
+
+                        caretPosition += min(caretX, lineLength);
+                        caretX = min(caretX, lineLength);
+                        caretY--;
+                    }
                 }
                 if (GetButton() == BUTTON_J)
                 {
@@ -731,39 +917,98 @@ void EditScript(uint8_t scriptIndex)
                 }
                 if (GetButton() == BUTTON_L)
                 {
-
-                    print("saving file");
-
-                    FlushBuffer();
-
-                    char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
-
-                    sprintf(saveName, "%s`%s`ENGINESCRIPT", scripts[scriptIndex].name, program->name);
-
-                    File *file = GetFile(saveName);
-
-                    if (file->startBlock == 0)
+                    if (isSelecting)
                     {
-                        file = CreateFile(saveName, strlen(saveName), 10);
+                        isSelecting = false;
                     }
-                    // currentScriptText[caretPosition] = '\0';
-                    WriteFile(file, currentScriptText, SCRIPT_LENGTH - 1);
-
-                    if (scripts[scriptIndex].content != NULL)
+                    else
                     {
-                        free(scripts[scriptIndex].content);
+                        print("saving file");
+
+                        FlushBuffer();
+
+                        char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
+
+                        sprintf(saveName, "%s`%s`ENGINESCRIPT", scripts[scriptIndex].name, program->name);
+
+                        File *file = GetFile(saveName);
+
+                        if (file->startBlock == 0)
+                        {
+                            file = CreateFile(saveName, strlen(saveName), 10);
+                        }
+                        // currentScriptText[caretPosition] = '\0';
+                        WriteFile(file, currentScriptText, SCRIPT_LENGTH - 1);
+
+                        if (scripts[scriptIndex].content != NULL)
+                        {
+                            free(scripts[scriptIndex].content);
+                        }
+                        scripts[scriptIndex].content = malloc(strlen(currentScriptText) + 1);
+                        strcpy(scripts[scriptIndex].content, currentScriptText);
+
+                        free(saveName);
+                        DisengageSD();
+
+                        print("Save complete");
+
+                        SaveProject(program);
+                        keyboard[0] = '@';
+                        return;
                     }
-                    scripts[scriptIndex].content = malloc(strlen(currentScriptText) + 1);
-                    strcpy(scripts[scriptIndex].content, currentScriptText);
+                }
+                if (GetButton() == BUTTON_I)
+                {
+                    if (isSelecting)
+                    {
 
-                    free(saveName);
-                    DisengageSD();
+                        memset(copyBuffer, 0, sizeof(copyBuffer));
 
-                    print("Save complete");
+                        if (startSelectCaret != caretPosition)
+                        {
+                            int start = min(startSelectCaret, caretPosition);
+                            int end = max(startSelectCaret, caretPosition);
 
-                    SaveProject(program);
-                    keyboard[0] = '@';
-                    return;
+                            strncpy(copyBuffer, currentScriptText + start, end - start);
+                            copyBuffer[end - start + 1] = '\0';
+                        }
+                    }
+                    else
+                    {
+                        startSelectCaret = caretPosition;
+                        startSelectX = caretX;
+                        startSelectY = caretY;
+                        isSelecting = true;
+                    }
+                }
+                if (GetButton() == BUTTON_K)
+                {
+                    if (isSelecting)
+                    {
+                        int start = min(startSelectCaret, caretPosition);
+                        int end = max(startSelectCaret, caretPosition);
+                        int length = end - start;
+                        caretX = min(startSelectX, caretX);
+                        caretY = min(startSelectY, caretY);
+                        caretPosition = start;
+
+                        for (int i = caretPosition; i <= strlen(currentScriptText) - length; i++)
+                        {
+                            currentScriptText[i] = currentScriptText[i + length];
+                        }
+                        currentScriptText[strlen(currentScriptText) - length] = '\0';
+                        isSelecting = false;
+                    }
+                    else if (strlen(copyBuffer) > 0)
+                    {
+                        for (int i = strlen(currentScriptText) + strlen(copyBuffer); i > caretPosition; i--)
+                        {
+                            currentScriptText[i] = currentScriptText[i - strlen(copyBuffer)];
+                        }
+                        strncpy(&currentScriptText[caretPosition], copyBuffer, strlen(copyBuffer));
+                        caretPosition += strlen(copyBuffer);
+                        RecalculateCaret(&caretX, &caretY, &caretPosition);
+                    }
                 }
             }
             else
@@ -780,8 +1025,9 @@ void EditScript(uint8_t scriptIndex)
                             {
                                 currentScriptText[i] = currentScriptText[i - strlen(shortcut)];
                             }
-                            strcpy(&currentScriptText[caretPosition], shortcut);
+                            strncpy(&currentScriptText[caretPosition], shortcut, strlen(shortcut));
                             caretPosition += strlen(shortcut);
+                            caretX += strlen(shortcut);
                             free(shortcut);
                         }
                         continue;
@@ -806,6 +1052,7 @@ void EditScript(uint8_t scriptIndex)
                         }
                         currentScriptText[caretPosition] = currentCharacter;
                         caretPosition++;
+                        caretX++;
                     }
                 }
                 if (GetButton() == BUTTON_L)
@@ -815,6 +1062,7 @@ void EditScript(uint8_t scriptIndex)
                 }
                 if (GetButton() == BUTTON_K && caretPosition > 0)
                 {
+                    caretX--;
                     caretPosition--;
 
                     for (int i = caretPosition; i < strlen(currentScriptText); i++)
@@ -822,18 +1070,50 @@ void EditScript(uint8_t scriptIndex)
                         currentScriptText[i] = currentScriptText[i + 1];
                     }
                 }
+
+                if (GetButton() == BUTTON_I)
+                {
+                    for (int i = strlen(currentScriptText) + 1; i > caretPosition; i--)
+                    {
+                        currentScriptText[i] = currentScriptText[i - 1];
+                    }
+                    currentScriptText[caretPosition] = '\n';
+                    caretPosition++;
+                    caretX = 0;
+                    caretY++;
+                }
             }
+        }
+
+        if (caretX < 0)
+        {
+            caretY--;
+            int length = 1;
+            while (currentScriptText[caretPosition - length] != '\n')
+            {
+                if (caretPosition - length <= 0)
+                {
+                    break;
+                }
+                length++;
+            }
+            caretX = length;
+        }
+        if (caretX >= 24)
+        {
+            caretY += floor(caretX / 24);
+            caretX = 0;
         }
 
         if (millis() - blinkTime < 10)
         {
             if (drawCaret)
             {
-                WriteLetter('_', (caretPosition % 24 * 6), floor(caretPosition / 24) * 8, 1, WHITE, BLACK);
+                Rectangle(WHITE, caretX * 6, (caretY + 1) * 8 - 2, 5, 1);
             }
             else
             {
-                Rectangle(BLACK, (caretPosition % 24 * 6), floor(caretPosition / 24) * 8, 5, 7);
+                Rectangle(BLACK, caretX * 6, (caretY + 1) * 8 - 2, 5, 1);
             }
         }
         if (millis() - blinkTime > 250)

@@ -172,6 +172,7 @@ uint8_t sceneScale = 4;
 
 void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY)
 {
+    printf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
     if (sprite < 0)
     {
         const uint16_t (*icon)[16];
@@ -220,7 +221,7 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY)
             {
                 continue;
             }
-            // printf("Color: %d\n", sprites[sprite].sprite[x][y]);
+            printf("(%d,%d) %d\n", x, y, sprites[sprite].sprite[x][y]);
             SmartRect(sprites[sprite].sprite[x][y], topLeftX + x * scaleX, topLeftY + y * scaleY, scaleX, scaleY);
         }
     }
@@ -282,19 +283,19 @@ void RenderScene(int offsetX, int offsetY)
         DrawSpriteCentered(GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
 
                            80 + offsetX + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x,
-                           64 + offsetY + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y,
+                           64 + offsetY + sceneScale * -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y,
                            sceneScale * scale.x,
                            sceneScale * scale.y);
 
         for (int x = 0; x < currentScene->objects[i]->colliderCount; x++)
         {
 
-            Rect *rect = GetRectByID(currentScene->objects[i]->colliderBoxes[x]);
+            Rect *rect = GetRectByID(currentScene->objects[i]->colliderBoxes[x], colliderRects);
 
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->center.x + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * (rect->center.y + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->topLeft.x + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * -(rect->topLeft.y + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
                 sceneScale * scale.x * rect->scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x,
                 sceneScale * scale.y * rect->scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y);
         }
@@ -308,7 +309,7 @@ void RenderScene(int offsetX, int offsetY)
     DrawRectOutline(
         WHITE,
         80 + offsetX + sceneScale * cameraPosition->data.XY.x - width / 2,
-        64 + offsetY + sceneScale * cameraPosition->data.XY.y - height / 2,
+        64 + offsetY + sceneScale * -cameraPosition->data.XY.y - height / 2,
         width,
         height);
 
@@ -353,12 +354,12 @@ void RecompileScene()
                 &scripts[currentScene->objects[i]->scriptData[s]->script->ID],
                 currentScene->objects[i]->scriptData[s],
                 0);
-            
-            printf("data set reutn %d\n",errorNum);
 
-            printf("scene name: %s\n",currentScene->name);
-            printf("obj name: %s\n",currentScene->objects[i]->name);
-            printf("var count: %d\n",currentScene->objects[i]->scriptData[s]->variableCount);
+            printf("data set reutn %d\n", errorNum);
+
+            printf("scene name: %s\n", currentScene->name);
+            printf("obj name: %s\n", currentScene->objects[i]->name);
+            printf("var count: %d\n", currentScene->objects[i]->scriptData[s]->variableCount);
 
             for (int t = 0; t < currentScene->objects[i]->scriptData[s]->variableCount; t++)
             {
@@ -386,7 +387,9 @@ void RecompileScene()
         {
             print("is collider");
             RecalculateObjectColliders(currentScene->objects[i]);
-        } else {
+        }
+        else
+        {
             print("no collider");
         }
     }
@@ -586,7 +589,7 @@ void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *varia
             SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart) / 2 - 5, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
             buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
             char buffer[32];
-            sprintf(buffer, "%d", linkVars[x]->data.XY.x);
+            sprintf(buffer, "%f", linkVars[x]->data.XY.x);
             AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
             DrawButton(&buttons[(*buttonIndex)++]);
             (*variableCount)++;
@@ -599,7 +602,7 @@ void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *varia
 
             SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart), 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
             buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
-            sprintf(buffer, "%d", linkVars[x]->data.XY.y);
+            sprintf(buffer, "%f", linkVars[x]->data.XY.y);
             AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
             DrawButton(&buttons[(*buttonIndex)++]);
             (*variableCount)++;
@@ -984,16 +987,22 @@ void ManageSceneUI()
                 objectPackageCount++;
             }
 
+            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1 + objectPackageCount;
+            if (modulePage >= scriptCount)
+            {
+                modulePage = 0;
+            }
+
             if (modulePage == 0)
             {
                 EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
-                DrawModulePage("Base", 3, &variableCount, drawVarList, &buttonIndex, variableLinks);
+                DrawModulePage("Base", BASE_VARS, &variableCount, drawVarList, &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else if (doCollider && modulePage == 1)
             {
                 EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
-                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[3], &buttonIndex, variableLinks);
+                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[BASE_VARS], &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else
@@ -1127,7 +1136,6 @@ void ManageSceneUI()
 
             SaveProject(program);
 
-            
             return;
         }
 
@@ -1186,7 +1194,7 @@ void ManageSceneUI()
             {
                 refreshSceneView = true;
                 GetObjectDataByName(currentScene->objects[currentObject], "position")->data.XY.x = -scenePosX / sceneScale;
-                GetObjectDataByName(currentScene->objects[currentObject], "position")->data.XY.y = -scenePosY / sceneScale;
+                GetObjectDataByName(currentScene->objects[currentObject], "position")->data.XY.y = scenePosY / sceneScale;
             }
 
             if (refreshSceneView)
@@ -1378,7 +1386,7 @@ void ManageSceneUI()
                         showKeyboard = true;
                         refreshKeyboard = true;
                         variableBeingModified = i;
-                        modifyVariable[0] = '\0';
+                        memset(modifyVariable,0,sizeof(modifyVariable));
                         caretPosition = 0;
                     }
                 }
@@ -1426,17 +1434,15 @@ void ManageSceneUI()
                         printf("set script error: %s\n", stringPool[error]);
                         FreeString(&error);
 
-
                         currentScene->objects[currentObject]->scriptCount++;
                     }
                     refresh = true;
-                    sleep_ms(100);
+                    sleep_ms(160);
                 }
 
                 uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1;
                 if (currentScene->objects[currentObject]->packages[0])
                 {
-                    print("has collider");
                     scriptCount++;
                 }
                 if (GetButton() == BUTTON_D)
@@ -1931,6 +1937,15 @@ uint32_t RunProgram()
         SmartClear();
         for (int i = 0; i < currentScene->objectCount; i++)
         {
+            GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x;
+            GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y;
+            print("added velocity to position");
+            float multiplier = ((float)(100 - (abs(GetObjectDataByName(currentScene->objects[i], "drag")->data.i) % 101))) / 100;
+
+            GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x *= multiplier;
+            GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y *= multiplier;
+            print("modified velocity");
+
             if (GetObjectDataByName(currentScene->objects[i], "sprite")->data.i < 0)
             {
                 continue;
@@ -1949,22 +1964,35 @@ uint32_t RunProgram()
                 scale.y = objScale->data.XY.y;
             }
 
-            printf("Scale: (%d,%d)\n", scale.x, scale.y);
-
+            printf("Scale: (%f,%f)\n", scale.x, scale.y);
+            printf("Position: (%f,%f)\n", GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x, GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y);
+            printf("Sprite: %d\n", GetObjectDataByName(currentScene->objects[i], "sprite")->data.i);
             DrawSpriteCentered(
                 GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
                 80 + cameraScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x - cameraX,
-                64 + cameraScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y - cameraY,
+                64 + cameraScale * -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y - cameraY,
                 cameraScale * scale.x,
                 cameraScale * scale.y);
         }
-
+        print("showing");
         SmartShow();
-
+        print("showed");
+        printf("count: %d\n", currentScene->objectCount);
         for (int obj = 0; obj < currentScene->objectCount; obj++)
         {
-            for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
+            printf("obj: %d\n", obj);
+            EngineObject *testObj = currentScene->objects[obj];
+            print("got object");
+            if (testObj == NULL)
             {
+                print("is null");
+            }
+            uint8_t testCount = currentScene->objects[obj]->scriptCount;
+            printf("got count %d\n", testCount);
+
+            for (int scr = 0; scr < testCount; scr++)
+            {
+                printf("ex script: obj: %d, scr: %d\n", obj, scr);
                 currentScene->objects[obj]->scriptData[scr]->currentLine = 0;
                 while (currentScene->objects[obj]->scriptData[scr]->currentLine < currentScene->objects[obj]->scriptData[scr]->lineCount)
                 {
@@ -1981,14 +2009,22 @@ uint32_t RunProgram()
                     FreeString(&error);
                 }
             }
+            print("executed scripts for this object");
+            print("count: ");
+            printf("%d\n", currentScene->objectCount);
         }
         print("/////////////////////////////////////////////////// script done execute");
+
+        ColliderStep();
+
+        print("///////////////////////////////////////////// COLLISION DONE");
 
         if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
         {
             print("exiting");
             if (millis() - exitHoldTime > 2000)
             {
+
                 break;
             }
         }
@@ -2017,6 +2053,9 @@ uint32_t RunProgram()
             free(scrData->backupData);
         }
     }
+
+    gpio_put(LEFT_LIGHT, 0);
+    gpio_put(RIGHT_LIGHT, 0);
 
     return 0;
 }
