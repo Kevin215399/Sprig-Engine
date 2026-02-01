@@ -20,6 +20,8 @@
 
 #include "Keybinds.h"
 
+#include "GUI_Icons.h"
+
 #define PALLETE_WIDTH 12
 #define PALLETE_HEIGHT 15
 
@@ -34,7 +36,19 @@ uint8_t debugLine = 0;
 
 char currentScriptText[SCRIPT_LENGTH];
 
-uint16_t colors[PALLETE_WIDTH];
+const uint16_t colorTable[PALLETE_HEIGHT * PALLETE_WIDTH] = {
+    65535, 65015, 64593, 64235, 63943, 63715, 63553, 63488, 55296, 40960, 28672, 18432, 10240, 4096, 0,
+    65535, 63095, 58641, 56299, 54023, 51811, 51713, 49600, 43392, 30976, 22720, 14464, 8256, 2080, 0,
+    65535, 61143, 56817, 52491, 48231, 46051, 43937, 43904, 37632, 27168, 18816, 12544, 6272, 2112, 0,
+    65535, 61271, 57009, 52779, 48583, 46467, 44353, 44352, 38016, 27456, 19008, 12672, 6336, 2144, 0,
+    65535, 53175, 42897, 34635, 28455, 22275, 20225, 18144, 15872, 11360, 6912, 4608, 2336, 128, 0,
+    65535, 49112, 36786, 24429, 16233, 8006, 3908, 1827, 1602, 1153, 801, 512, 288, 128, 0,
+    65535, 48986, 36565, 24177, 15886, 7628, 3466, 1386, 1224, 902, 612, 386, 225, 96, 0,
+    65535, 48797, 36187, 23642, 15225, 6872, 2679, 567, 500, 366, 234, 166, 67, 33, 0,
+    65535, 50687, 37982, 27390, 18909, 10493, 6237, 4125, 4121, 2066, 2061, 8, 4, 2, 0,
+    65535, 54781, 44123, 35577, 29144, 24823, 20566, 18454, 16403, 12302, 8201, 4102, 2051, 1, 0,
+    65535, 58875, 50264, 45813, 39379, 37105, 34896, 32783, 28685, 20489, 14342, 8196, 4098, 2049, 0,
+    65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0};
 
 float maxF(float a, float b)
 {
@@ -47,22 +61,6 @@ float minF(float a, float b)
     if (a > b)
         return b;
     return a;
-}
-
-void SetupColors()
-{
-    colors[0] = RGBTo16(255, 0, 0);
-    colors[1] = RGBTo16(255, 35, 0);
-    colors[2] = RGBTo16(255, 55, 0);
-    colors[3] = RGBTo16(255, 255, 0);
-    colors[4] = RGBTo16(200, 255, 0);
-    colors[5] = RGBTo16(0, 255, 0);
-    colors[6] = RGBTo16(0, 255, 100);
-    colors[7] = RGBTo16(0, 255, 255);
-    colors[8] = RGBTo16(0, 0, 255);
-    colors[9] = RGBTo16(160, 0, 255);
-    colors[10] = RGBTo16(255, 0, 200);
-    colors[11] = RGBTo16(255, 255, 255);
 }
 
 uint16_t ColorMultiply(uint16_t color, float value, float saturation)
@@ -196,6 +194,74 @@ uint8_t SelectSprite()
     }
 }
 
+#define BRUSH 0
+#define FILL 1
+
+void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uint8_t startX, uint8_t startY)
+{
+    if (fillColor == replaceColor)
+        return;
+    GeneralList openNodes = {0};
+    Vector2 *startPos = malloc(sizeof(Vector2));
+    startPos->x = (float)startX;
+    startPos->y = (float)startY;
+    PushList(&openNodes, startPos);
+    sprites[spriteID].sprite[startX][startY] = fillColor;
+    while (openNodes.count > 0)
+    {
+        Vector2 *node = (Vector2 *)PopList(&openNodes);
+
+        if (node == NULL)
+            continue;
+
+        if (node->y < SPRITE_HEIGHT - 1 && sprites[spriteID].sprite[(int)node->x][(int)node->y + 1] == replaceColor)
+        {
+            Vector2 *newPos = malloc(sizeof(Vector2));
+            newPos->x = node->x;
+            newPos->y = node->y + 1;
+            sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
+            PushList(&openNodes, newPos);
+        }
+        if (node->y > 0 && sprites[spriteID].sprite[(int)node->x][(int)node->y - 1] == replaceColor)
+        {
+            Vector2 *newPos = malloc(sizeof(Vector2));
+            newPos->x = node->x;
+            newPos->y = node->y - 1;
+            sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
+            PushList(&openNodes, newPos);
+        }
+        if (node->x < SPRITE_WIDTH - 1 && sprites[spriteID].sprite[(int)node->x + 1][(int)node->y] == replaceColor)
+        {
+            Vector2 *newPos = malloc(sizeof(Vector2));
+            newPos->x = node->x + 1;
+            newPos->y = node->y;
+            sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
+            PushList(&openNodes, newPos);
+        }
+        if (node->x > 0 && sprites[spriteID].sprite[(int)node->x - 1][(int)node->y] == replaceColor)
+        {
+            Vector2 *newPos = malloc(sizeof(Vector2));
+            newPos->x = node->x - 1;
+            newPos->y = node->y;
+            sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
+            PushList(&openNodes, newPos);
+        }
+
+        free(node);
+    }
+}
+
+void DrawIcon(int x, int y, const uint16_t icon[16][16])
+{
+    for (int dx = 0; dx < 16; dx++)
+    {
+        for (int dy = 0; dy < 16; dy++)
+        {
+            SmartRect(icon[dy][dx], x + dx, y + dy, 1, 1);
+        }
+    }
+}
+
 void EditSprite(uint8_t spriteIndex)
 {
 
@@ -204,42 +270,59 @@ void EditSprite(uint8_t spriteIndex)
     uint8_t cursorX = 0;
     uint8_t cursorY = 0;
 
-    uint8_t pixelSize = 4;
-    uint8_t spacing = 2;
+    uint8_t pixelSize = 2;
+    uint8_t spacing = 1;
 
     uint16_t currentColor = RGBTo16(255, 255, 255);
+
+    uint8_t tool = 0;
+
+    SmartClearAll();
+    Clear();
+
+    uint8_t delay = 80;
 
     while (1)
     {
         if (refresh)
         {
             refresh = false;
-            Clear();
-            WriteWord("Edit Sprite", strlen("Edit Sprite"), 1, 1, 2, RGBTo16(255, 200, 0), TRANSPARENT);
-            Rectangle(RGBTo16(255, 200, 0), 0, 18, 160, 1);
+            SmartClear();
+            SmartWord("Edit Sprite", strlen("Edit Sprite"), 1, 1, 2, RGBTo16(255, 200, 0), TRANSPARENT);
+            SmartRect(RGBTo16(255, 200, 0), 0, 18, 160, 1);
 
-            Rectangle(WHITE, 4 - spacing, 24 - spacing, (pixelSize + spacing) * SPRITE_WIDTH + spacing * 2, (pixelSize + spacing) * SPRITE_HEIGHT + spacing * 2);
-            Rectangle(BLACK, 5 - spacing, 25 - spacing, (pixelSize + spacing) * SPRITE_WIDTH - 2 + spacing * 2, (pixelSize + spacing) * SPRITE_HEIGHT - 2 + spacing * 2);
+            SmartRect(WHITE, 4 - spacing, 24 - spacing, (pixelSize + spacing) * SPRITE_WIDTH + spacing * 2 + 1, (pixelSize + spacing) * SPRITE_HEIGHT + spacing * 2);
+            SmartRect(BLACK, 5 - spacing, 25 - spacing, (pixelSize + spacing) * SPRITE_WIDTH - 2 + spacing * 2 + 1, (pixelSize + spacing) * SPRITE_HEIGHT - 2 + spacing * 2);
 
-            WriteWord("WASD - Move", strlen("WASD - Move"), 1, 99, 1, RGBTo16(100, 100, 100), TRANSPARENT);
-            WriteWord("J - Select", strlen("J - Select"), 1, 109, 1, RGBTo16(100, 100, 100), TRANSPARENT);
-            WriteWord("L - Save/Exit", strlen("L - Save/Exit"), 1, 119, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+            SmartWord("WASD - Move", strlen("WASD - Move"), 1, 99, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+            SmartWord("J - Select", strlen("J - Select"), 1, 109, 1, RGBTo16(100, 100, 100), TRANSPARENT);
+            SmartWord("L - Save/Exit", strlen("L - Save/Exit"), 1, 119, 1, RGBTo16(100, 100, 100), TRANSPARENT);
 
             if (cursorX < SPRITE_WIDTH)
             {
-                Rectangle(WHITE, 4 + cursorX * (pixelSize + spacing), 24 + cursorY * (pixelSize + spacing), pixelSize + 2, pixelSize + 2);
+                SmartRect(WHITE, 4 + cursorX * (pixelSize + spacing), 24 + cursorY * (pixelSize + spacing), pixelSize + 2, pixelSize + 2);
             }
             else
             {
                 if (cursorX == SPRITE_WIDTH + PALLETE_WIDTH - 1)
                 {
-                    Rectangle(CYAN, (156 - PALLETE_WIDTH * 6) + (cursorX - SPRITE_WIDTH) * 6, 24 + cursorY * 6, 7, 7);
+                    SmartRect(CYAN, (156 - PALLETE_WIDTH * 6) + (cursorX - SPRITE_WIDTH) * 6, 24 + cursorY * 6, 7, 7);
                 }
                 else
                 {
-                    Rectangle(WHITE, (156 - PALLETE_WIDTH * 6) + (cursorX - SPRITE_WIDTH) * 6, 24 + cursorY * 6, 7, 7);
+                    SmartRect(WHITE, (156 - PALLETE_WIDTH * 6) + (cursorX - SPRITE_WIDTH) * 6, 24 + cursorY * 6, 7, 7);
                 }
             }
+
+            DrawIcon(3, 81, PENCIL);
+            DrawIcon(23, 82, BUCKET);
+            DrawIcon(42, 80, ERASER);
+            DrawIcon(63, 82, EYE_DROPPER);
+
+            SmartRect(WHITE, 1 + tool * 20, 80, 18, 1);
+            SmartRect(WHITE, 1 + tool * 20, 80 + 18, 19, 1);
+            SmartRect(WHITE, 1 + tool * 20, 80, 1, 18);
+            SmartRect(WHITE, 1 + tool * 20 + 18, 80, 1, 18);
 
             for (int x = 0; x < SPRITE_WIDTH; x++)
             {
@@ -247,13 +330,14 @@ void EditSprite(uint8_t spriteIndex)
                 {
                     if (sprites[spriteIndex].sprite[x][y] == TRANSPARENT)
                     {
-                        Rectangle(WHITE, 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), 2, 2);
-                        Rectangle(WHITE, 5 + x * (pixelSize + spacing) + 2, 25 + y * (pixelSize + spacing) + 2, 2, 2);
-                        Rectangle(RGBTo16(100, 100, 100), 5 + x * (pixelSize + spacing) + 2, 25 + y * (pixelSize + spacing), 2, 2);
-                        Rectangle(RGBTo16(100, 100, 100), 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing) + 2, 2, 2);
+                        int halfsize = pixelSize / 2;
+                        SmartRect(RGBTo16(160, 160, 160), 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), halfsize, halfsize);
+                        SmartRect(RGBTo16(160, 160, 160), 5 + x * (pixelSize + spacing) + halfsize, 25 + y * (pixelSize + spacing) + halfsize, halfsize, halfsize);
+                        SmartRect(RGBTo16(60, 60, 60), 5 + x * (pixelSize + spacing) + halfsize, 25 + y * (pixelSize + spacing), halfsize, halfsize);
+                        SmartRect(RGBTo16(60, 60, 60), 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing) + halfsize, halfsize, halfsize);
                     }
                     else
-                        Rectangle(sprites[spriteIndex].sprite[x][y], 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), pixelSize, pixelSize);
+                        SmartRect(sprites[spriteIndex].sprite[x][y], 5 + x * (pixelSize + spacing), 25 + y * (pixelSize + spacing), pixelSize, pixelSize);
                 }
             }
 
@@ -262,10 +346,10 @@ void EditSprite(uint8_t spriteIndex)
                 for (int x = 0; x < PALLETE_WIDTH; x++)
                 {
 
-                    float brightness = minF(1, (float)y / (((float)PALLETE_HEIGHT) / 2));
+                    // float brightness = minF(1, (float)y / (((float)PALLETE_HEIGHT) / 2));
 
-                    float sat = 1 - (maxF(1, (float)y / (((float)PALLETE_HEIGHT) / 2)) - 1);
-                    uint16_t color = ColorMultiply(colors[x], brightness, sat);
+                    // float sat = 1 - (maxF(1, (float)y / (((float)PALLETE_HEIGHT) / 2)) - 1);
+                    uint16_t color = colorTable[x * PALLETE_HEIGHT + y];
                     if (setColor && x == (cursorX - SPRITE_WIDTH) && y == cursorY)
                     {
                         setColor = false;
@@ -277,29 +361,33 @@ void EditSprite(uint8_t spriteIndex)
                     {
                         if (x == PALLETE_WIDTH - 1)
                         {
-                            Rectangle(CYAN, (156 - PALLETE_WIDTH * 6) + x * 6, 24 + y * 6, 7, 7);
+                            SmartRect(CYAN, (156 - PALLETE_WIDTH * 6) + x * 6, 24 + y * 6, 7, 7);
                         }
                         else
                         {
-                            Rectangle(WHITE, (156 - PALLETE_WIDTH * 6) + x * 6, 24 + y * 6, 7, 7);
+                            SmartRect(WHITE, (156 - PALLETE_WIDTH * 6) + x * 6, 24 + y * 6, 7, 7);
                         }
                     }
 
-                    Rectangle(color, (157 - PALLETE_WIDTH * 6) + x * 6, 25 + y * 6, 5, 5);
+                    SmartRect(color, (157 - PALLETE_WIDTH * 6) + x * 6, 25 + y * 6, 5, 5);
                 }
             }
 
             setColor = false;
 
-            sleep_ms(120);
+            SmartShow();
+
+            sleep_ms(delay);
         }
 
         if (GetButton() != 0)
         {
+            delay = 80;
             refresh = true;
 
             if (GetButton() == BUTTON_A && cursorX > 0)
             {
+
                 cursorX--;
             }
             if (GetButton() == BUTTON_D && cursorX < SPRITE_WIDTH + PALLETE_WIDTH - 1)
@@ -323,23 +411,66 @@ void EditSprite(uint8_t spriteIndex)
 
             if (gpio_get(BUTTON_J) == 0)
             {
-                setColor = true;
+
                 if (cursorX < SPRITE_WIDTH)
                 {
-                    sprites[spriteIndex].sprite[cursorX][cursorY] = currentColor;
+                    switch (tool)
+                    {
+                    case 0:
+                        sprites[spriteIndex].sprite[cursorX][cursorY] = currentColor;
+                        break;
+                    case 1:
+                        SpriteFill(spriteIndex, currentColor, sprites[spriteIndex].sprite[cursorX][cursorY], cursorX, cursorY);
+                        break;
+                    case 2:
+                        sprites[spriteIndex].sprite[cursorX][cursorY] = TRANSPARENT;
+                        break;
+                    case 3:
+                        currentColor = sprites[spriteIndex].sprite[cursorX][cursorY];
+                        break;
+                    }
                     setColor = false;
                 }
+                else
+                {
+                    setColor = true;
+                }
             }
+        }
 
-            if (GetButton() == BUTTON_L)
+        if (gpio_get(BUTTON_I) == 0)
+        {
+            tool++;
+            if (tool == 4)
             {
-                print("Save Project");
-                SaveProject(program);
-                return;
+                tool = 0;
             }
+            delay = 150;
+        }
+        if (gpio_get(BUTTON_K) == 0)
+        {
+            if (tool == 0)
+            {
+                tool = 3;
+            }
+            else
+            {
+                tool--;
+            }
+            delay = 150;
+        }
+
+        if (GetButton() == BUTTON_L)
+        {
+            print("Save Project");
+            SaveProject(program);
+            SmartClearAll();
+            Clear();
+            return;
         }
     }
 }
+
 void SpriteMode()
 {
     bool refresh = true;
@@ -452,20 +583,24 @@ char *SC_MATH_SHORTCUTS[] = {
     "cos",
     "deltaTime"};
 
-#define SC_OBJECT_COUNT 10
+#define SC_OBJECT_COUNT 12
 char *SC_OBJECT_SHORTCUTS[] = {
     "setPosition()",
     "setScale()",
     "setSprite()",
     "setVelocity()",
+    "setAngle()",
 
     "addPosition()",
     "addScale()",
     "addVelocity()",
+    "addAngle()",
 
     "getPosition()",
     "getScale()",
-    "getSprite()"};
+    "getSprite()"
+
+};
 
 // collider here
 
@@ -650,6 +785,8 @@ void EditScript(uint8_t scriptIndex)
     keyboard[0] = HAMBURGER_SYB;
 
     bool isSelecting = false;
+
+    bool hasCopyBuffer = false;
 
     int startSelectCaret = 0;
     int startSelectX = 0;
@@ -961,6 +1098,7 @@ void EditScript(uint8_t scriptIndex)
                 {
                     if (isSelecting)
                     {
+                        hasCopyBuffer = true;
 
                         memset(copyBuffer, 0, sizeof(copyBuffer));
 
@@ -992,14 +1130,18 @@ void EditScript(uint8_t scriptIndex)
                         caretY = min(startSelectY, caretY);
                         caretPosition = start;
 
-                        for (int i = caretPosition; i <= strlen(currentScriptText) - length; i++)
+                        int lengthBeforeCut = strlen(currentScriptText);
+
+                        for (int i = start; i <= lengthBeforeCut; i++)
                         {
-                            currentScriptText[i] = currentScriptText[i + length];
+                            if (i + length < lengthBeforeCut)
+                                currentScriptText[i] = currentScriptText[i + length];
+                            else
+                                currentScriptText[i] = '\0';
                         }
-                        currentScriptText[strlen(currentScriptText) - length] = '\0';
                         isSelecting = false;
                     }
-                    else if (strlen(copyBuffer) > 0)
+                    else if (hasCopyBuffer && strlen(copyBuffer) > 0)
                     {
                         for (int i = strlen(currentScriptText) + strlen(copyBuffer); i > caretPosition; i--)
                         {

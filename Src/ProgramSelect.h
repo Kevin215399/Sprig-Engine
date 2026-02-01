@@ -1,3 +1,6 @@
+#ifndef PROGRAM_SELECT
+#define PROGRAM_SELECT
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 
@@ -11,8 +14,14 @@
 #include "EngineStructs.h"
 #include <string.h>
 
+#include "Start_Logo.h"
+
 File *SelectProgram()
 {
+    LoadingScreen();
+
+    sleep_ms(100);
+
     bool refresh = true;
     uint8_t currentFile = 0;
 
@@ -26,6 +35,7 @@ File *SelectProgram()
 
     uint8_t totalPages = (uint8_t)((float)programCount / 5) + 1; // floor and then add 1 basically ceil
     uint8_t page = 0;
+
     while (1)
     {
         if (refresh)
@@ -105,3 +115,5 @@ File *SelectProgram()
         
     }
 }
+
+#endif

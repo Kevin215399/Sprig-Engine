@@ -22,11 +22,11 @@ void WriteBoolToByte(uint8_t *byte, bool value, uint8_t indexOfByte)
 {
     if (value)
     {
-        *byte |= (1 << indexOfByte);
+        (*byte) |= (1 << indexOfByte);
     }
     else
     {
-        *byte &= ~(1 << indexOfByte);
+        (*byte) &= ~(1 << indexOfByte);
     }
 }
 
@@ -50,7 +50,7 @@ uint16_t PoolVar(char *varName)
     strncpy(varPool[index].name, varName, 16);
     varPool[index].name[15] = '\0';
 
-    printf("Pooled var to index: %d\n", index);
+    //printf("Pooled var to index: %d\n", index);
 
     WriteBoolToByte(&varPoolFree[index / 8], true, index % 8);
 
@@ -59,7 +59,7 @@ uint16_t PoolVar(char *varName)
 
 void FreeVar(uint16_t *index)
 {
-    printf("Freed var from pool: %d\n",*index);
+    //printf("Freed var from pool: %d\n",*index);
     WriteBoolToByte(&varPoolFree[*index / 8], false, *index % 8);
     *index = NULL_POOL;
 }
@@ -82,7 +82,7 @@ uint16_t PoolString()
 
     stringPool[index][0] = '\0';
 
-    printf("Pooled string to index: %d\n", index);
+   // printf("Pooled string to index: %d\n", index);
 
     WriteBoolToByte(&stringPoolFree[index / 8], true, index % 8);
 
@@ -91,7 +91,7 @@ uint16_t PoolString()
 
 void FreeString(uint16_t *index)
 {
-    printf("Freed string from pool: %d\n",*index);
+    //printf("Freed string from pool: %d\n",*index);
     WriteBoolToByte(&stringPoolFree[*index / 8], false, *index % 8);
     *index = NULL_POOL;
 }

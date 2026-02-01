@@ -56,6 +56,7 @@ target_include_directories(Sprig_Engine PRIVATE
 # Add any user requested libraries
 target_link_libraries(Sprig_Engine 
         hardware_spi
+        pico_multicore
         )
 
 pico_add_extra_outputs(Sprig_Engine)

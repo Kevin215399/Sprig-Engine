@@ -9,8 +9,6 @@
 uint8_t keyboardX = 0;
 uint8_t keyboardY = 0;
 
-
-
 char keyboard[] = {
     '@',
     '|',
@@ -139,17 +137,23 @@ void HandleKeyboardInputs()
         }
         keyboardY++;
     }
-    if (GetButton() == BUTTON_D && keyboardX < maxX[keyboardY])
+    if (GetButton() == BUTTON_D)
     {
-        keyboardX++;
+        if (keyboardX < maxX[keyboardY])
+            keyboardX++;
+        else
+            keyboardX = 0;
     }
     if (keyboardX > maxX[keyboardY])
     {
         keyboardX = maxX[keyboardY] - 1;
     }
-    if (GetButton() == BUTTON_A && keyboardX > 0)
+    if (GetButton() == BUTTON_A)
     {
-        keyboardX--;
+        if (keyboardX > 0)
+            keyboardX--;
+        else
+            keyboardX = maxX[keyboardY];
     }
 }
 

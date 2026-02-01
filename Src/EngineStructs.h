@@ -23,8 +23,8 @@
 #define TYPE_VECTOR 5
 #define TYPE_OBJ 6
 
-#define SPRITE_WIDTH 8
-#define SPRITE_HEIGHT 8
+#define SPRITE_WIDTH 16
+#define SPRITE_HEIGHT 16
 
 #define CURLY_BRACKET 0
 #define PARENTHESIS 1
@@ -174,6 +174,9 @@ typedef struct EngineObject
     // Each object has position, sprite, and scale
     VarNode *objectDataTail;
     uint8_t objectDataCount;
+
+    // This stores only the data required to render
+    VariableUnion renderData[5];
 
     uint8_t colliderCount;
     uint16_t *colliderBoxes;
@@ -461,6 +464,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     AddDataToObject(output, VarConstructor("position", strlen("position"), TYPE_VECTOR, true));
     AddDataToObject(output, VarConstructor("sprite", strlen("sprite"), TYPE_INT, true));
     AddDataToObject(output, VarConstructor("scale", strlen("scale"), TYPE_VECTOR, true));
+    AddDataToObject(output, VarConstructor("angle", strlen("angle"), TYPE_FLOAT, true));
 
     AddDataToObject(output, VarConstructor("velocity", strlen("velocity"), TYPE_VECTOR, false));
     AddDataToObject(output, VarConstructor("drag", strlen("drag"), TYPE_INT, true));
@@ -477,7 +481,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     GetObjectDataByName(output, "velocity")->data.XY.x = 0;
     GetObjectDataByName(output, "velocity")->data.XY.y = 0;
 
-   // GetObjectDataByName(output, "drag")->data.i = 10;
+    GetObjectDataByName(output, "drag")->data.i = 10;
 
     print("set data");
 

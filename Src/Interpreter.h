@@ -41,6 +41,7 @@
 #define DATATYPE_ERROR 5
 #define GENERAL_ERROR 6
 #define SCENE_ERROR 7
+#define RENDERER 8
 
 #define INCORRECT_PAIRS 1
 #define BRACKET_MISMATCH 2
@@ -52,6 +53,7 @@
 #define UNKNOWN_ASSIGNMENT_OPERATOR 8
 #define OPERATOR_CANNOT_BE_USED_WITH_TYPE 9
 #define NO_CAMERA_DEFINED 10
+#define COULD_NOT_START_CORE_1 11
 
 #define OPPERATION_SUCCESS 0x8000
 
@@ -65,7 +67,8 @@ const char *ERROR_NAMES[] = {
     "Token was not recognized",
     "Assignment attribute unknown",
     "Type cannot be transformed using this operator",
-    "No camera, add an object named \"Camera\""};
+    "No camera, add an object named \"Camera\"",
+    "CORE 1 DID NOT RESPOND"};
 
 const char *CATEGORY_ERRORS[] = {
     "EQUATION",
@@ -74,9 +77,12 @@ const char *CATEGORY_ERRORS[] = {
     "PARENTHESIS",
     "DATATYPE",
     "GENERAL",
-    "SCENE"};
+    "SCENE",
+    "RENDERER"};
 
 #define OPERATOR_ATOM 255
+
+#define UNARY_SUBTRACT 255
 
 typedef struct
 {
@@ -93,7 +99,11 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 34
+
+
+
+
+#define OPERATOR_COUNT 36
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
@@ -113,10 +123,12 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"setScale", 13, 1},
     {"setSprite", 13, 1},
     {"setVelocity", 13, 1},
+    {"setAngle", 13, 1},
 
     {"addPosition", 13, 1},
     {"addScale", 13, 1},
     {"addVelocity", 13, 1},
+    {"addAngle", 13, 1},
 
     {"PI", 12, 0},
 
@@ -760,12 +772,14 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                         debugPrint("is unary");
                         isUnarySubtract = true;
 
+                        char unarySubtractString[2] = {UNARY_SUBTRACT,'\0'};
+
                         setatom(
                             &allAtoms[atomIndex++],
                             OPERATOR_ATOM,
                             OPERATOR_PRECEDENT_LIST[operator].precedence,
                             1,
-                            "@"
+                            unarySubtractString
                         );
                     }
                 }
@@ -1192,6 +1206,17 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)varPool[parameters[0]].data.f;
                 }
 
+                if (strcmp(stringPool[operandStack[i].atom], "setAngle") == 0 && scriptData->linkedObject != NULL)
+                {
+                    varPool[result].currentType = NO_TYPE;
+                    GetObjectDataByName(scriptData->linkedObject, "angle")->data.f = (float)varPool[parameters[0]].data.f;
+                }
+                if (strcmp(stringPool[operandStack[i].atom], "addAngle") == 0 && scriptData->linkedObject != NULL)
+                {
+                    varPool[result].currentType = NO_TYPE;
+                    GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)varPool[parameters[0]].data.f;
+                }
+
                 if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
                 {
                     varPool[result].currentType = NO_TYPE;
@@ -1203,7 +1228,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                     gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
                 }
 
-                if (stringPool[operandStack[i].atom][0] == '@')
+                if (stringPool[operandStack[i].atom][0] == UNARY_SUBTRACT)
                 {
                     debugPrint("UNARY NEGATE OP");
                     varPool[result].data.f = -varPool[parameters[0]].data.f;

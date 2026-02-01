@@ -1,75 +1,103 @@
+#ifndef LINKED_LIST
+#define LINKED_LIST
+
 #include <stdio.h>
-#include "pico/stdlib.h"
-#include <string.h>
+#include <stdlib.h>
 
-void Print(char *message){
-    printf("%s\n", message);
+typedef struct GeneralListNode
+{
+    struct GeneralListNode *next;
+    struct GeneralListNode *previous;
+    void *content;
+} GeneralListNode;
+
+typedef struct GeneralList
+{
+    GeneralListNode *firstElement;
+    GeneralListNode *lastElement;
+    int count;
+} GeneralList;
+
+void InitializeList(GeneralList *list)
+{
+    list->count = 0;
+    list->firstElement = NULL;
+    list->lastElement = NULL;
 }
 
-typedef struct ListNode
+void PushList(GeneralList *list, void *content)
 {
-    void *contents;
-
-    struct ListNode *next;
-    struct ListNode *previous;
-} ListNode;
-
-typedef struct
-{
-    uint8_t dataSize;
-    ListNode *start;
-    ListNode *end;
-    uint16_t length;
-} LinkedList;
-
-LinkedList* InitializeList(int dataSize)
-{
-    LinkedList *output = malloc(sizeof(LinkedList));
-    output->dataSize = dataSize;
-    output->length = 0;
-    print("List created");
-    return output;
-}
-
-void AddToList(LinkedList *list, void *data, uint8_t dataSize){
-    if(dataSize != list->dataSize){
-        printf("Data does not match pointer type of %u bytes", list->dataSize);
+    //printf("list passed\n");
+    if (list == NULL)
+    {
+        printf("list is null\n");
         return;
     }
-
-    if(list->length == 0){
-        
-        list->start = (ListNode *)malloc(sizeof(ListNode));
-        print("modified start node\n");
-        list->start->contents = malloc(list->dataSize);
-        print("modified start size\n");
-        memcpy(list->start->contents, data, list->dataSize);
-        print("modified start content\n");
-        list->end = (ListNode *)malloc(sizeof(ListNode));
-        list->end = (list->start);
-        print("modified end data\n");
-    } else {
-        ListNode *newNode = malloc(sizeof(ListNode));
-        list->end->next = newNode;
-        newNode->previous = list->end;
-        list->end = newNode;
-        newNode->contents = malloc(list->dataSize);
-        memcpy(newNode->contents, data, list->dataSize);
+    if (list->lastElement == NULL)
+    {
+       // printf("createing first\n");
+        list->firstElement = (GeneralListNode *)malloc(sizeof(GeneralListNode));
+        //printf("createing malloced\n");
+        list->lastElement = list->firstElement;
+        list->count = 1;
+        //printf("done\n");
     }
-    list->length++;
-    print("modified length\n");
+    else
+    {
+        GeneralListNode *newElement = (GeneralListNode *)malloc(sizeof(GeneralListNode));
+        list->lastElement->next = newElement;
+        newElement->previous = list->lastElement;
+
+        list->lastElement = newElement;
+        list->count++;
+    }
+
+    list->lastElement->content = content;
 }
 
-void DeleteFromList(LinkedList *list, uint8_t index){
-    if(list->length <= index){
-        print("Cannot delete, out of range");
-        return;
+void *PopList(GeneralList *list)
+{
+    if (list->count == 0)
+        return NULL;
+
+    void *content = list->lastElement->content;
+    //printf("got content\n");
+
+    if (list->count >1)
+    {
+        list->lastElement = list->lastElement->previous;
+        free(list->lastElement->next);
+        list->lastElement->next = NULL;
     }
-    ListNode *currentNode = list->start;
-    for(int i = 0; i < index; i++){
+    else
+    {
+        free(list->firstElement);
+        list->firstElement = NULL;
+        list->lastElement = NULL;
+    }
+
+    list->count--;
+
+    return content;
+}
+
+void *ListGetIndex(GeneralList *list, int index)
+{
+    if (index >= list->count)
+    {
+        printf("out of bounds\n");
+        return NULL;
+    }
+
+    GeneralListNode *currentNode = list->firstElement;
+    //printf("ggot\n");
+    for (int i = 0; i < index; i++)
+    {
+        //printf("next\n");
         currentNode = currentNode->next;
     }
-    currentNode->previous->next = currentNode->next;
-    currentNode->next->previous = currentNode->previous;
-    free(currentNode);
+    //printf("returning");
+    return currentNode->content;
 }
+
+#endif

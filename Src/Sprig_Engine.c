@@ -20,8 +20,11 @@ File *program;
 #include "Editor.h"
 #include "Extras/FireWork.h"
 
-
 #include "Interpreter.h"
+
+#include "Start_Logo.h"
+
+#include "LinkedList.h"
 
 void RenderTest()
 {
@@ -42,11 +45,9 @@ int main()
 {
     stdio_init_all();
 
-
     InitializeButtons();
     InitializeKeyboard();
 
-    SetupColors();
     CreateNullStructs();
 
     gpio_init(SD_CS);
@@ -65,16 +66,40 @@ int main()
 
     spi_set_baudrate(SPI_PORT, 32 * 1000 * 1000);
 
+    
+
+    
+
     Clear();
 
-    // sleep_ms(5000);
 
-    //sleep_ms(4000);
+   // SuperCoolLogo();
+
+    /*uint16_t testSprite[8][8] = {
+        {WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE},
+        {WHITE, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, WHITE},
+        {WHITE, TRANSPARENT, RED, TRANSPARENT, TRANSPARENT, RED, TRANSPARENT, WHITE},
+        {WHITE, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, WHITE},
+        {WHITE, TRANSPARENT, RED, TRANSPARENT, TRANSPARENT, RED, TRANSPARENT, WHITE},
+        {WHITE, TRANSPARENT, TRANSPARENT, RED, RED, TRANSPARENT, TRANSPARENT, WHITE},
+        {WHITE, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, TRANSPARENT, WHITE},
+        {WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE}};
+
+    for (int i = 0; i <= 360; i++)
+    {
+        SmartClear();
+        SmartSprite(testSprite, 80, 64, 8, 8, i+45);
+        SmartShow();
+    }
+
+    sleep_ms(100000);*/
+
+    // sleep_ms(4000);
 
     InitializeLights();
 
-    //sleep_ms(1000);
-    //FireworkShow();
+    // sleep_ms(1000);
+    // FireworkShow();
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();

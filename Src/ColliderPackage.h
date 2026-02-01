@@ -12,7 +12,7 @@
 #define STATIC 0
 #define DYNAMIC 1
 
-#define DEBUG 1
+//#define DEBUG 1
 
 #ifdef DEBUG
 #define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
@@ -68,7 +68,15 @@ uint16_t cellCount = 0;
 Rect *colliderRects = NULL;
 uint16_t rectCount = 0;
 
+#define FLOAT_DIGITS 4
+
 /////////////////////////// RECT HELPERS //////////////////////
+
+float TruncateFloat(float value, int digits)
+{
+    return floor(value * pow(10, digits)) / pow(10, digits);
+}
+
 #pragma region
 uint16_t NewRect(int x, int y, int w, int h, Rect **rectTail, uint16_t *count)
 {
@@ -127,6 +135,10 @@ void DeleteRect(uint16_t ID, Rect *rectTail)
 
 void ClearAllRects(Rect **rectTail, uint16_t *count)
 {
+    if (*count == 0)
+    {
+        return;
+    }
     Rect *currentRect = *rectTail;
     while (currentRect->previous != NULL)
     {
@@ -135,7 +147,7 @@ void ClearAllRects(Rect **rectTail, uint16_t *count)
         currentRect->next = NULL;
     }
     free(currentRect);
-    count = 0;
+    *count = 0;
     *rectTail = NULL;
 }
 #pragma endregion
@@ -162,7 +174,7 @@ uint16_t NewRectReferer(Rect *ref, Cell *cell)
     }
 
     cell->rectsWithinCell->ref = ref;
-    debugPrintf("new referer: %d", ref->ID);
+    debugPrintf("new referer: %d\n", ref->ID);
     return cell->rectCount++;
 }
 
@@ -183,6 +195,11 @@ RectReferer *GetRectRefererInCell(int index, Cell *cell)
 void ClearRectReferersInCell(Cell *cell)
 {
     RectReferer *currentCell = cell->rectsWithinCell;
+    if (currentCell == NULL)
+    {
+        cell->rectCount = 0;
+        return;
+    }
     while (currentCell->previous != NULL)
     {
         currentCell = currentCell->previous;
@@ -229,15 +246,25 @@ uint16_t NewCell(int x, int y, Cell **cellTail)
 
 Cell *GetCellByPosition(int x, int y, Cell *cellTail)
 {
+    debugPrint("GETTING CELL BY POS");
+    if (cellTail == NULL)
+    {
+        debugPrint("not found, null");
+        return NULL;
+    }
     Cell *currentCell = cellTail;
     while (currentCell != NULL)
     {
-        if (currentCell->topleft.x == x && currentCell->topleft.y == y)
+        float a = TruncateFloat(currentCell->topleft.x, FLOAT_DIGITS);
+        float b = TruncateFloat(currentCell->topleft.y, FLOAT_DIGITS);
+        // debugPrintf("pos: %f, %f\n", a, b);
+        if (a == x && b == y)
         {
             return currentCell;
         }
         currentCell = currentCell->previous;
     }
+    debugPrint("not found");
     return NULL;
 }
 
@@ -372,7 +399,7 @@ void RecalculateObjectColliders(EngineObject *object)
 
         object->colliderBoxes[0] = NewRect(
             -SPRITE_WIDTH / 2,
-            -SPRITE_HEIGHT / 2,
+            SPRITE_HEIGHT / 2,
             SPRITE_WIDTH,
             SPRITE_HEIGHT,
             &colliderRects,
@@ -396,7 +423,7 @@ void RecalculateObjectColliders(EngineObject *object)
     }
 }
 
-void AddColliderToObject(EngineObject *object, uint16_t meshTypeSet, bool calculateColliders)
+void AddColliderToObject(EngineObject *object, uint16_t meshTypeSet, bool calculateColliders, float bounceSet)
 {
     object->packages[0] = true;
 
@@ -426,6 +453,10 @@ void AddColliderToObject(EngineObject *object, uint16_t meshTypeSet, bool calcul
     sprite->data.i = GetObjectDataByName(object, "sprite")->data.i;
     AddDataToObject(object, sprite);
 
+    EngineVar *bounce = VarConstructor("bounce", strlen("bounce"), TYPE_FLOAT, true);
+    bounce->data.f = bounceSet;
+    AddDataToObject(object, bounce);
+
     if (calculateColliders)
         RecalculateObjectColliders(object);
 }
@@ -437,7 +468,7 @@ void AverageCellSize()
     Rect *currentRect = colliderRects;
     while (currentRect != NULL)
     {
-        debugPrintf("added rect");
+        debugPrintf("added rect (%f,%f)\n", RectToWorld(currentRect).scale.x, RectToWorld(currentRect).scale.y);
         cellSize.x += RectToWorld(currentRect).scale.x;
         cellSize.y += RectToWorld(currentRect).scale.y;
         currentRect = currentRect->previous;
@@ -469,11 +500,11 @@ void CreateCells()
         Vector2 leftBottomCell = NearestCell(worldRect.topLeft.x, worldRect.topLeft.y - worldRect.scale.y);
         Vector2 rightBottomCell = NearestCell(worldRect.topLeft.x + worldRect.scale.x, worldRect.topLeft.y - worldRect.scale.y);
 
-        for (int x = leftBottomCell.x; x <= rightTopCell.x; x += cellSize.x)
+        for (float x = leftBottomCell.x; x <= rightTopCell.x; x += cellSize.x)
         {
-            for (int y = leftBottomCell.y; y <= rightTopCell.y; y += cellSize.y)
+            for (float y = leftBottomCell.y; y <= rightTopCell.y; y += cellSize.y)
             {
-                debugPrintf("(%f,%f)", x, y);
+                debugPrintf("rect point(%f,%f)\n", x, y);
 
                 if (GetCellByPosition(x, y, cells) == NULL)
                 {
@@ -481,13 +512,13 @@ void CreateCells()
                 }
 
                 NewRectReferer(currentRect, GetCellByPosition(x, y, cells));
-                debugPrintf("added rect to cell");
+                debugPrint("added rect to cell");
             }
         }
 
         currentRect = currentRect->previous;
     }
-    debugPrintf("cells created");
+    debugPrint("cells created");
 }
 
 bool AABB(Rect *a, Rect *b)
@@ -546,6 +577,18 @@ void ResolveCollision(Rect *a, Rect *b)
         return;
     }
 
+    /*Vector2 COMA;
+    Vector2 count;
+    for (int i = 0; i < a->link->colliderCount; i++)
+    {
+        Rect worldRect = RectToWorld(GetRectByID(a->link->colliderBoxes[i], colliderRects));
+        COMA.x += (worldRect.topLeft.x + worldRect.scale.x / 2) * worldRect.scale.x;
+        count.x += worldRect.scale.x;
+
+        COMA.y += (worldRect.topLeft.y + worldRect.scale.y / 2) * worldRect.scale.y;
+        count.y += worldRect.scale.y;
+    }*/
+
     Rect worldA = RectToWorld(a);
     debugPrintf("a pos: (%f,%f)\n", worldA.topLeft.x, worldA.topLeft.y);
 
@@ -558,12 +601,12 @@ void ResolveCollision(Rect *a, Rect *b)
     costs[0] = abs((worldB.topLeft.y + worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
     costs[2] = abs((worldB.topLeft.y - worldB.scale.y - worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
 
-    debugPrintf("calculated y costs");
+    debugPrint("calculated y costs");
 
     costs[1] = abs((worldB.topLeft.x + worldB.scale.x + worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
     costs[3] = abs((worldB.topLeft.x - worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
 
-    debugPrintf("calculated x costs");
+    debugPrint("calculated x costs");
 
     int lowestCost = -1;
     for (int i = 0; i < 4; i++)
@@ -587,24 +630,37 @@ void ResolveCollision(Rect *a, Rect *b)
         debugPrintf("0: a-%f, b-%f\n", (float)costs[0] * aForce, -(float)costs[0] * bForce);
         aPos->data.XY.y += (float)costs[0] * aForce;
         bPos->data.XY.y -= (float)costs[0] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
         break;
     case 1:
         debugPrintf("1: a-%f, b-%f\n", (float)costs[1] * aForce, -(float)costs[1] * bForce);
         aPos->data.XY.x += (float)costs[1] * aForce;
         bPos->data.XY.x -= (float)costs[1] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
         break;
     case 2:
         debugPrintf("2: a-%f, b-%f\n", -(float)costs[2] * aForce, (float)costs[2] * bForce);
         aPos->data.XY.y -= (float)costs[2] * aForce;
         bPos->data.XY.y += (float)costs[2] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
         break;
     case 3:
         debugPrintf("3: a-%f, b-%f\n", -(float)costs[3] * aForce, (float)costs[3] * bForce);
         aPos->data.XY.x -= (float)costs[3] * aForce;
         bPos->data.XY.x += (float)costs[3] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
         break;
     }
-    debugPrintf("resolved");
+
+    debugPrint("resolved");
 }
 
 bool CheckCell(Cell *cell)
@@ -637,7 +693,7 @@ bool CheckCell(Cell *cell)
         }
     }
 
-    debugPrintf("cell checked");
+    debugPrint("cell checked");
     return isCollision;
 }
 
@@ -645,7 +701,8 @@ void ColliderStep()
 {
 
     debugPrintf("rect count: %d\n", rectCount);
-    if(rectCount==0){
+    if (rectCount == 0)
+    {
         return;
     }
     AverageCellSize();

@@ -223,36 +223,32 @@ uint8_t GetIntDigit(int value, int place)
 
 char *SpriteToText(uint8_t spriteIndex)
 {
-    int charLen = 1 + (SPRITE_HEIGHT * SPRITE_WIDTH * 2);
+    int charLen = (SPRITE_HEIGHT * SPRITE_WIDTH * 2);
 
     char *text = (char *)malloc(sizeof(char) * charLen);
-
-    text[0] = (char)sprites[spriteIndex].ID;
 
     for (int y = 0; y < SPRITE_HEIGHT; y++)
     {
         for (int x = 0; x < SPRITE_WIDTH; x++)
         {
-
-            text[(x + y * SPRITE_WIDTH) * 2 + 1] = (sprites[spriteIndex].sprite[x][y] & 0xFF00) >> 8;
-            text[(x + y * SPRITE_WIDTH) * 2 + 2] = (sprites[spriteIndex].sprite[x][y] & 0xFF);
+            text[(x + y * SPRITE_WIDTH) * 2] = (sprites[spriteIndex].sprite[x][y] & 0xFF00) >> 8;
+            text[(x + y * SPRITE_WIDTH) * 2 + 1] = (sprites[spriteIndex].sprite[x][y] & 0xFF);
         }
     }
 
     return text;
 }
 
-void TextToSprite(char *text)
+void TextToSprite(char *text, uint8_t index)
 {
-    uint8_t index = text[0];
     sprites[index].ID = index;
-    printf("New Sprite to text: %d\n", text[0]);
+    printf("New Sprite to text: %d\n", index);
     for (int y = 0; y < SPRITE_HEIGHT; y++)
     {
         for (int x = 0; x < SPRITE_WIDTH; x++)
         {
-            printf(" %d %d", ((text[(x + y * SPRITE_WIDTH) * 2 + 1])), (text[(x + y * SPRITE_WIDTH) * 2 + 2]));
-            sprites[index].sprite[x][y] = ((text[(x + y * SPRITE_WIDTH) * 2 + 1]) << 8) | (text[(x + y * SPRITE_WIDTH) * 2 + 2]);
+            printf(" %d %d", ((text[(x + y * SPRITE_WIDTH) * 2])), (text[(x + y * SPRITE_WIDTH) * 2 + 1]));
+            sprites[index].sprite[x][y] = ((text[(x + y * SPRITE_WIDTH) * 2]) << 8) | (text[(x + y * SPRITE_WIDTH) * 2 + 1]);
         }
     }
 }
@@ -371,7 +367,7 @@ EngineObject *DeserializeObject(char *serializedObject)
         char data[64];
         char serialized = 'f';
         printf("index: %d: %c\n", index, serializedObject[index]);
-        sscanf(serializedObject + index, "`%[^\n]\n`%d`%c`%[^\n]\n", &dataName, &type,&serialized, &data);
+        sscanf(serializedObject + index, "`%[^\n]\n`%d`%c`%[^\n]\n", &dataName, &type, &serialized, &data);
         printf("name: %s\n", dataName);
         printf("data type: %d, %s\n", type, data);
 
@@ -379,7 +375,7 @@ EngineObject *DeserializeObject(char *serializedObject)
         strncpy(var->name, dataName, 16);
         var->name[15] = '\0';
 
-        var->serialized = serialized=='t'?1:0;
+        var->serialized = serialized == 't' ? 1 : 0;
 
         print("Deserialized var, adding to object");
         AddDataToObject(objectOut, var);
@@ -392,7 +388,7 @@ EngineObject *DeserializeObject(char *serializedObject)
     if (colliderAdded == 't')
     {
         objectOut->packages[0] = true;
-        RecalculateObjectColliders(objectOut);
+        // RecalculateObjectColliders(objectOut);
     }
     else
     {
@@ -433,16 +429,9 @@ void SaveProject(File *file)
     int bufferIndex = 0;
     for (int i = 0; i < spriteCount; i++)
     {
-        if (i != 0 && i % 3 == 0)
-        {
-            printf("\n%d blcok num\n", file->startBlock - i / 3);
-            WriteBlock(file->startBlock - i / 3, buffer);
-            memset(buffer, 0, sizeof(buffer));
-            bufferIndex = 0;
-        }
         char *sprite = SpriteToText(i);
         print("block\n");
-        for (int s = 0; s < 1 + (SPRITE_HEIGHT * SPRITE_WIDTH * 2); s++)
+        for (int s = 0; s < (SPRITE_HEIGHT * SPRITE_WIDTH * 2); s++)
         {
             // printf(" ", sprite[s]);
             buffer[bufferIndex++] = sprite[s];
@@ -450,20 +439,14 @@ void SaveProject(File *file)
         }
         print("\n");
         free(sprite);
+
+        printf("\n%d blcok num\n", file->startBlock - i - 1);
+        WriteBlock(file->startBlock - i - 1, buffer);
+        memset(buffer, 0, sizeof(buffer));
+        bufferIndex = 0;
     }
 
-    int blockChange = 0;
-    if (bufferIndex > 0)
-    {
-        printf("\n%d blcok num\n", file->startBlock - (spriteCount - 1) / 3 - 1);
-        WriteBlock(file->startBlock - (spriteCount - 1) / 3 - 1, buffer);
-
-        blockChange = (spriteCount - 1) / 3 + 2;
-    }
-    else
-    {
-        blockChange = (spriteCount - 1) / 3 + 1;
-    }
+    int blockChange = spriteCount+1;
 
     file->startBlock -= blockChange;
 
@@ -549,14 +532,15 @@ void ClearProject()
 {
     for (int s = 0; s < sceneCount; s++)
     {
-        
+
         for (int o = 0; o < scenes[s].objectCount; o++)
         {
-            printf("scene: %d obj: %d\n",s,o);
+            printf("scene: %d obj: %d\n", s, o);
             print("clear data");
             if (scenes[s].objects[o] != NULL)
                 ClearDataFromObject(scenes[s].objects[o]);
-            else{
+            else
+            {
                 print("null object");
                 continue;
             }
@@ -621,16 +605,15 @@ void LoadProject(File *file)
 
     printf("Sprites: %d\n", spriteCount);
 
-    memcpy(buffer.data, ReadBlock(file->startBlock - 1).data, 512);
+    // memcpy(buffer.data, ReadBlock(file->startBlock - 1).data, 512);
     for (int i = 0; i < spriteCount; i++)
     {
-        if (i % 3 == 0)
-        {
-            memcpy(buffer.data, ReadBlock(file->startBlock - i / 3 - 1).data, 512);
-        }
+
+        memcpy(buffer.data, ReadBlock(file->startBlock - i - 1).data, 512);
+
         print("\nsprite\n");
 
-        TextToSprite(buffer.data + (i % 3) * 129);
+        TextToSprite(buffer.data, i);
     }
 
     int originalStartBlock = file->startBlock;

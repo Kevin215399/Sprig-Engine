@@ -25,6 +25,8 @@
 
 #include "GUI.h"
 
+#include "pico/multicore.h"
+
 #define CAMERA_SPRITE -1
 
 // Func prototypes
@@ -170,7 +172,7 @@ void UpdateUIButtons()
 
 uint8_t sceneScale = 4;
 
-void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY)
+void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, int angle)
 {
     printf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
     if (sprite < 0)
@@ -213,18 +215,26 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY)
     int topLeftX = x - scaleX * SPRITE_WIDTH / 2;
     int topLeftY = y - scaleY * SPRITE_HEIGHT / 2;
 
-    for (int x = 0; x < SPRITE_WIDTH; x++)
+    SmartSprite(sprites[sprite].sprite, topLeftX, topLeftY, scaleX, scaleY, angle);
+
+    /*for (int ix = 0; ix < SPRITE_WIDTH; ix++)
     {
-        for (int y = 0; y < SPRITE_HEIGHT; y++)
+        for (int iy = 0; iy < SPRITE_HEIGHT; iy++)
         {
-            if (sprites[sprite].sprite[x][y] == TRANSPARENT)
+            if (sprites[sprite].sprite[ix][iy] == TRANSPARENT)
             {
                 continue;
             }
-            printf("(%d,%d) %d\n", x, y, sprites[sprite].sprite[x][y]);
-            SmartRect(sprites[sprite].sprite[x][y], topLeftX + x * scaleX, topLeftY + y * scaleY, scaleX, scaleY);
+            printf("(%d,%d) %d\n", ix, iy, sprites[sprite].sprite[ix][iy]);
+
+            int xPos = (ix)*cos(angle * (3.1415 / 180)) - (iy)*sin(angle * (3.1415 / 180));
+            int yPos = (ix)*sin(angle * (3.1415 / 180)) + (iy)*cos(angle * (3.1415 / 180));
+
+
+
+            SmartFilledRect(sprites[sprite].sprite[ix][iy], topLeftX + xPos * scaleX, topLeftY + yPos * scaleY, scaleX, scaleY, angle);
         }
-    }
+    }*/
 }
 
 void DrawRectOutline(uint16_t color, int x, int y, int w, int h)
@@ -285,7 +295,8 @@ void RenderScene(int offsetX, int offsetY)
                            80 + offsetX + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x,
                            64 + offsetY + sceneScale * -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y,
                            sceneScale * scale.x,
-                           sceneScale * scale.y);
+                           sceneScale * scale.y,
+                           (int)GetObjectDataByName(currentScene->objects[i], "angle")->data.f);
 
         for (int x = 0; x < currentScene->objects[i]->colliderCount; x++)
         {
@@ -337,6 +348,8 @@ void DecompileScene()
 
 void RecompileScene()
 {
+    ClearAllRects(&colliderRects, &rectCount);
+
     for (int i = 0; i < currentScene->objectCount; i++)
     {
         for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
@@ -987,7 +1000,7 @@ void ManageSceneUI()
                 objectPackageCount++;
             }
 
-            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1 + objectPackageCount;
+            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount  + objectPackageCount;
             if (modulePage >= scriptCount)
             {
                 modulePage = 0;
@@ -1386,7 +1399,7 @@ void ManageSceneUI()
                         showKeyboard = true;
                         refreshKeyboard = true;
                         variableBeingModified = i;
-                        memset(modifyVariable,0,sizeof(modifyVariable));
+                        memset(modifyVariable, 0, sizeof(modifyVariable));
                         caretPosition = 0;
                     }
                 }
@@ -1397,7 +1410,7 @@ void ManageSceneUI()
 
                     if (script == 0)
                     {
-                        AddColliderToObject(currentScene->objects[currentObject], COLLIDER_MESH, true);
+                        AddColliderToObject(currentScene->objects[currentObject], COLLIDER_MESH, true, 1);
                         script = -1;
                     }
                     else
@@ -1864,6 +1877,81 @@ void SceneMenu()
 ///////////////////////// Run program
 #pragma region
 
+#define START_RENDER 1
+#define RENDERER_READY 2
+#define EXIT_RENDERER 3
+#define CHECK_FLAG 4
+
+#define RENDER_POSITION 0
+#define RENDER_SPRITE 1
+#define RENDER_SCALE_TYPE 2
+#define RENDER_SCALE 3
+#define RENDER_ANGLE 4
+
+#define MULTI_STEP_PROGRAM 1
+
+uint8_t cameraScale = 0;
+int cameraX = 0;
+int cameraY = 0;
+
+void GameRenderThread()
+{
+    multicore_fifo_push_blocking(CHECK_FLAG);
+
+    multicore_fifo_push_blocking(RENDERER_READY);
+
+    while (1)
+    {
+        uint32_t flag = multicore_fifo_pop_blocking();
+        if (flag == EXIT_RENDERER)
+            break;
+
+        if (START_RENDER)
+        {
+            SmartClear();
+            for (int i = 0; i < currentScene->objectCount; i++)
+            {
+                if (currentScene->objects[i]->renderData[RENDER_SPRITE].i < 0)
+                {
+                    continue;
+                }
+                Vector2 scale;
+                if (currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i == TYPE_INT)
+                {
+                    scale.x = currentScene->objects[i]->renderData[RENDER_SCALE].i;
+                    scale.y = currentScene->objects[i]->renderData[RENDER_SCALE].i;
+                }
+                else
+                {
+                    scale.x = currentScene->objects[i]->renderData[RENDER_SCALE].XY.x;
+                    scale.y = currentScene->objects[i]->renderData[RENDER_SCALE].XY.y;
+                }
+
+                // printf("Scale: (%f,%f)\n", scale.x, scale.y);
+                // printf("Position: (%f,%f)\n", GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x, GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y);
+                // printf("Sprite: %d\n", GetObjectDataByName(currentScene->objects[i], "sprite")->data.i);
+                DrawSpriteCentered(
+                    currentScene->objects[i]->renderData[RENDER_SPRITE].i,
+                    80 + cameraScale * currentScene->objects[i]->renderData[RENDER_POSITION].XY.x - cameraX,
+                    64 + cameraScale * -currentScene->objects[i]->renderData[RENDER_POSITION].XY.y - cameraY,
+                    cameraScale * scale.x,
+                    cameraScale * scale.y,
+                    (int)currentScene->objects[i]->renderData[RENDER_ANGLE].f);
+            }
+            SmartShow();
+
+            print("........ CORE 1 FINISHED RENDER");
+
+            multicore_fifo_push_blocking(RENDERER_READY);
+        }
+    }
+
+    print("......... CORE 1 EXITED");
+
+    while (1)
+        sleep_ms(1000); // infinite loop
+}
+
 uint32_t RunProgram()
 {
     bool UI_PrintToScreen(char *message, bool isError);
@@ -1905,7 +1993,8 @@ uint32_t RunProgram()
                 free(scrData->backupData);
             }
             print("freed");
-            scrData->backupData = malloc(sizeof(EngineVar) * scrData->variableCount);
+            if (scrData->variableCount > 0)
+                scrData->backupData = malloc(sizeof(EngineVar) * scrData->variableCount);
             print("malloced");
             scrData->backupVarCount = scrData->variableCount;
             for (int var = 0; var < scrData->variableCount; var++)
@@ -1926,79 +2015,68 @@ uint32_t RunProgram()
     SmartClear();
     SmartShowAll();
 
+    multicore_reset_core1();
+    multicore_launch_core1(GameRenderThread);
+
+    uint32_t flag = multicore_fifo_pop_blocking();
+    if (flag == CHECK_FLAG)
+    {
+        print("............ Core 0 got confirmation!");
+    }
+    else
+    {
+        print("............ Core 0 incorrect confirmation");
+        multicore_fifo_push_blocking(EXIT_RENDERER);
+        return CreateError(RENDERER, COULD_NOT_START_CORE_1, 0);
+    }
+
     while (1)
     {
-        uint8_t cameraScale;
+        ////////////////////////////////////////////////////////////////////// GET CAMERA DATA
+
         cameraScale = GetObjectDataByName(camera, "scale")->data.i;
 
-        int cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
-        int cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
+        cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
+        cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
 
-        SmartClear();
+        // print("///////////////////////////////////////////////////////////////////// APPLY OBJECT PHYSICS");
+
         for (int i = 0; i < currentScene->objectCount; i++)
         {
             GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x;
             GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y;
-            print("added velocity to position");
+            /*printf("added velocity to position, %f,%d\n",
+                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x,
+                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y);*/
             float multiplier = ((float)(100 - (abs(GetObjectDataByName(currentScene->objects[i], "drag")->data.i) % 101))) / 100;
 
             GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x *= multiplier;
             GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y *= multiplier;
-            print("modified velocity");
-
-            if (GetObjectDataByName(currentScene->objects[i], "sprite")->data.i < 0)
-            {
-                continue;
-            }
-
-            Vector2 scale;
-            EngineVar *objScale = GetObjectDataByName(currentScene->objects[i], "scale");
-            if (objScale->currentType == TYPE_INT)
-            {
-                scale.x = objScale->data.i;
-                scale.y = objScale->data.i;
-            }
-            else
-            {
-                scale.x = objScale->data.XY.x;
-                scale.y = objScale->data.XY.y;
-            }
-
-            printf("Scale: (%f,%f)\n", scale.x, scale.y);
-            printf("Position: (%f,%f)\n", GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x, GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y);
-            printf("Sprite: %d\n", GetObjectDataByName(currentScene->objects[i], "sprite")->data.i);
-            DrawSpriteCentered(
-                GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
-                80 + cameraScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x - cameraX,
-                64 + cameraScale * -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y - cameraY,
-                cameraScale * scale.x,
-                cameraScale * scale.y);
+            //print("modified velocity");
         }
-        print("showing");
-        SmartShow();
-        print("showed");
-        printf("count: %d\n", currentScene->objectCount);
+
+        // print("showed");
+        // printf("count: %d\n", currentScene->objectCount);
+
+        // print("/////////////////////////////////////////////////////////////////////EXECUTE SCRIPTS");
+
         for (int obj = 0; obj < currentScene->objectCount; obj++)
         {
-            printf("obj: %d\n", obj);
             EngineObject *testObj = currentScene->objects[obj];
-            print("got object");
+
             if (testObj == NULL)
             {
                 print("is null");
             }
             uint8_t testCount = currentScene->objects[obj]->scriptCount;
-            printf("got count %d\n", testCount);
 
             for (int scr = 0; scr < testCount; scr++)
             {
-                printf("ex script: obj: %d, scr: %d\n", obj, scr);
                 currentScene->objects[obj]->scriptData[scr]->currentLine = 0;
                 while (currentScene->objects[obj]->scriptData[scr]->currentLine < currentScene->objects[obj]->scriptData[scr]->lineCount)
                 {
                     uint32_t errorNum = ExecuteLine(currentScene->objects[obj]->scriptData[scr]->script, currentScene->objects[obj]->scriptData[scr]);
                     uint16_t error = UnpackErrorMessage(errorNum);
-                    printf("Execute line result: %s\n", stringPool[error]);
                     if (errorNum != 0)
                     {
                         UI_PrintToScreen(stringPool[error], true);
@@ -2009,22 +2087,64 @@ uint32_t RunProgram()
                     FreeString(&error);
                 }
             }
-            print("executed scripts for this object");
-            print("count: ");
-            printf("%d\n", currentScene->objectCount);
         }
-        print("/////////////////////////////////////////////////// script done execute");
+
+        // print("/////////////////////////////////////////////////////////////////// DO COLLISION");
 
         ColliderStep();
 
-        print("///////////////////////////////////////////// COLLISION DONE");
+        // print("/////////////////////////////////////////////////////////////////////DRAW SPRITES");
+
+        if (multicore_fifo_rvalid() || MULTI_STEP_PROGRAM == 0)
+        {
+
+            int flag = multicore_fifo_pop_blocking();
+            while (flag != RENDERER_READY)
+            {
+                flag = multicore_fifo_pop_blocking();
+            }
+
+            for (int i = 0; i < currentScene->objectCount; i++)
+            {
+                currentScene->objects[i]->renderData[RENDER_POSITION].XY.x = GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x;
+                currentScene->objects[i]->renderData[RENDER_POSITION].XY.y = GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y;
+
+                currentScene->objects[i]->renderData[RENDER_SPRITE].i = GetObjectDataByName(currentScene->objects[i], "sprite")->data.i;
+
+                if (GetObjectDataByName(currentScene->objects[i], "scale")->currentType == TYPE_INT)
+                {
+                    currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i = TYPE_INT;
+
+                    currentScene->objects[i]->renderData[RENDER_SCALE].i = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
+                }
+                else
+                {
+                    currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i = TYPE_VECTOR;
+
+                    currentScene->objects[i]->renderData[RENDER_SCALE].XY.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.x;
+                    currentScene->objects[i]->renderData[RENDER_SCALE].XY.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.y;
+                }
+
+                currentScene->objects[i]->renderData[RENDER_ANGLE].f = GetObjectDataByName(currentScene->objects[i], "angle")->data.f;
+            }
+
+            multicore_fifo_push_blocking(START_RENDER);
+        } else {
+            print(".... MULTI STEPPING PROGRAM");
+        }
+
+        //print("/////////////////////////////////////////////////////////////////////// EXIT");
 
         if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
         {
             print("exiting");
             if (millis() - exitHoldTime > 2000)
             {
-
+                int flag = multicore_fifo_pop_blocking();
+                while(flag != RENDERER_READY){
+                    flag = multicore_fifo_pop_blocking();
+                }
+                multicore_fifo_push_blocking(EXIT_RENDERER);
                 break;
             }
         }
@@ -2049,8 +2169,8 @@ uint32_t RunProgram()
 
                 scrData->data[var].data = scrData->backupData[var].data;
             }
-
-            free(scrData->backupData);
+            if (scrData->variableCount > 0)
+                free(scrData->backupData);
         }
     }
 
