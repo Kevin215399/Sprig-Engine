@@ -15,24 +15,12 @@
 
 #include "MemoryPool.h"
 
+#include "DebugPrint.h"
+
 #define LEFT_LIGHT 28
 #define RIGHT_LIGHT 4
 
-// #define DEBUG 1
 
-#ifdef DEBUG
-#define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
-#define debugPrint(x) printf("%s\n", x)
-#else
-#define debugPrintf(...) \
-    do                   \
-    {                    \
-    } while (0)
-#define debugPrint(x) \
-    do                \
-    {                 \
-    } while (0)
-#endif
 
 #define EQUATION_ERROR 1
 #define FUNCTION_ERROR 2
@@ -98,10 +86,6 @@ typedef struct
     uint8_t precedence;
     uint8_t parameters;
 } OperatorPrecedence;
-
-
-
-
 
 #define OPERATOR_COUNT 36
 
@@ -436,20 +420,22 @@ uint32_t CalculateBrackets(EngineScript *script, ScriptData *output)
     }
     uint16_t currentBracket = 0;
     uint16_t lastOpen = 65535;
-    // uint16_t currentLine = 0;
+    uint16_t currentLine = 0;
     for (int i = 0; i < strlen(script->content); i++)
     {
-        /*if (script->content[i] == '\n')
+        if (script->content[i] == ';')
         {
             currentLine++;
             continue;
-        }*/
+        }
         if (script->content[i] == '(' || script->content[i] == '{')
         {
             lastOpen = currentBracket;
             output->brackets[currentBracket].start = i;
-            output->brackets[currentBracket].startPos = i;
+            output->brackets[currentBracket].startLine = currentLine;
             output->brackets[currentBracket++].bracketType = (script->content[i] == '{') ? CURLY_BRACKET : PARENTHESIS;
+            if (script->content[i] == '{')
+                currentLine++;
         }
         if (script->content[i] == ')' || script->content[i] == '}')
         {
@@ -460,7 +446,7 @@ uint32_t CalculateBrackets(EngineScript *script, ScriptData *output)
             if (output->brackets[lastOpen].bracketType == ((script->content[i] == '}') ? CURLY_BRACKET : PARENTHESIS))
             {
                 output->brackets[lastOpen].end = i;
-                output->brackets[lastOpen].endPos = i;
+                output->brackets[lastOpen].endLine = currentLine;
                 while (output->brackets[lastOpen].end != -1)
                 {
                     if (lastOpen == 0)
@@ -470,6 +456,8 @@ uint32_t CalculateBrackets(EngineScript *script, ScriptData *output)
                     }
                     lastOpen--;
                 }
+                if (script->content[i] == '}')
+                    currentLine++;
             }
             else
                 return CreateError(PARENTHESIS_ERROR, BRACKET_MISMATCH, -1);
@@ -772,7 +760,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                         debugPrint("is unary");
                         isUnarySubtract = true;
 
-                        char unarySubtractString[2] = {UNARY_SUBTRACT,'\0'};
+                        char unarySubtractString[2] = {UNARY_SUBTRACT, '\0'};
 
                         setatom(
                             &allAtoms[atomIndex++],
@@ -1373,9 +1361,9 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             output->currentType = TYPE_STRING;
             output->data.s = PoolString();
             debugPrint("copying");
-            debugPrintf("from: %s\n", stringPool[varPool[operandStack[0].atom].data.s]);
+            debugPrintf("from: %s\n", stringPool[operandStack[0].atom]);
             debugPrintf("to: %s\n", stringPool[output->data.s]);
-            strcpy(stringPool[output->data.s], stringPool[varPool[operandStack[0].atom].data.s]);
+            strcpy(stringPool[output->data.s], stringPool[operandStack[0].atom]);
             debugPrint("copy done");
             FreeString(&varPool[operandStack[0].atom].data.s);
             debugPrint("freed string");
@@ -1611,28 +1599,10 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
-            int bracketStart = indexOf("{", output->lines[l]) + output->lineIndexes[l];
-            debugPrintf("bracket pos: %d\n", bracketStart);
-            newFunction->bracketStart = bracketStart;
+            debugPrintf("bracket pos: %d\n", l);
+            newFunction->line = l;
 
-            bool foundEnd = false;
-            for (int i = 0; i < output->bracketPairs; i++)
-            {
-                if (output->brackets[i].startPos == bracketStart)
-                {
-                    foundEnd = true;
-                    debugPrintf("end bracket: %d\n", output->brackets[i].endPos);
-                    newFunction->bracketEnd = output->brackets[i].endPos;
-                    break;
-                }
-            }
-            if (!foundEnd)
-            {
-                FreeString(&entityName);
-                free(newFunction);
-                FreeString(&trimmedLine);
-                return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
-            }
+
 
             output->functions[output->functionCount] = newFunction;
             output->functions[output->functionCount]->name = (char *)malloc(sizeof(char) * (strlen(stringPool[entityName]) + 1));
@@ -1767,8 +1737,8 @@ uint8_t GetScope(ScriptData *scriptData, uint16_t line)
     {
         if (
             scriptData->brackets[i].bracketType == CURLY_BRACKET &&
-            (scriptData->lineIndexes[line] > scriptData->brackets[i].startPos) &&
-            (scriptData->lineIndexes[line] < scriptData->brackets[i].endPos))
+            (scriptData->lineIndexes[line] > scriptData->brackets[i].start) &&
+            (scriptData->lineIndexes[line] < scriptData->brackets[i].end))
         {
             level++;
         }
@@ -1783,11 +1753,11 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
     uint32_t error = 0;
 
     SplitScript(script, output);
-    for (int i = 0; i < output->lineCount; i++)
+    /*for (int i = 0; i < output->lineCount; i++)
     {
         debugPrintf("split done line num %d\n", i);
         debugPrintf("split done line: %s\n", output->lines[i]);
-    }
+    }*/
 
     error = CalculateBrackets(script, output);
     if (error != 0)
@@ -1799,11 +1769,11 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
     {
         debugPrintf("setscr %d\n", l);
         // Find and add all variables/functions to the script data
-        for (int i = 0; i < output->lineCount; i++)
+        /*for (int i = 0; i < output->lineCount; i++)
         {
             debugPrintf("split done line num %d\n", i);
             debugPrintf("split done line: %s\n", output->lines[i]);
-        }
+        }*/
 
         if (GetScope(output, l) != scopeLevel)
         {
@@ -1819,6 +1789,8 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
         }
     }
     debugPrint("set script done");
+
+    InitializeList(&output->instructionStack);
     return 0;
 }
 
@@ -1858,87 +1830,54 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
         free(scriptData);
 }
 
+void PushLine(ScriptData *data, uint16_t line)
+{
+    uint16_t *mallocedLine = malloc(sizeof(uint16_t));
+    *mallocedLine = line;
+    PushList(&data->instructionStack, mallocedLine);
+}
 uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 {
+    if (scriptData->instructionStack.count == 0)
+    {
+        return 0;
+    }
+
+    for (int i = 0; i < scriptData->instructionStack.count; i++)
+    {
+        debugPrintf("Script line: %d\n", *(uint16_t *)ListGetIndex(&scriptData->instructionStack, i));
+    }
+
+    uint16_t *poppedLine = (uint16_t *)PopList(&scriptData->instructionStack);
+
+    uint16_t currentLine = *(poppedLine);
+
+    free(poppedLine);
+
+    if (currentLine >= scriptData->lineCount)
+    {
+        return 0;
+    }
+
     // Function prototype
     bool UI_PrintToScreen(char *message, bool isError);
 
     bool justShuntYard = true;
 
-    uint16_t trimmedLine = LeftTrim(scriptData->lines[scriptData->currentLine]);
+    uint16_t trimmedLine = LeftTrim(scriptData->lines[currentLine]);
     debugPrintf("Exexute line: %s\n", stringPool[trimmedLine]);
+
     // If line is a variable or function declaration, ignore
     if (GetTypeFromString(stringPool[trimmedLine]) != NO_TYPE)
     {
         FreeString(&trimmedLine);
-        scriptData->currentLine++;
+        PushLine(scriptData, currentLine + 1);
         return 0;
     }
-    // If line only includes end of a curly bracket
+
+    // If line only includes end of a curly bracket, just pop, do not push next line
     if (stringPool[trimmedLine][0] == '}')
     {
-        debugPrint("jumpback");
-        int bracketEnd = scriptData->lineIndexes[scriptData->currentLine] + indexOf("}", scriptData->lines[scriptData->currentLine]);
-
-        bool foundEnd = false;
-        for (int i = 0; i < scriptData->bracketPairs; i++)
-        {
-            if (scriptData->brackets[i].endPos == bracketEnd)
-            {
-                foundEnd = true;
-                // debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
-
-                for (int x = 0; x < scriptData->lineCount - 1; x++)
-                {
-                    if (
-                        scriptData->lineIndexes[x] <= scriptData->brackets[i].startPos &&
-                        scriptData->lineIndexes[x + 1] > scriptData->brackets[i].startPos)
-                    {
-                        if (indexOf("while", scriptData->lines[x]) != -1)
-                        {
-                            scriptData->currentLine = x;
-                            debugPrintf("jumpback %d\n", scriptData->currentLine);
-                        }
-                        else
-                        {
-                            debugPrint("end brack was not a loop");
-                            FreeString(&trimmedLine);
-                            scriptData->currentLine++;
-                            debugPrint("bracket execute a");
-                            return 0;
-                        }
-                    }
-                }
-
-                if (
-                    scriptData->lineIndexes[scriptData->lineCount - 1] <= scriptData->brackets[i].startPos)
-                {
-                    if (indexOf("while", scriptData->lines[scriptData->lineCount - 1]) != -1)
-                    {
-                        scriptData->currentLine = scriptData->lineCount - 1;
-                        debugPrintf("jumpback %d\n", scriptData->currentLine);
-                    }
-                    else
-                    {
-                        debugPrint("end brack was not a loop");
-                        FreeString(&trimmedLine);
-                        scriptData->currentLine++;
-                        debugPrint("bracket execute b");
-                        return 0;
-                    }
-                }
-
-                break;
-            }
-        }
-        debugPrint("bracket execute 1");
-        if (!foundEnd)
-        {
-            debugPrint("did not find end");
-            FreeString(&trimmedLine);
-            return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
-        }
-        FreeString(&trimmedLine);
         return 0;
     }
     debugPrint("bracket execute 2");
@@ -1999,7 +1938,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         {
             FreeString(&trimmedLine);
             FreeVar(&value);
-            return error | scriptData->currentLine;
+            return error | currentLine;
         }
         debugPrintf("to %d, from %d", scriptData->data[varIndex].currentType, varPool[value].currentType);
 
@@ -2060,7 +1999,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (stringPool[trimmedLine][index] == '\0')
         {
             FreeString(&trimmedLine);
-            return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, scriptData->currentLine);
+            return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, currentLine);
         }
         index++;
 
@@ -2089,7 +2028,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
-            return error | scriptData->currentLine;
+            return error | currentLine;
         }
 
         bool isZero = false;
@@ -2107,64 +2046,63 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
-            return CreateError(GENERAL_ERROR, TYPE_MISMATCH, scriptData->currentLine);
+            return CreateError(GENERAL_ERROR, TYPE_MISMATCH, currentLine);
+        }
+
+        // get global start
+        debugPrintf("start bracket: %d\n", currentLine);
+        uint16_t endLine = 0;
+
+        bool foundEnd = false;
+        // Iterate pairs to find the end
+        for (int i = 0; i < scriptData->bracketPairs; i++)
+        {
+            debugPrintf("check bracket: %d, %d\n", scriptData->brackets[i].startLine, scriptData->brackets[i].endLine);
+            if (scriptData->brackets[i].startLine == currentLine)
+            {
+                foundEnd = true;
+                debugPrintf("end bracket: %d\n", scriptData->brackets[i].endLine);
+                endLine = scriptData->brackets[i].endLine;
+            }
+        }
+
+        if (!foundEnd)
+        {
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
+            return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
         }
 
         if (isZero)
         {
-            int bracketStart = indexOf("{", scriptData->lines[scriptData->currentLine]) + scriptData->lineIndexes[scriptData->currentLine];
-            debugPrintf("bracket pos: %d\n", bracketStart);
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
 
-            bool foundEnd = false;
-            for (int i = 0; i < scriptData->bracketPairs; i++)
-            {
-                if (scriptData->brackets[i].startPos == bracketStart)
-                {
-                    foundEnd = true;
-                    debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
-
-                    for (int x = 0; x < scriptData->lineCount - 1; x++)
-                    {
-                        if (
-                            scriptData->lineIndexes[x] <= scriptData->brackets[i].endPos &&
-                            scriptData->lineIndexes[x + 1] > scriptData->brackets[i].endPos)
-                        {
-                            scriptData->currentLine = x + 1;
-                        }
-                    }
-
-                    if (
-                        scriptData->lineIndexes[scriptData->lineCount - 1] <= scriptData->brackets[i].endPos)
-                    {
-                        scriptData->currentLine = scriptData->lineCount;
-                    }
-
-                    FreeString(&trimmedLine);
-                    if (varPool[value].currentType == TYPE_STRING)
-                        FreeString(&varPool[value].data.s);
-                    FreeVar(&value);
-                    debugPrintf("Script line: %d\n", scriptData->currentLine);
-
-                    return 0;
-                }
-            }
-
-            if (!foundEnd)
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
-            }
+            debugPrintf("pushed %d\n", endLine + 1);
+            PushLine(scriptData, endLine + 1);
+            return 0;
         }
-        if (varPool[value].currentType == TYPE_STRING)
-            FreeString(&varPool[value].data.s);
-        FreeVar(&value);
-        justShuntYard = false;
+        else
+        {
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
+
+            PushLine(scriptData, endLine + 1);
+            PushLine(scriptData, currentLine + 1);
+
+            debugPrintf("pushed %d\n", endLine + 1);
+            debugPrintf("pushed %d\n", currentLine + 1);
+            return 0;
+        }
     }
 
-    // While statement
+    // while statement
     if (indexOf("while", stringPool[trimmedLine]) == 0)
     {
         int index = 2;
@@ -2175,11 +2113,9 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         if (stringPool[trimmedLine][index] == '\0')
         {
             FreeString(&trimmedLine);
-            return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, scriptData->currentLine);
+            return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, currentLine);
         }
         index++;
-
-        debugPrint("while found (");
 
         int endIndex = index;
         uint8_t parenthesisCount = 1;
@@ -2198,8 +2134,6 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         endIndex--;
 
-        debugPrint("while found )");
-
         uint16_t value = PoolVar("");
         uint32_t error = ShuntYard(stringPool[trimmedLine] + index, endIndex - index, &varPool[value], scriptData);
         if (error != 0)
@@ -2208,7 +2142,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
-            return error | scriptData->currentLine;
+            return error | currentLine;
         }
 
         bool isZero = false;
@@ -2226,64 +2160,63 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             if (varPool[value].currentType == TYPE_STRING)
                 FreeString(&varPool[value].data.s);
             FreeVar(&value);
-            return CreateError(GENERAL_ERROR, TYPE_MISMATCH, scriptData->currentLine);
+            return CreateError(GENERAL_ERROR, TYPE_MISMATCH, currentLine);
+        }
+
+        // get global start
+        debugPrintf("start bracket: %d\n", currentLine);
+        uint16_t endLine = 0;
+
+        bool foundEnd = false;
+        // Iterate pairs to find the end
+        for (int i = 0; i < scriptData->bracketPairs; i++)
+        {
+            debugPrintf("check bracket: %d, %d\n", scriptData->brackets[i].startLine, scriptData->brackets[i].endLine);
+            if (scriptData->brackets[i].startLine == currentLine)
+            {
+                foundEnd = true;
+                debugPrintf("end bracket: %d\n", scriptData->brackets[i].endLine);
+                endLine = scriptData->brackets[i].endLine;
+            }
+        }
+
+        if (!foundEnd)
+        {
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
+            return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
         }
 
         if (isZero)
         {
-            int bracketStart = indexOf("{", scriptData->lines[scriptData->currentLine]) + scriptData->lineIndexes[scriptData->currentLine];
-            debugPrintf("bracket pos: %d\n", bracketStart);
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
 
-            bool foundEnd = false;
-            for (int i = 0; i < scriptData->bracketPairs; i++)
-            {
-                if (scriptData->brackets[i].startPos == bracketStart)
-                {
-                    foundEnd = true;
-                    debugPrintf("end bracket: %d\n", scriptData->brackets[i].endPos);
-
-                    for (int x = 0; x < scriptData->lineCount - 1; x++)
-                    {
-
-                        debugPrintf("(%f,%f): %d\n", scriptData->lineIndexes[x], scriptData->lineIndexes[x + 1], scriptData->brackets[i].endPos);
-                        if (
-                            scriptData->lineIndexes[x] <= scriptData->brackets[i].endPos &&
-                            scriptData->lineIndexes[x + 1] > scriptData->brackets[i].endPos)
-                        {
-                            scriptData->currentLine = x + 1;
-                        }
-                    }
-
-                    if (
-                        scriptData->lineIndexes[scriptData->lineCount - 1] <= scriptData->brackets[i].endPos)
-                    {
-                        scriptData->currentLine = scriptData->lineCount;
-                    }
-
-                    FreeString(&trimmedLine);
-                    if (varPool[value].currentType == TYPE_STRING)
-                        FreeString(&varPool[value].data.s);
-                    FreeVar(&value);
-                    debugPrintf("Script line: %d\n", scriptData->currentLine);
-                    return 0;
-                }
-            }
-            if (!foundEnd)
-            {
-                FreeString(&trimmedLine);
-                if (varPool[value].currentType == TYPE_STRING)
-                    FreeString(&varPool[value].data.s);
-                FreeVar(&value);
-                return CreateError(GENERAL_ERROR, BRACKET_MISMATCH, scriptData->lineCount);
-            }
+            debugPrintf("pushed %d\n", endLine + 1);
+            PushLine(scriptData, endLine + 1);
+            return 0;
         }
-        if (varPool[value].currentType == TYPE_STRING)
-            FreeString(&varPool[value].data.s);
-        FreeVar(&value);
-        justShuntYard = false;
+        else
+        {
+            FreeString(&trimmedLine);
+            if (varPool[value].currentType == TYPE_STRING)
+                FreeString(&varPool[value].data.s);
+            FreeVar(&value);
+
+            PushLine(scriptData, currentLine);
+            PushLine(scriptData, currentLine + 1);
+
+            debugPrintf("pushed %d\n", endLine + 1);
+            debugPrintf("pushed %d\n", currentLine + 1);
+            return 0;
+        }
     }
 
-    if (indexOf("debugPrint", stringPool[trimmedLine]) == 0)
+    if (indexOf("print", stringPool[trimmedLine]) == 0)
     {
         int start = indexOf("(", stringPool[trimmedLine]) + 1;
         int endIndex = start;
@@ -2308,7 +2241,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         {
             FreeString(&trimmedLine);
             FreeVar(&out);
-            return error | scriptData->currentLine;
+            return error | currentLine;
         }
 
         if (varPool[out].currentType == TYPE_FLOAT || varPool[out].currentType == TYPE_INT)
@@ -2337,7 +2270,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             debugPrintf("str message debugPrint: %s\n", stringPool[varPool[out].data.s]);
 
             uint16_t printMessage = PoolString();
-            snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %s", scriptData->script->name, varPool[out].data.s);
+            snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %s", scriptData->script->name, stringPool[varPool[out].data.s]);
 
             UI_PrintToScreen(stringPool[printMessage], false);
 
@@ -2362,12 +2295,22 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         FreeVar(&out);
     }
 
-    scriptData->currentLine++;
-    debugPrintf("Script line: %d\n", scriptData->currentLine);
+    PushLine(scriptData, currentLine + 1);
 
     FreeString(&trimmedLine);
 
     return 0;
+}
+
+void JumpToFunction(ScriptData *scriptData, char *functionName)
+{
+    for (int i = 0; i < scriptData->functionCount; i++)
+    {
+        if (strcmp(scriptData->functions[i]->name, functionName) == 0)
+        {
+            PushLine(scriptData, scriptData->functions[i]->line);
+        }
+    }
 }
 
 #endif

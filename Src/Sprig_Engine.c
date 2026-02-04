@@ -66,14 +66,9 @@ int main()
 
     spi_set_baudrate(SPI_PORT, 32 * 1000 * 1000);
 
-    
-
-    
-
     Clear();
 
-
-   // SuperCoolLogo();
+    // SuperCoolLogo();
 
     /*uint16_t testSprite[8][8] = {
         {WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE},
@@ -94,7 +89,7 @@ int main()
 
     sleep_ms(100000);*/
 
-    // sleep_ms(4000);
+     sleep_ms(4000);
 
     InitializeLights();
 
@@ -104,8 +99,8 @@ int main()
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
 
-    /*EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int x = 0; setPosition(Vector(cos(x*PI/180)*5,0));  x+=1;");
+    EngineScript *script = ScriptConstructor(0, "script1",
+                                             "print(\"no run\"); int main() {print(\"start\"); if (1<2){print(\"test\");} print(\"done\");} print(\"no run\");");
 
     // int x=0; while(x<8){ x+=1; if(x%2==0){ print(\"even\"); } if(x%2!=0){ print(\"odd\"); } }
 
@@ -122,27 +117,24 @@ int main()
     {
         FreeString(&error);
 
-        int iteration = 0;
-        while (iteration < 1)
+        char funcName[32] = "main";
+        JumpToFunction(testData, funcName);
+
+        while (testData->instructionStack.count>0)
         {
-            testData->currentLine = 0;
-
-            while (testData->currentLine < testData->lineCount)
+            errorNum = ExecuteLine(script, testData);
+            error = UnpackErrorMessage(errorNum);
+            printf("Execute line result: %s\n", stringPool[error]);
+            if (errorNum != 0)
             {
-                errorNum = ExecuteLine(script, testData);
-                error = UnpackErrorMessage(errorNum);
-                printf("Execute line result: %s\n", stringPool[error]);
-                if (errorNum != 0)
-                {
-                    UI_PrintToScreen(stringPool[error], true);
+                UI_PrintToScreen(stringPool[error], true);
 
-                    break;
-                }
-                FreeString(&error);
+                break;
             }
-            printf("\n////////////////////////////// Iteration %d\n\n", iteration);
-            iteration++;
+            FreeString(&error);
         }
+        
+
         FreeScriptData(testData, false);
     }
     else
@@ -153,7 +145,7 @@ int main()
 
     editorView = 0;
 
-    sleep_ms(3000);*/
+    sleep_ms(3000);
 
     /*ScriptData *output = ScriptDataConstructor(0, 0, NULL, 0);
     EngineScript *script = ScriptConstructor(0, "test", "{\nhi;\ntest()\n}");

@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include <string.h>
-// #include "LinkedList.h"
+ #include "LinkedList.h"
 
 #define COLLIDER_VARS 6
 #define BASE_VARS 5
@@ -92,8 +92,7 @@ typedef struct
     EngineParameter parameters[MAX_PARAMETERS];
     uint8_t parameterIndex;
 
-    int bracketStart;
-    int bracketEnd;
+    int line;
 
 } EngineFunction;
 
@@ -118,12 +117,16 @@ typedef struct
 {
     int start;
     int startPos;
+    int startLine;
     int end;
     int endPos;
+    int endLine;
     bool bracketType;
 } BracketPair;
 
 struct EngineObject;
+
+
 
 // A struct that keeps script data. Can be added to objects
 typedef struct ScriptData
@@ -135,7 +138,7 @@ typedef struct ScriptData
     char **lines;
     int *lineIndexes;
     uint16_t lineCount;
-
+    
     EngineVar *data;
     uint8_t variableCount;
 
@@ -147,6 +150,8 @@ typedef struct ScriptData
 
     BracketPair *brackets;
     uint8_t bracketPairs;
+
+    GeneralList instructionStack;
 
     struct EngineObject *linkedObject;
 
