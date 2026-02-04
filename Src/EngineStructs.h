@@ -138,8 +138,11 @@ typedef struct ScriptData
     char **lines;
     int *lineIndexes;
     uint16_t lineCount;
+
+
+    GeneralList variables;
     
-    EngineVar *data;
+    //EngineVar *data;
     uint8_t variableCount;
 
     EngineVar *backupData;
@@ -339,7 +342,7 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
 {
     ScriptData *output = (ScriptData *)malloc(sizeof(ScriptData));
 
-    output->data = malloc(sizeof(EngineVar) * VARS_PER_SCRIPT);
+    InitializeList(&output->variables);
     output->backupData = NULL;
 
     output->script = script;

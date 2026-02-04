@@ -100,7 +100,7 @@ int main()
     UI_ClearDebug();
 
     EngineScript *script = ScriptConstructor(0, "script1",
-                                             "print(\"no run\"); int main() {print(\"start\"); if (1<2){print(\"test\");} print(\"done\");} print(\"no run\");");
+                                             "int main() {int test = 67; print(test);}");
 
     // int x=0; while(x<8){ x+=1; if(x%2==0){ print(\"even\"); } if(x%2!=0){ print(\"odd\"); } }
 
@@ -117,8 +117,10 @@ int main()
     {
         FreeString(&error);
 
-        char funcName[32] = "main";
-        JumpToFunction(testData, funcName);
+        //char funcName[32] = "main";
+       //JumpToFunction(testData, funcName);
+
+       PushLine(testData,0);
 
         while (testData->instructionStack.count>0)
         {

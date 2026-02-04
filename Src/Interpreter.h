@@ -20,8 +20,6 @@
 #define LEFT_LIGHT 28
 #define RIGHT_LIGHT 4
 
-
-
 #define EQUATION_ERROR 1
 #define FUNCTION_ERROR 2
 #define VARIABLE_ERROR 3
@@ -693,28 +691,29 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         bool isVariable = false;
         for (int variable = 0; variable < scriptData->variableCount; variable++)
         {
-            debugPrintf("Var name: %s\n", scriptData->data[variable].name);
-            if (indexOf(scriptData->data[variable].name, equation + i) == 0)
+            EngineVar *var = (EngineVar *)ListGetIndex(&scriptData->variables, variable);
+            debugPrintf("Var name: %s\n", var->name);
+            if (indexOf(var->name, equation + i) == 0)
             {
                 debugPrint("var match");
-                uint16_t value = SerializeVar(&(scriptData->data[variable]));
+                uint16_t value = SerializeVar(var);
 
-                if (scriptData->data[variable].currentType == TYPE_FLOAT || scriptData->data[variable].currentType == TYPE_INT)
+                if (var->currentType == TYPE_FLOAT || var->currentType == TYPE_INT)
                 {
                     setatom(&allAtoms[atomIndex++], TYPE_FLOAT, 0, 0, stringPool[value]);
                 }
-                else if (scriptData->data[variable].currentType == TYPE_STRING)
+                else if (var->currentType == TYPE_STRING)
                 {
                     setatom(&allAtoms[atomIndex++], TYPE_STRING, 0, 0, stringPool[value]);
                 }
-                else if (scriptData->data[variable].currentType == TYPE_VECTOR)
+                else if (var->currentType == TYPE_VECTOR)
                 {
                     setatom(&allAtoms[atomIndex++], TYPE_VECTOR, 0, 0, stringPool[value]);
                 }
 
                 debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
                 isVariable = true;
-                i += strlen(scriptData->data[variable].name) - 1;
+                i += strlen(var->name) - 1;
 
                 FreeString(&value);
                 break;
@@ -1602,8 +1601,6 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             debugPrintf("bracket pos: %d\n", l);
             newFunction->line = l;
 
-
-
             output->functions[output->functionCount] = newFunction;
             output->functions[output->functionCount]->name = (char *)malloc(sizeof(char) * (strlen(stringPool[entityName]) + 1));
             strcpy(output->functions[output->functionCount]->name, stringPool[entityName]);
@@ -1616,11 +1613,13 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
         }
         else
         { // variable declare
-            output->data[output->variableCount].currentType = varType;
-            strncpy(output->data[output->variableCount].name, stringPool[entityName], MAX_NAME_LENGTH - 1);
-            output->data[output->variableCount].name[MAX_NAME_LENGTH - 1] = '\0';
+            EngineVar *newVariable = malloc(sizeof(EngineVar));
 
-            printf("new var: %s\n", output->data[output->variableCount].name);
+            newVariable->currentType = varType;
+            strncpy(newVariable->name, stringPool[entityName], MAX_NAME_LENGTH - 1);
+            newVariable->name[MAX_NAME_LENGTH - 1] = '\0';
+
+            printf("new var: %s\n", newVariable->name);
 
             while (stringPool[trimmedLine][index] <= 32 && stringPool[trimmedLine][index] != '\0')
             {
@@ -1657,19 +1656,19 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                 FreeVar(&assignValue);
                 return error | ((uint16_t)l & 0xFFFF);
             }
-            debugPrintf("TYPE to %d, from %d\n", output->data[output->variableCount].currentType, varPool[assignValue].currentType);
-            if (output->data[output->variableCount].currentType == TYPE_INT)
+            debugPrintf("TYPE to %d, from %d\n", newVariable->currentType, varPool[assignValue].currentType);
+            if (newVariable->currentType == TYPE_INT)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
                     debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
-                    debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
-                    output->data[output->variableCount].data.i = varPool[assignValue].data.i;
+                    debugPrintf("set to %s, from %d\n", newVariable->name, varPool[assignValue].data.i);
+                    newVariable->data.i = varPool[assignValue].data.i;
                 }
                 else if (varPool[assignValue].currentType == TYPE_FLOAT)
                 {
 
-                    output->data[output->variableCount].data.i = (int)varPool[assignValue].data.f;
+                    newVariable->data.i = (int)varPool[assignValue].data.f;
                 }
                 else
                 {
@@ -1679,19 +1678,19 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
             }
-            else if (output->data[output->variableCount].currentType == TYPE_FLOAT)
+            else if (newVariable->currentType == TYPE_FLOAT)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
                     debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
-                    debugPrintf("set to %s, from %d\n", output->data[output->variableCount].name, varPool[assignValue].data.i);
+                    debugPrintf("set to %s, from %d\n", newVariable->name, varPool[assignValue].data.i);
                     float floatVal = (float)varPool[assignValue].data.i;
-                    output->data[output->variableCount].data.f = floatVal;
+                    newVariable->data.f = floatVal;
                 }
                 else if (varPool[assignValue].currentType == TYPE_FLOAT)
                 {
 
-                    output->data[output->variableCount].data.f = varPool[assignValue].data.f;
+                    newVariable->data.f = varPool[assignValue].data.f;
                 }
                 else
                 {
@@ -1701,22 +1700,23 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
                     return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
                 }
             }
-            else if (EqualType(&varPool[assignValue], &output->data[output->variableCount], TYPE_STRING))
+            else if (EqualType(&varPool[assignValue], newVariable, TYPE_STRING))
             {
-                FreeString(&output->data[output->variableCount].data.s);
-                output->data[output->variableCount].data.s = PoolString();
-                strcpy(stringPool[output->data[output->variableCount].data.s], stringPool[varPool[assignValue].data.s]);
+                FreeString(&newVariable->data.s);
+                newVariable->data.s = PoolString();
+                strcpy(stringPool[newVariable->data.s], stringPool[varPool[assignValue].data.s]);
                 FreeString(&varPool[assignValue].data.s);
             }
-            else if (EqualType(&varPool[assignValue], &output->data[output->variableCount], TYPE_VECTOR))
+            else if (EqualType(&varPool[assignValue], newVariable, TYPE_VECTOR))
             {
-                output->data[output->variableCount].data.XY.x = varPool[assignValue].data.XY.x;
-                output->data[output->variableCount].data.XY.y = varPool[assignValue].data.XY.y;
+                newVariable->data.XY.x = varPool[assignValue].data.XY.x;
+                newVariable->data.XY.y = varPool[assignValue].data.XY.y;
             }
 
             FreeVar(&assignValue);
 
-            debugPrintf("variable declared: %s=%d\n", output->data[output->variableCount].name, output->data[output->variableCount].currentType);
+            debugPrintf("variable declared: %s=type %d\n", newVariable->name, newVariable->currentType);
+            PushList(&output->variables, newVariable);
             output->variableCount++;
             FreeString(&trimmedLine);
             FreeString(&entityName);
@@ -1816,10 +1816,14 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
     }
     for (int i = 0; i < scriptData->variableCount; i++)
     {
-        if (scriptData->data[i].currentType == TYPE_STRING)
-            FreeString(&scriptData->data[i].data.s);
+        EngineVar *var = (EngineVar *)ListGetIndex(&scriptData->variables, i);
+        if (var->currentType == TYPE_STRING)
+            FreeString(&var->data.s);
+        free(var);
     }
-    free(scriptData->data);
+    while(scriptData->variables.count>0){
+        PopList(&scriptData->variables);
+    }
     // debugPrint("free scr data 3");
     scriptData->lineCount = 0;
     scriptData->bracketPairs = 0;
@@ -1887,7 +1891,8 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     int varIndex = -1;
     for (int i = 0; i < scriptData->variableCount; i++)
     {
-        if (indexOf(scriptData->data[i].name, stringPool[trimmedLine]) == 0)
+        EngineVar *var = (EngineVar*)ListGetIndex(&scriptData->variables,i);
+        if (indexOf(var->name, stringPool[trimmedLine]) == 0)
         {
             varIndex = i;
             break;
@@ -1924,9 +1929,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
         }
 
+        EngineVar* setVar = (EngineVar*)ListGetIndex(&scriptData->variables,varIndex);
+
         if (doMutate)
         {
-            sprintf(buffer, "%s%c%s", scriptData->data[varIndex].name, assignType, stringPool[trimmedLine] + index);
+            sprintf(buffer, "%s%c%s", setVar->name, assignType, stringPool[trimmedLine] + index);
         }
         else
         {
@@ -1940,7 +1947,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             FreeVar(&value);
             return error | currentLine;
         }
-        debugPrintf("to %d, from %d", scriptData->data[varIndex].currentType, varPool[value].currentType);
+        debugPrintf("to %d, from %d", setVar->currentType, varPool[value].currentType);
 
         if (varPool[value].currentType == TYPE_INT)
         {
@@ -1948,38 +1955,38 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             varPool[value].data.f = varPool[value].data.i;
         }
 
-        if (scriptData->data[varIndex].currentType == TYPE_BOOL && varPool[value].currentType == TYPE_FLOAT)
+        if (setVar->currentType == TYPE_BOOL && varPool[value].currentType == TYPE_FLOAT)
         {
-            scriptData->data[varIndex].data.b = (varPool[value].data.f != 0);
+            setVar->data.b = (varPool[value].data.f != 0);
         }
-        if (scriptData->data[varIndex].currentType == TYPE_VECTOR && varPool[value].currentType == TYPE_VECTOR)
+        if (setVar->currentType == TYPE_VECTOR && varPool[value].currentType == TYPE_VECTOR)
         {
-            scriptData->data[varIndex].data.XY.x = varPool[value].data.XY.x;
-            scriptData->data[varIndex].data.XY.y = varPool[value].data.XY.y;
+            setVar->data.XY.x = varPool[value].data.XY.x;
+            setVar->data.XY.y = varPool[value].data.XY.y;
         }
-        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_FLOAT))
+        if (EqualType(setVar, &varPool[value], TYPE_FLOAT))
         {
-            scriptData->data[varIndex].data.f = varPool[value].data.f;
+            setVar->data.f = varPool[value].data.f;
         }
-        if (scriptData->data[varIndex].currentType == TYPE_INT && varPool[value].currentType == TYPE_FLOAT)
+        if (setVar->currentType == TYPE_INT && varPool[value].currentType == TYPE_FLOAT)
         {
             debugPrint("float assign to int");
-            debugPrintf("%d<-%d\n", scriptData->data[varIndex].data.i, (int)varPool[value].data.f);
-            scriptData->data[varIndex].data.i = (int)varPool[value].data.f;
+            debugPrintf("%d<-%d\n", setVar->data.i, (int)varPool[value].data.f);
+            setVar->data.i = (int)varPool[value].data.f;
         }
-        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_STRING))
+        if (EqualType(setVar, &varPool[value], TYPE_STRING))
         {
             uint16_t temp = PoolString();
             sprintf(stringPool[temp], "%s", stringPool[varPool[value].data.s]);
 
-            FreeString(&scriptData->data[varIndex].data.s);
+            FreeString(&setVar->data.s);
             FreeString(&varPool[value].data.s);
 
-            scriptData->data[varIndex].data.s = temp;
+            setVar->data.s = temp;
         }
-        if (EqualType(&scriptData->data[varIndex], &varPool[value], TYPE_OBJ))
+        if (EqualType(setVar, &varPool[value], TYPE_OBJ))
         {
-            scriptData->data[varIndex].data.objID = varPool[value].data.objID;
+            setVar->data.objID = varPool[value].data.objID;
         }
 
         if (varPool[value].currentType == TYPE_STRING)
