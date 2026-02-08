@@ -685,7 +685,7 @@ char *HandleShortcuts()
                 strcpy(output, SC_IO_SHORTCUTS[selected]);
                 break;
             }
-            sleep_ms(100);
+            while(GetButton() == 0);
         }
 
         int buttonPress = GetButton();
@@ -1195,6 +1195,7 @@ void EditScript(uint8_t scriptIndex)
                         currentScriptText[caretPosition] = currentCharacter;
                         caretPosition++;
                         caretX++;
+                        uppercase = false;
                     }
                 }
                 if (GetButton() == BUTTON_L)

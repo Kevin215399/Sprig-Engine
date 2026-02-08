@@ -85,9 +85,19 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
-#define OPERATOR_COUNT 36
+#define OPERATOR_COUNT 43
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
+
+    {"push", 13, 1},
+    {"pop", 13, 1},
+    {"seek", 13, 1},
+    {"contains", 13, 1},
+
+    {".", 13, 1},
+
+    {"ObjectByName", 13, 1},
+    {"ScriptByName", 13, 1},
 
     {"Vector", 13, 2},
 
@@ -477,6 +487,15 @@ bool IsNumber(char value)
     return false;
 }
 
+bool IsAlphaNumeric(char c)
+{
+    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57))
+    {
+        return true;
+    }
+    return false;
+}
+
 /*void FreeAtom(Atom *atom)
 {
     free(atom->atom);
@@ -593,6 +612,37 @@ void GreatestCommonType(Atom *atom1, Atom *atom2)
     }
 }
 
+void PushLine(ScriptData *data, uint16_t line)
+{
+    uint16_t *mallocedLine = malloc(sizeof(uint16_t));
+    *mallocedLine = line;
+    PushList(&data->instructionStack, mallocedLine);
+}
+
+void JumpToFunction(ScriptData *scriptData, char *functionName)
+{
+    for (int i = 0; i < scriptData->functionCount; i++)
+    {
+        if (strcmp(scriptData->functions[i]->name, functionName) == 0)
+        {
+            scriptData->currentScope++;
+            PushLine(scriptData, scriptData->functions[i]->line);
+        }
+    }
+}
+
+void PushStringToVariable(EngineVar *to, EngineVar *from)
+{
+    if (!to->isList)
+    {
+        return;
+    }
+
+    VariableUnion *copy = malloc(sizeof(VariableUnion));
+    *copy = from->data;
+    PushList(&to->listData, copy);
+}
+
 float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, ScriptData *scriptData)
 {
     debugPrint("shunt yard");
@@ -688,7 +738,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             continue;
         }
 
-        bool isVariable = false;
+        /*bool isVariable = false;
         for (int variable = 0; variable < scriptData->variableCount; variable++)
         {
             EngineVar *var = (EngineVar *)ListGetIndex(&scriptData->variables, variable);
@@ -723,6 +773,7 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         {
             continue;
         }
+        */
 
         // debugPrint("Finding operator");
         //  Search through each operator for matches
@@ -799,30 +850,41 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             // debugPrintf("%c\n",equation[i+numberLength]);
             numberLength++;
         }
-        if (numberLength == 0)
+        if (numberLength != 0)
         {
-            for (int i = 0; i < operatorIndex; i++)
+            allAtoms[atomIndex].atom = PoolString();
+
+            for (int numberIndex = 0; numberIndex < numberLength; numberIndex++)
             {
-                FreeString(&operationStack[i].atom);
+                // debugPrintf("%c\n", equation[i + numberIndex]);
+                stringPool[allAtoms[atomIndex].atom][numberIndex] = equation[i + numberIndex];
             }
-            for (int i = 0; i < operandIndex; i++)
-            {
-                FreeString(&operandStack[i].atom);
-            }
-            return CreateError(EQUATION_ERROR, SYNTAX_UNKNOWN, 0);
+            stringPool[allAtoms[atomIndex].atom][numberLength] = '\0';
+            allAtoms[atomIndex++].type = TYPE_FLOAT;
+            i += numberLength - 1;
+            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            continue;
         }
 
-        allAtoms[atomIndex].atom = PoolString();
-
-        for (int numberIndex = 0; numberIndex < numberLength; numberIndex++)
+        if (IsAlphaNumeric(equation[i]))
         {
-            // debugPrintf("%c\n", equation[i + numberIndex]);
-            stringPool[allAtoms[atomIndex].atom][numberIndex] = equation[i + numberIndex];
+            allAtoms[atomIndex].atom = PoolString();
+
+            uint8_t stringIndex = 0;
+            while (i + stringIndex < equationLength && IsAlphaNumeric(equation[i + stringIndex]))
+            {
+                stringPool[allAtoms[atomIndex].atom][stringIndex] = equation[i + stringIndex];
+                stringIndex++;
+            }
+
+            stringPool[allAtoms[atomIndex].atom][stringIndex] = '\0';
+            allAtoms[atomIndex].parameters = 0;
+            allAtoms[atomIndex++].type = TYPE_UNKOWN;
+
+            i += stringIndex - 1;
+            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            continue;
         }
-        stringPool[allAtoms[atomIndex].atom][numberLength] = '\0';
-        allAtoms[atomIndex++].type = TYPE_FLOAT;
-        i += numberLength - 1;
-        debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
     }
 
     // At this point, the string should be tokenized. Shunt yard can commence
@@ -848,7 +910,35 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
         if (allAtoms[i].type == OPERATOR_ATOM)
         {
-            if (stringPool[allAtoms[i].atom][0] == ')')
+            if (stringPool[allAtoms[i].atom][0] == '.')
+            {
+                // If the operator is parenthesis, pop off all of the previous operations until you get to the matching one
+                debugPrint(".");
+                if (operatorIndex == 0)
+                {
+                    for (int i = 0; i < operatorIndex; i++)
+                    {
+                        free(&operationStack[i]);
+                    }
+                    for (int i = 0; i < operandIndex; i++)
+                    {
+                        free(&operandStack[i]);
+                    }
+
+                    return CreateError(EQUATION_ERROR, SYNTAX_UNKNOWN, 0);
+                }
+
+                cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
+                FreeString(&operationStack[--operatorIndex].atom);
+
+                cpyatom(&operandStack[operandIndex++], &allAtoms[i]);
+
+                for (int i = 0; i < operandIndex; i++)
+                {
+                    debugPrintf("operands after '.': %s\n", stringPool[operandStack[i].atom]);
+                }
+            }
+            else if (stringPool[allAtoms[i].atom][0] == ')')
             {
                 // If the operator is parenthesis, pop off all of the previous operations until you get to the matching one
                 debugPrint("parenthesis");
@@ -906,12 +996,30 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         // free(operandStack[i].atom);
     }
 
+    EngineVar *context = VarConstructor("", 0, NO_TYPE, false);
+    if (scriptData->objectIndex != -1 && scriptData->scriptIndex != -1)
+    {
+        context->currentType = TYPE_SCRIPT;
+        context->data.objIndex = scriptData->objectIndex;
+        context->data.scriptIndex = scriptData->scriptIndex;
+        printf("Context, %d:%d\n", context->data.objIndex, context->data.scriptIndex);
+    }
+
     // The input is now in Reverse Polish Notation
+
+    
 
     for (int i = 0; i < operandIndex; i++)
     {
-        if (operandStack[i].type == OPERATOR_ATOM)
+        debugPrintf("%d\n", i);
+
+        if (operandStack[i].type == OPERATOR_ATOM || operandStack[i].type == TYPE_UNKOWN)
         {
+            printf("Context, %d:%d, %d\n", context->data.objIndex, context->data.scriptIndex, context->currentType);
+            if (operandStack[i].type == TYPE_UNKOWN)
+            {
+                debugPrint("unknown type, exploring");
+            }
             bool isValid = true;
             debugPrintf("operation: %s, params: %d\n", stringPool[operandStack[i].atom], operandStack[i].parameters);
 
@@ -956,6 +1064,32 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                         varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_STRING;
                         debugPrint("copied");
                     }
+                    else if (operandStack[i - x - 1].type == TYPE_OBJ)
+                    {
+                        debugPrint("obj param");
+                        varPool[parameters[operandStack[i].parameters - x - 1]].data.objIndex = atoi(stringPool[operandStack[i - x - 1].atom]);
+                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_OBJ;
+                        debugPrint("copied");
+                    }
+                    else if (operandStack[i - x - 1].type == TYPE_SCRIPT)
+                    {
+                        debugPrint("script param");
+                        int objIndex = 0;
+                        int scrIndex = 0;
+
+                        sscanf(stringPool[operandStack[i - x - 1].atom], "%d %d", &objIndex, &scrIndex);
+
+                        varPool[parameters[operandStack[i].parameters - x - 1]].data.objIndex = objIndex;
+                        varPool[parameters[operandStack[i].parameters - x - 1]].data.scriptIndex = scrIndex;
+                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_SCRIPT;
+                        debugPrint("copied");
+                    }
+                    else
+                    {
+                        debugPrint("UNKOWN SHUNT YARD ATOM TYPE");
+                        while (1)
+                            sleep_ms(1000);
+                    }
                 }
             }
             uint16_t result = PoolVar("");
@@ -975,278 +1109,356 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             uint8_t parameterCount = operandStack[i].parameters;
 
-            if (parameterCount == 2 && strcmp(stringPool[operandStack[i].atom], "+") == 0)
-            {
-                debugPrint("add");
-                if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
-                {
-                    debugPrint("type float");
-                    varPool[result].data.f = varPool[parameters[0]].data.f + varPool[parameters[1]].data.f;
-                    varPool[result].currentType = TYPE_FLOAT;
-                }
-                if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_STRING))
-                {
-                    debugPrint("type string");
-                    varPool[result].data.s = PoolString();
-                    sprintf(stringPool[varPool[result].data.s], "%s%s", stringPool[varPool[parameters[0]].data.s], stringPool[varPool[parameters[1]].data.s]);
+            bool operatorReturns = true;
 
-                    debugPrintf("concat result: %s\n", stringPool[varPool[result].data.s]);
-                    // free(varPool[parameters[0]].data.s);
-                    // free(varPool[parameters[1]].data.s);
-                    varPool[result].currentType = TYPE_STRING;
-                }
-                if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
-                {
-                    varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x + varPool[parameters[1]].data.XY.x;
-                    varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y + varPool[parameters[1]].data.XY.y;
-                    varPool[result].currentType = TYPE_FLOAT;
-                }
-            }
-
-            if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_STRING)
+            if (parameterCount == 1)
             {
-                if (strcmp(stringPool[operandStack[i].atom], "input") == 0)
+                if (strcmp(stringPool[operandStack[i].atom], ".") == 0)
                 {
-                    debugPrint("input operation");
-                    varPool[result].currentType = TYPE_FLOAT;
-                    switch (ToLower(stringPool[varPool[parameters[0]].data.s][0]))
+                    context->currentType = varPool[parameters[0]].currentType;
+                    context->data = varPool[parameters[0]].data;
+                    parameterCount++;
+                    operatorReturns = false;
+                }
+
+                if (varPool[parameters[0]].currentType == TYPE_STRING)
+                {
+                    if (strcmp(stringPool[operandStack[i].atom], "input") == 0)
                     {
-                    case 'w':
-                        debugPrintf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
-                        varPool[result].data.f = (gpio_get(BUTTON_W) == 0);
-                        break;
-                    case 'd':
-                        varPool[result].data.f = (gpio_get(BUTTON_D) == 0);
-                        break;
-                    case 'a':
-                        varPool[result].data.f = (gpio_get(BUTTON_A) == 0);
-                        break;
-                    case 's':
-                        varPool[result].data.f = (gpio_get(BUTTON_S) == 0);
-                        break;
+                        debugPrint("input operation");
+                        varPool[result].currentType = TYPE_FLOAT;
+                        switch (ToLower(stringPool[varPool[parameters[0]].data.s][0]))
+                        {
+                        case 'w':
+                            debugPrintf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
+                            varPool[result].data.f = (gpio_get(BUTTON_W) == 0);
+                            break;
+                        case 'd':
+                            varPool[result].data.f = (gpio_get(BUTTON_D) == 0);
+                            break;
+                        case 'a':
+                            varPool[result].data.f = (gpio_get(BUTTON_A) == 0);
+                            break;
+                        case 's':
+                            varPool[result].data.f = (gpio_get(BUTTON_S) == 0);
+                            break;
 
-                    case 'i':
-                        varPool[result].data.f = (gpio_get(BUTTON_I) == 0);
-                        break;
-                    case 'j':
-                        varPool[result].data.f = (gpio_get(BUTTON_J) == 0);
-                        break;
-                    case 'k':
-                        varPool[result].data.f = (gpio_get(BUTTON_K) == 0);
-                        break;
-                    case 'l':
-                        varPool[result].data.f = (gpio_get(BUTTON_L) == 0);
-                        break;
-                    default:
-                        varPool[result].data.f = -1;
-                        break;
+                        case 'i':
+                            varPool[result].data.f = (gpio_get(BUTTON_I) == 0);
+                            break;
+                        case 'j':
+                            varPool[result].data.f = (gpio_get(BUTTON_J) == 0);
+                            break;
+                        case 'k':
+                            varPool[result].data.f = (gpio_get(BUTTON_K) == 0);
+                            break;
+                        case 'l':
+                            varPool[result].data.f = (gpio_get(BUTTON_L) == 0);
+                            break;
+                        default:
+                            varPool[result].data.f = -1;
+                            break;
+                        }
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "ObjectByName") == 0)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+
+                        for (int x = 0; x < scenes[sceneIndex].objectCount; x++)
+                        {
+                            if (strcmp(stringPool[varPool[parameters[0]].data.s], scenes[sceneIndex].objects[x]->name) == 0)
+                            {
+                                varPool[result].currentType = TYPE_OBJ;
+                                varPool[result].data.objIndex = x;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (varPool[parameters[0]].currentType == TYPE_VECTOR)
+                {
+                    if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        debugPrintf("set pos (%f,%f)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
+
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = varPool[parameters[0]].data.XY.y;
+
+                        debugPrint("set");
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "setVelocity") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x = varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y = varPool[parameters[0]].data.XY.y;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "addPosition") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y += varPool[parameters[0]].data.XY.y;
+                        printf("new pos (%f,%f)\n",
+                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x,
+                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y);
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y += varPool[parameters[0]].data.XY.y;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "addVelocity") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x += varPool[parameters[0]].data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y += varPool[parameters[0]].data.XY.y;
+                    }
+                }
+                if (varPool[parameters[0]].currentType == TYPE_FLOAT)
+                {
+                    varPool[result].currentType = TYPE_FLOAT;
+                    if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
+                    {
+                        debugPrint("COS OPERATION");
+                        varPool[result].data.f = cos(varPool[parameters[0]].data.f);
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "sin") == 0)
+                    {
+                        debugPrint("SIN OPERATION");
+                        varPool[result].data.f = sin(varPool[parameters[0]].data.f);
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)varPool[parameters[0]].data.f;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "setAngle") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f = (float)varPool[parameters[0]].data.f;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "addAngle") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)varPool[parameters[0]].data.f;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+                        gpio_put(LEFT_LIGHT, varPool[parameters[0]].data.f != 0);
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "rightLED") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        varPool[result].currentType = NO_TYPE;
+                        gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
+                    }
+
+                    if (stringPool[operandStack[i].atom][0] == UNARY_SUBTRACT)
+                    {
+                        debugPrint("UNARY NEGATE OP");
+                        varPool[result].data.f = -varPool[parameters[0]].data.f;
+                    }
+                }
+                if (context->currentType == TYPE_OBJ)
+                {
+                    if (varPool[parameters[0]].currentType == TYPE_STRING)
+                    {
+                        if (strcmp(stringPool[operandStack[i].atom], "ScriptByName") == 0)
+                        {
+                            varPool[result].currentType = NO_TYPE;
+
+                            for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptCount; x++)
+                            {
+                                debugPrintf("script: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name);
+                                if (strcmp(stringPool[varPool[parameters[0]].data.s], scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name) == 0)
+                                {
+                                    varPool[result].currentType = TYPE_SCRIPT;
+
+                                    debugPrintf("got script: %d:%d", context->data.objIndex, x);
+                                    varPool[result].data.objIndex = context->data.objIndex;
+                                    varPool[result].data.scriptIndex = x;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (context->isList)
+                {
+                    if (strcmp(stringPool[operandStack[i].atom], "push") == 0)
+                    {
+                        varPool[result].currentType = context->currentType;
+                        varPool[result].isList = true;
+                        PushStringToVariable(&varPool[result], &varPool[parameters[0]]);
                     }
                 }
             }
-
-            if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_VECTOR)
+            else if (parameterCount == 2)
             {
-                if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
+                if (strcmp(stringPool[operandStack[i].atom], "+") == 0)
                 {
-                    debugPrintf("set pos (%f,%f)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
+                    debugPrint("add");
+                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
+                    {
+                        debugPrint("type float");
+                        varPool[result].data.f = varPool[parameters[0]].data.f + varPool[parameters[1]].data.f;
+                        varPool[result].currentType = TYPE_FLOAT;
+                    }
+                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_STRING))
+                    {
+                        debugPrint("type string");
+                        varPool[result].data.s = PoolString();
+                        sprintf(stringPool[varPool[result].data.s], "%s%s", stringPool[varPool[parameters[0]].data.s], stringPool[varPool[parameters[1]].data.s]);
 
-                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = varPool[parameters[0]].data.XY.y;
-
-                    debugPrint("set");
+                        debugPrintf("concat result: %s\n", stringPool[varPool[result].data.s]);
+                        // free(varPool[parameters[0]].data.s);
+                        // free(varPool[parameters[1]].data.s);
+                        varPool[result].currentType = TYPE_STRING;
+                    }
+                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
+                    {
+                        varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x + varPool[parameters[1]].data.XY.x;
+                        varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y + varPool[parameters[1]].data.XY.y;
+                        varPool[result].currentType = TYPE_FLOAT;
+                    }
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
                 {
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "setVelocity") == 0 && scriptData->linkedObject != NULL)
-                {
-                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y = varPool[parameters[0]].data.XY.y;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "addPosition") == 0 && scriptData->linkedObject != NULL)
-                {
-                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                    printf("new pos (%f,%f)\n",
-                           GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x,
-                           GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
-                {
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "addVelocity") == 0 && scriptData->linkedObject != NULL)
-                {
-                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                    GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                }
-            }
-
-            if (parameterCount == 2 && EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
-            {
-                debugPrintf("FLOAT OP: %s\n", stringPool[operandStack[i].atom]);
-                varPool[result].currentType = TYPE_FLOAT;
-                if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
-                {
-                    varPool[result].data.f = varPool[parameters[0]].data.f - varPool[parameters[1]].data.f;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "*") == 0)
-                {
-                    varPool[result].data.f = varPool[parameters[0]].data.f * varPool[parameters[1]].data.f;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "/") == 0)
-                {
-                    varPool[result].data.f = varPool[parameters[0]].data.f / varPool[parameters[1]].data.f;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "%") == 0)
-                {
-                    varPool[result].data.f = (int)varPool[parameters[0]].data.f % (int)varPool[parameters[1]].data.f;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "pow") == 0)
-                {
-                    varPool[result].data.f = pow(varPool[parameters[0]].data.f, varPool[parameters[1]].data.f);
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "|") == 0)
-                {
-                    varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f | (int)varPool[parameters[1]].data.f);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "&") == 0)
-                {
-                    varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f & (int)varPool[parameters[1]].data.f);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "^") == 0)
-                {
-                    varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f ^ (int)varPool[parameters[1]].data.f);
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "==") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f == varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "<") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f < varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], ">") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f > varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "<=") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f <= varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], ">=") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f >= varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "!=") == 0)
-                {
-                    varPool[result].data.f = (varPool[parameters[0]].data.f != varPool[parameters[1]].data.f) ? 1 : 0;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "Vector") == 0)
-                {
-                    varPool[result].currentType = TYPE_VECTOR;
-                    varPool[result].data.XY.x = varPool[parameters[0]].data.f;
-                    varPool[result].data.XY.y = varPool[parameters[1]].data.f;
-                }
-            }
-            else if (parameterCount == 1 && varPool[parameters[0]].currentType == TYPE_FLOAT)
-            {
-                varPool[result].currentType = TYPE_FLOAT;
-                if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
-                {
-                    debugPrint("COS OPERATION");
-                    varPool[result].data.f = cos(varPool[parameters[0]].data.f);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "sin") == 0)
-                {
-                    debugPrint("SIN OPERATION");
-                    varPool[result].data.f = sin(varPool[parameters[0]].data.f);
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
-                {
-                    varPool[result].currentType = NO_TYPE;
-
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
-                {
-                    varPool[result].currentType = NO_TYPE;
-
-                    GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
-                {
-                    varPool[result].currentType = NO_TYPE;
-                    GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)varPool[parameters[0]].data.f;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "setAngle") == 0 && scriptData->linkedObject != NULL)
-                {
-                    varPool[result].currentType = NO_TYPE;
-                    GetObjectDataByName(scriptData->linkedObject, "angle")->data.f = (float)varPool[parameters[0]].data.f;
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "addAngle") == 0 && scriptData->linkedObject != NULL)
-                {
-                    varPool[result].currentType = NO_TYPE;
-                    GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)varPool[parameters[0]].data.f;
-                }
-
-                if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
-                {
-                    varPool[result].currentType = NO_TYPE;
-                    gpio_put(LEFT_LIGHT, varPool[parameters[0]].data.f != 0);
-                }
-                if (strcmp(stringPool[operandStack[i].atom], "rightLED") == 0 && scriptData->linkedObject != NULL)
-                {
-                    varPool[result].currentType = NO_TYPE;
-                    gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
-                }
-
-                if (stringPool[operandStack[i].atom][0] == UNARY_SUBTRACT)
-                {
-                    debugPrint("UNARY NEGATE OP");
-                    varPool[result].data.f = -varPool[parameters[0]].data.f;
-                }
-            }
-
-            if (strcmp(stringPool[operandStack[i].atom], "PI") == 0)
-            {
-                varPool[result].currentType = TYPE_FLOAT;
-                varPool[result].data.f = 3.14159265459;
-            }
-
-            if (parameterCount == 2 && EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
-            {
-                if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
-                {
-                    varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x - varPool[parameters[1]].data.XY.x;
-                    varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y - varPool[parameters[1]].data.XY.y;
+                    debugPrintf("FLOAT OP: %s\n", stringPool[operandStack[i].atom]);
                     varPool[result].currentType = TYPE_FLOAT;
+                    if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
+                    {
+                        varPool[result].data.f = varPool[parameters[0]].data.f - varPool[parameters[1]].data.f;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "*") == 0)
+                    {
+                        varPool[result].data.f = varPool[parameters[0]].data.f * varPool[parameters[1]].data.f;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "/") == 0)
+                    {
+                        varPool[result].data.f = varPool[parameters[0]].data.f / varPool[parameters[1]].data.f;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "%") == 0)
+                    {
+                        varPool[result].data.f = (int)varPool[parameters[0]].data.f % (int)varPool[parameters[1]].data.f;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "pow") == 0)
+                    {
+                        varPool[result].data.f = pow(varPool[parameters[0]].data.f, varPool[parameters[1]].data.f);
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "|") == 0)
+                    {
+                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f | (int)varPool[parameters[1]].data.f);
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "&") == 0)
+                    {
+                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f & (int)varPool[parameters[1]].data.f);
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "^") == 0)
+                    {
+                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f ^ (int)varPool[parameters[1]].data.f);
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "==") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f == varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "<") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f < varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], ">") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f > varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "<=") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f <= varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], ">=") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f >= varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+                    if (strcmp(stringPool[operandStack[i].atom], "!=") == 0)
+                    {
+                        varPool[result].data.f = (varPool[parameters[0]].data.f != varPool[parameters[1]].data.f) ? 1 : 0;
+                    }
+
+                    if (strcmp(stringPool[operandStack[i].atom], "Vector") == 0)
+                    {
+                        varPool[result].currentType = TYPE_VECTOR;
+                        varPool[result].data.XY.x = varPool[parameters[0]].data.f;
+                        varPool[result].data.XY.y = varPool[parameters[1]].data.f;
+                    }
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "*") == 0)
+            }
+            else if (parameterCount == 0)
+            {
+                if (strcmp(stringPool[operandStack[i].atom], "PI") == 0)
                 {
-                    varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x * varPool[parameters[1]].data.XY.x;
-                    varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y * varPool[parameters[1]].data.XY.y;
                     varPool[result].currentType = TYPE_FLOAT;
+                    varPool[result].data.f = 3.14159265459;
                 }
-                if (strcmp(stringPool[operandStack[i].atom], "/") == 0)
+                debugPrint("no params");
+                if (context->currentType == TYPE_SCRIPT)
                 {
-                    varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x / varPool[parameters[1]].data.XY.x;
-                    varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y / varPool[parameters[1]].data.XY.y;
-                    varPool[result].currentType = TYPE_FLOAT;
+                    debugPrint("is script context");
+                    if (operandStack[i].type == TYPE_UNKOWN)
+                    {
+
+                        varPool[result].currentType = NO_TYPE;
+
+                        debugPrint("unkown type");
+                        debugPrintf("obj name: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->name);
+                        debugPrintf("scr name %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->script->name);
+
+                        for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variableCount; x++)
+                        {
+                            EngineVar *variable = ((EngineVar *)ListGetIndex(&scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variables, i));
+                            debugPrintf("check var: %s\n", variable->name);
+                            if (strcmp(stringPool[operandStack[i].atom], variable->name) == 0)
+                            {
+                                debugPrintf("found var, %d\n", variable->currentType);
+                                varPool[result].currentType = variable->currentType;
+                                varPool[result].data = variable->data;
+                                break;
+                            }
+                        }
+
+                        for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functionCount; x++)
+                        {
+                            EngineFunction *function = scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functions[i];
+                            debugPrintf("check function: %s\n", function->name);
+                            if (strcmp(stringPool[operandStack[i].atom], function->name) == 0)
+                            {
+                                JumpToFunction(scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex], function->name);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1268,38 +1480,61 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 operandIndex -= parameterCount;
             }
 
-            FreeString(&operandStack[i - parameterCount].atom);
-
-            if (varPool[result].currentType == TYPE_FLOAT)
+            if (operatorReturns)
             {
-                debugPrintf("Completed an float operation result: %f\n", varPool[result].data.f);
+                FreeString(&operandStack[i - parameterCount].atom);
 
-                char strResult[20];
-
-                snprintf(strResult, sizeof(strResult), "%f", varPool[result].data.f);
-
-                setatom(&operandStack[i - parameterCount], TYPE_FLOAT, 0, 0, strResult);
-            }
-            else if (varPool[result].currentType == TYPE_VECTOR)
-            {
-                uint16_t serializedVector = SerializeVar(&varPool[result]);
-
-                setatom(&operandStack[i - parameterCount], TYPE_VECTOR, 0, 0, stringPool[serializedVector]);
-                debugPrintf("new Vector: %s\n", stringPool[operandStack[i - parameterCount].atom]);
-
-                FreeString(&serializedVector);
-            }
-            else
-            {
-                if (varPool[result].currentType == NO_TYPE)
+                if (varPool[result].currentType == TYPE_INT)
                 {
-                    varPool[result].currentType = TYPE_STRING;
-                    varPool[result].data.s = PoolString();
-                    stringPool[varPool[result].data.s][0] = '\0';
-                }
-                debugPrintf("Completed an str operation result: %s\n", stringPool[varPool[result].data.s]);
+                    debugPrintf("Completed an int operation result: %d\n", varPool[result].data.i);
 
-                setatom(&operandStack[i - parameterCount], TYPE_STRING, 0, 0, stringPool[varPool[result].data.s]);
+                    char strResult[20];
+
+                    snprintf(strResult, sizeof(strResult), "%d", varPool[result].data.i);
+
+                    setatom(&operandStack[i - parameterCount], TYPE_FLOAT, 0, 0, strResult);
+                }
+                else if (varPool[result].currentType == TYPE_FLOAT)
+                {
+                    debugPrintf("Completed an float operation result: %f\n", varPool[result].data.f);
+                }
+                else if (varPool[result].currentType == TYPE_VECTOR)
+                {
+                    uint16_t serializedVector = SerializeVar(&varPool[result]);
+
+                    setatom(&operandStack[i - parameterCount], TYPE_VECTOR, 0, 0, stringPool[serializedVector]);
+                    debugPrintf("new Vector: %s\n", stringPool[operandStack[i - parameterCount].atom]);
+
+                    FreeString(&serializedVector);
+                }
+                else if (varPool[result].currentType == TYPE_OBJ)
+                {
+                    char strResult[20];
+
+                    snprintf(strResult, sizeof(strResult), "%d", varPool[result].data.objIndex);
+
+                    setatom(&operandStack[i - parameterCount], TYPE_OBJ, 0, 0, strResult);
+                }
+                else if (varPool[result].currentType == TYPE_SCRIPT)
+                {
+                    char strResult[20];
+
+                    snprintf(strResult, sizeof(strResult), "%d %d", varPool[result].data.objIndex, varPool[result].data.scriptIndex);
+
+                    setatom(&operandStack[i - parameterCount], TYPE_SCRIPT, 0, 0, strResult);
+                }
+                else
+                {
+                    if (varPool[result].currentType == NO_TYPE)
+                    {
+                        varPool[result].currentType = TYPE_STRING;
+                        varPool[result].data.s = PoolString();
+                        stringPool[varPool[result].data.s][0] = '\0';
+                    }
+                    debugPrintf("Completed an str operation result: %s\n", stringPool[varPool[result].data.s]);
+
+                    setatom(&operandStack[i - parameterCount], TYPE_STRING, 0, 0, stringPool[varPool[result].data.s]);
+                }
             }
 
             for (int freeParam = 0; freeParam < PARAMETER_COUNT; freeParam++)
@@ -1310,18 +1545,26 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 }
                 FreeVar(&parameters[freeParam]);
             }
+
             FreeVar(&result);
 
-            i = 0;
+            i = -1;
 
             for (int x = 0; x < operandIndex; x++)
             {
                 debugPrintf("OUT: %s\n", stringPool[operandStack[x].atom]);
+
                 // debugPrint("debugPrint done");
             }
-            debugPrint("");
+            debugPrintf("%d\n", operandStack[i].type);
+
+            debugPrintf("%d\n", i);
+
+            debugPrintf("%d\n\n", operandIndex);
         }
     }
+
+    free(context);
 
     debugPrint("Outputting shunt yard");
 
@@ -1446,16 +1689,7 @@ uint8_t GetTypeFromString(char *line)
     return NO_TYPE;
 }
 
-bool IsAlphaNumeric(char c)
-{
-    if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57))
-    {
-        return true;
-    }
-    return false;
-}
-
-uint32_t DeclareEntity(ScriptData *output, uint16_t l)
+uint32_t DeclareEntity(ScriptData *output, uint16_t l, bool declareFunctions)
 {
     uint16_t trimmedLine = LeftTrim(output->lines[l]);
     if (trimmedLine == NULL_POOL)
@@ -1516,6 +1750,13 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
 
         if (stringPool[trimmedLine][index] == '(')
         { // function declare
+            if (!declareFunctions)
+            {
+                FreeString(&entityName);
+                FreeString(&trimmedLine);
+                return 0;
+            }
+
             debugPrint("declare function");
             index++;
             EngineFunction *newFunction = (EngineFunction *)malloc(sizeof(EngineFunction));
@@ -1618,6 +1859,8 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l)
             newVariable->currentType = varType;
             strncpy(newVariable->name, stringPool[entityName], MAX_NAME_LENGTH - 1);
             newVariable->name[MAX_NAME_LENGTH - 1] = '\0';
+
+            newVariable->scope = output->currentScope;
 
             printf("new var: %s\n", newVariable->name);
 
@@ -1780,7 +2023,7 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
             continue;
         }
 
-        error = DeclareEntity(output, l);
+        error = DeclareEntity(output, l, true);
 
         if (error != 0 && error != OPPERATION_SUCCESS)
         {
@@ -1789,6 +2032,8 @@ uint32_t SetScriptData(EngineScript *script, ScriptData *output, uint8_t scopeLe
         }
     }
     debugPrint("set script done");
+
+    output->currentScope = 0;
 
     InitializeList(&output->instructionStack);
     return 0;
@@ -1821,7 +2066,8 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
             FreeString(&var->data.s);
         free(var);
     }
-    while(scriptData->variables.count>0){
+    while (scriptData->variables.count > 0)
+    {
         PopList(&scriptData->variables);
     }
     // debugPrint("free scr data 3");
@@ -1834,12 +2080,62 @@ void FreeScriptData(ScriptData *scriptData, bool onlyFreeContent)
         free(scriptData);
 }
 
-void PushLine(ScriptData *data, uint16_t line)
+/*#define PATH_VARIABLE 0
+#define PATH_VECTOR 1
+#define PATH_SCRIPT 2
+#define PATH_OBJECT 3
+#define PATH_NONE 4
+
+void AssignToPath(char *path, ScriptData *scriptData, EngineVar *assignValue)
 {
-    uint16_t *mallocedLine = malloc(sizeof(uint16_t));
-    *mallocedLine = line;
-    PushList(&data->instructionStack, mallocedLine);
-}
+    GeneralList propertySizes;
+    InitializeList(&propertySizes);
+
+    uint8_t length = 0;
+    for (int i = 0; i < strlen(path); i++)
+    {
+        length++;
+        if (path[i] == '.')
+        {
+            uint8_t *temp = malloc(sizeof(uint8_t));
+            *temp = length;
+            PushList(&propertySizes, temp);
+            debugPrintf("%d\n", length);
+            length = 0;
+        }
+    }
+
+    length++;
+    uint8_t *temp = malloc(sizeof(uint8_t));
+    *temp = length;
+    PushList(&propertySizes, temp);
+    debugPrintf("%d\n", length);
+    length = 0;
+
+    char **properties = (char **)malloc(sizeof(char *) * propertySizes.count);
+
+    int pathIndex = 0;
+    for (int i = 0; i < propertySizes.count; i++)
+    {
+        uint8_t *size = (uint8_t *)ListGetIndex(&propertySizes, i);
+        char *property = malloc(*size);
+
+        for (int x = 0; x < *size - 1; x++)
+        {
+            property[x] = path[pathIndex++];
+        }
+        property[*size - 1] = '\0';
+
+        debugPrintf("%s\n", property);
+
+        properties[i] = property;
+        pathIndex++;
+
+        free(size);
+    }
+
+}*/
+
 uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
 {
     if (scriptData->instructionStack.count == 0)
@@ -1871,17 +2167,37 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     uint16_t trimmedLine = LeftTrim(scriptData->lines[currentLine]);
     debugPrintf("Exexute line: %s\n", stringPool[trimmedLine]);
 
-    // If line is a variable or function declaration, ignore
+    // If line is a variable or function declaration, declare entities
     if (GetTypeFromString(stringPool[trimmedLine]) != NO_TYPE)
     {
+        DeclareEntity(scriptData, currentLine, false);
         FreeString(&trimmedLine);
         PushLine(scriptData, currentLine + 1);
         return 0;
     }
 
-    // If line only includes end of a curly bracket, just pop, do not push next line
+    // If line only includes end of a curly bracket, just pop, do not push next line and free variables
     if (stringPool[trimmedLine][0] == '}')
     {
+        for (int i = 0; i < scriptData->variableCount; i++)
+        {
+            EngineVar *variable = (EngineVar *)ListGetIndex(&scriptData->variables, i);
+
+            if (variable->scope == scriptData->currentScope)
+            {
+                if (variable->currentType == TYPE_STRING)
+                {
+                    FreeString(&variable->data.s);
+                }
+                free(variable);
+
+                DeleteListElement(&scriptData->variables, i);
+
+                scriptData->variableCount--;
+            }
+        }
+        scriptData->currentScope--;
+        FreeString(&trimmedLine);
         return 0;
     }
     debugPrint("bracket execute 2");
@@ -1891,7 +2207,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     int varIndex = -1;
     for (int i = 0; i < scriptData->variableCount; i++)
     {
-        EngineVar *var = (EngineVar*)ListGetIndex(&scriptData->variables,i);
+        EngineVar *var = (EngineVar *)ListGetIndex(&scriptData->variables, i);
         if (indexOf(var->name, stringPool[trimmedLine]) == 0)
         {
             varIndex = i;
@@ -1929,7 +2245,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             }
         }
 
-        EngineVar* setVar = (EngineVar*)ListGetIndex(&scriptData->variables,varIndex);
+        EngineVar *setVar = (EngineVar *)ListGetIndex(&scriptData->variables, varIndex);
 
         if (doMutate)
         {
@@ -1986,7 +2302,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         if (EqualType(setVar, &varPool[value], TYPE_OBJ))
         {
-            setVar->data.objID = varPool[value].data.objID;
+            setVar->data.objIndex = varPool[value].data.objIndex;
         }
 
         if (varPool[value].currentType == TYPE_STRING)
@@ -2103,8 +2419,11 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             PushLine(scriptData, endLine + 1);
             PushLine(scriptData, currentLine + 1);
 
+            scriptData->currentScope++;
+
             debugPrintf("pushed %d\n", endLine + 1);
             debugPrintf("pushed %d\n", currentLine + 1);
+
             return 0;
         }
     }
@@ -2217,6 +2536,8 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
             PushLine(scriptData, currentLine);
             PushLine(scriptData, currentLine + 1);
 
+            scriptData->currentScope++;
+
             debugPrintf("pushed %d\n", endLine + 1);
             debugPrintf("pushed %d\n", currentLine + 1);
             return 0;
@@ -2243,6 +2564,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
         endIndex--;
         uint16_t out = PoolVar("");
+        printf("length: %d\n", endIndex - start);
         uint32_t error = ShuntYard(stringPool[trimmedLine] + start, endIndex - start, &varPool[out], scriptData);
         if (error != 0)
         {
@@ -2309,15 +2631,26 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
     return 0;
 }
 
-void JumpToFunction(ScriptData *scriptData, char *functionName)
+void ResetScriptData(ScriptData *scriptData)
 {
-    for (int i = 0; i < scriptData->functionCount; i++)
+    for (int i = 0; i < scriptData->variableCount; i++)
     {
-        if (strcmp(scriptData->functions[i]->name, functionName) == 0)
+        EngineVar *variable = (EngineVar *)ListGetIndex(&scriptData->variables, i);
+
+        if (variable->scope != 0)
         {
-            PushLine(scriptData, scriptData->functions[i]->line);
+            if (variable->currentType == TYPE_STRING)
+            {
+                FreeString(&variable->data.s);
+            }
+            free(variable);
+
+            DeleteListElement(&scriptData->variables, i);
+
+            scriptData->variableCount--;
         }
     }
+    scriptData->currentScope = 0;
 }
 
 #endif

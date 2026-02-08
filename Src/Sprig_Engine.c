@@ -89,7 +89,7 @@ int main()
 
     sleep_ms(100000);*/
 
-     sleep_ms(4000);
+    //sleep_ms(4000);
 
     InitializeLights();
 
@@ -99,15 +99,21 @@ int main()
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
 
-    EngineScript *script = ScriptConstructor(0, "script1",
-                                             "int main() {int test = 67; print(test);}");
+    /*EngineScript *script = ScriptConstructor(0, "script1",
+                                             "int x = 5;");
 
-    // int x=0; while(x<8){ x+=1; if(x%2==0){ print(\"even\"); } if(x%2!=0){ print(\"odd\"); } }
+    sceneIndex = 0;
+    CreateScene("test", 4);
+    scenes[0].objects[0] = ObjectConstructor(0, "test", 4);
+    scenes[0].objectCount++;
 
-    ScriptData *testData = ScriptDataConstructor(script);
-    testData->linkedObject = NULL;
+    scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount] = ScriptDataConstructor(script);
+    scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount]->linkedObject = scenes[0].objects[0];
+    scenes[0].objects[0]->scriptIndexes[scenes[0].objects[0]->scriptCount] = 0;
+    scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount]->scriptIndex = 0;
+    scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount]->objectIndex = 0;
 
-    uint32_t errorNum = SetScriptData(script, testData, 0);
+    uint32_t errorNum = SetScriptData(script, scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount], 0);
 
     uint16_t error = UnpackErrorMessage(errorNum);
 
@@ -117,10 +123,15 @@ int main()
     {
         FreeString(&error);
 
-        //char funcName[32] = "main";
-       //JumpToFunction(testData, funcName);
+        char equation[64] = "ObjectByName(\"test\").ScriptByName(\"script1\").x";
 
-       PushLine(testData,0);
+        EngineVar *output = VarConstructor("out", 3, NO_TYPE, false);
+        ShuntYard(equation, strlen(equation), output, scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount]);
+
+        /*char func2[32] = "main";
+        JumpToFunction(testData, func2);
+
+        //PushLine(testData,0);
 
         while (testData->instructionStack.count>0)
         {
@@ -134,20 +145,19 @@ int main()
                 break;
             }
             FreeString(&error);
-        }
-        
+        }*//*
 
-        FreeScriptData(testData, false);
+        FreeScriptData(scenes[0].objects[0]->scriptData[scenes[0].objects[0]->scriptCount], false);
     }
     else
     {
         UI_PrintToScreen(stringPool[error], true);
         FreeString(&error);
-    }
+    }*/
 
     editorView = 0;
 
-    sleep_ms(3000);
+    //sleep_ms(3000);
 
     /*ScriptData *output = ScriptDataConstructor(0, 0, NULL, 0);
     EngineScript *script = ScriptConstructor(0, "test", "{\nhi;\ntest()\n}");

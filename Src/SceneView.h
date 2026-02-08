@@ -174,7 +174,7 @@ uint8_t sceneScale = 4;
 
 void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, int angle)
 {
-    printf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
+    debugPrintf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
     if (sprite < 0)
     {
         const uint16_t (*icon)[16];
@@ -357,6 +357,8 @@ void RecompileScene()
 
             currentScene->objects[i]->scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i]->scriptIndexes[s]]);
             currentScene->objects[i]->scriptData[s]->linkedObject = currentScene->objects[i];
+            currentScene->objects[i]->scriptData[s]->objectIndex = i;
+            currentScene->objects[i]->scriptData[s]->scriptIndex = currentScene->objects[i]->scriptIndexes[s];
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -1373,7 +1375,7 @@ void ManageSceneUI()
                                     }
                                     if (EqualType(inputLink->link, output, TYPE_OBJ))
                                     {
-                                        inputLink->link->data.objID = output->data.objID;
+                                        inputLink->link->data.objIndex = output->data.objIndex;
                                     }
                                 }
                                 free(output);
@@ -1426,6 +1428,8 @@ void ManageSceneUI()
                     {
                         currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount] = ScriptDataConstructor(&scripts[script]);
                         currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->linkedObject = currentScene->objects[currentObject];
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->objectIndex = currentObject;
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->scriptIndex = currentScene->objects[currentObject]->scriptCount;
                         currentScene->objects[currentObject]->scriptIndexes[currentScene->objects[currentObject]->scriptCount] = script;
                         // Function prototypes
                         uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -1523,7 +1527,7 @@ void ManageSceneUI()
                 if (name != NULL)
                 {
                     print("adding obj");
-                    currentScene->objects[currentScene->objectCount] = ObjectConstructor(0, name, strlen(name));
+                    currentScene->objects[currentScene->objectCount] = ObjectConstructor(currentScene->objectCount, name, strlen(name));
                     currentScene->objectCount++;
                     free(name);
                 }
@@ -1843,16 +1847,16 @@ void SceneMenu()
                     if (sceneName != NULL)
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
-                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Camera", strlen("Camera"));
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Camera", strlen("Camera"));
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
-                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Object1", strlen("Object1"));
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Object1", strlen("Object1"));
                         scenes[index].objectCount++;
-
+                        sceneIndex = index;
                         EditScene(index);
                     }
                     free(sceneName);
@@ -1860,6 +1864,7 @@ void SceneMenu()
                 else
                 {
                     int index = SelectScene();
+                    sceneIndex = index;
                     printf("sceneNumber: %d\n", index);
                     if (index != -1)
                     {
@@ -1944,7 +1949,7 @@ void GameRenderThread()
             }
             SmartShow();
 
-            print("........ CORE 1 FINISHED RENDER");
+            debugPrintf("........ CORE 1 FINISHED RENDER");
 
             multicore_fifo_push_blocking(RENDERER_READY);
         }
@@ -2093,6 +2098,8 @@ uint32_t RunProgram()
                     }
                     FreeString(&error);
                 }
+
+                ResetScriptData(currentScene->objects[obj]->scriptData[scr]);
             }
         }
 
@@ -2139,7 +2146,7 @@ uint32_t RunProgram()
         }
         else
         {
-            print(".... MULTI STEPPING PROGRAM");
+            debugPrintf(".... MULTI STEPPING PROGRAM");
         }
 
         // print("/////////////////////////////////////////////////////////////////////// EXIT");

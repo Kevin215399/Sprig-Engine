@@ -384,7 +384,6 @@ EngineObject *DeserializeObject(char *serializedObject)
 
         index += 7 + IntLength(type) + strlen(data) + strlen(dataName);
     }
-
     if (colliderAdded == 't')
     {
         objectOut->packages[0] = true;
@@ -717,6 +716,7 @@ void LoadProject(File *file)
                 printf("setting object %d\n", x);
                 char *objectData = ReadFileUntilLimited(sceneFile, '\0', 2);
                 EngineObject *obj = DeserializeObject(objectData);
+                obj->ID = x;
                 scenes[i].objects[x] = obj;
                 free(objectData);
                 sceneFile->startBlock -= 2;

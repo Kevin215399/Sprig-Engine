@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include <string.h>
- #include "LinkedList.h"
+#include "LinkedList.h"
 
 #define COLLIDER_VARS 6
 #define BASE_VARS 5
@@ -22,6 +22,9 @@
 #define TYPE_STRING 4
 #define TYPE_VECTOR 5
 #define TYPE_OBJ 6
+#define TYPE_SCRIPT 7
+#define TYPE_UNKOWN 8
+#define TYPE_VAR 9
 
 #define SPRITE_WIDTH 16
 #define SPRITE_HEIGHT 16
@@ -59,8 +62,10 @@ typedef struct
     float y;
 } Vector2;
 
+struct EngineVar;
+
 // A union that holds all supported types
-typedef union
+typedef struct
 {
     bool b;
     int i;
@@ -68,16 +73,22 @@ typedef union
     uint16_t s;
 
     Vector2 XY;
-    uint8_t objID;
+    uint8_t objIndex;
+    uint8_t scriptIndex;
+
+    struct EngineVar *varPointer;
 } VariableUnion;
 
 // A struct that defines an engine variable. Can be added to objects
-typedef struct
+typedef struct EngineVar
 {
     char name[MAX_NAME_LENGTH];
     uint8_t currentType;
     VariableUnion data;
+    bool isList;
+    GeneralList listData;
     bool serialized;
+    uint8_t scope;
 } EngineVar;
 
 typedef struct
@@ -116,17 +127,13 @@ typedef struct
 typedef struct
 {
     int start;
-    int startPos;
     int startLine;
     int end;
-    int endPos;
     int endLine;
     bool bracketType;
 } BracketPair;
 
 struct EngineObject;
-
-
 
 // A struct that keeps script data. Can be added to objects
 typedef struct ScriptData
@@ -139,10 +146,9 @@ typedef struct ScriptData
     int *lineIndexes;
     uint16_t lineCount;
 
-
     GeneralList variables;
-    
-    //EngineVar *data;
+
+    // EngineVar *data;
     uint8_t variableCount;
 
     EngineVar *backupData;
@@ -155,8 +161,12 @@ typedef struct ScriptData
     uint8_t bracketPairs;
 
     GeneralList instructionStack;
+    uint16_t currentScope;
 
     struct EngineObject *linkedObject;
+
+    int objectIndex;
+    int scriptIndex;
 
 } ScriptData;
 
@@ -199,6 +209,8 @@ typedef struct
     EngineObject **objects;
     uint8_t objectCount;
 } EngineScene;
+
+uint8_t sceneIndex;
 
 /////////////////////////////// DATA //////////////////////////////////////
 
@@ -299,6 +311,8 @@ EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType, bool
     }
     output->currentType = dataType;
     output->serialized = serialized;
+    output->isList = false;
+    InitializeList(&output->listData);
     return output;
 }
 
@@ -353,6 +367,9 @@ ScriptData *ScriptDataConstructor(EngineScript *script)
     output->functionCount = 0;
     output->bracketPairs = 0;
     output->currentLine = 0;
+
+    output->scriptIndex = -1;
+    output->objectIndex = -1;
 
     output->linkedObject = NULL;
 
@@ -554,7 +571,7 @@ uint8_t CreateScene(char *name, uint8_t nameLength)
         }
     }
     scenes[sceneCount].objectCount = 0;
-    scenes[sceneCount].objects = (EngineObject **)malloc(sizeof(EngineObject*) * MAX_OBJECTS);
+    scenes[sceneCount].objects = (EngineObject **)malloc(sizeof(EngineObject *) * MAX_OBJECTS);
     return sceneCount++;
 }
 
