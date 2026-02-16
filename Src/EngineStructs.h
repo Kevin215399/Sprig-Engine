@@ -23,8 +23,7 @@
 #define TYPE_VECTOR 5
 #define TYPE_OBJ 6
 #define TYPE_SCRIPT 7
-#define TYPE_UNKOWN 8
-#define TYPE_VAR 9
+#define TYPE_VAR 8
 
 #define SPRITE_WIDTH 16
 #define SPRITE_HEIGHT 16
@@ -85,10 +84,10 @@ typedef struct EngineVar
     char name[MAX_NAME_LENGTH];
     uint8_t currentType;
     VariableUnion data;
-    bool isList;
     GeneralList listData;
     bool serialized;
     uint8_t scope;
+
 } EngineVar;
 
 typedef struct
@@ -311,7 +310,6 @@ EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType, bool
     }
     output->currentType = dataType;
     output->serialized = serialized;
-    output->isList = false;
     InitializeList(&output->listData);
     return output;
 }

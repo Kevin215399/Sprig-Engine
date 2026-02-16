@@ -195,7 +195,6 @@ File **GetAllPrograms()
 
 int IntLength(int value)
 {
-    printf("int length val %d\n", value);
     int numberLength = 1;
     if (abs(value) != 0)
     {
@@ -205,7 +204,6 @@ int IntLength(int value)
     {
         numberLength += 1;
     }
-    printf("int length %d\n", numberLength);
     return numberLength;
 }
 uint8_t GetIntDigit(int value, int place)

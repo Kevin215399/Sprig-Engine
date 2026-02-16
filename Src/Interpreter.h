@@ -66,16 +66,21 @@ const char *CATEGORY_ERRORS[] = {
     "SCENE",
     "RENDERER"};
 
-#define OPERATOR_ATOM 255
+#define OPERATOR 0
+#define VALUE 1
+#define UNKOWN_TOKEN 2
 
 #define UNARY_SUBTRACT 255
 
 typedef struct
 {
-    uint16_t atom;
-    uint8_t type;
+    uint8_t dataType;
+    uint8_t atomType;
     uint8_t precedence;
     uint8_t parameters;
+
+    VariableUnion data;
+    GeneralList *listData;
 } Atom;
 
 typedef struct
@@ -85,12 +90,15 @@ typedef struct
     uint8_t parameters;
 } OperatorPrecedence;
 
+// when an unkown token is found, set to this precedence
+#define UNKOWN_PRECEDENCE 13
+
 #define OPERATOR_COUNT 43
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
     {"push", 13, 1},
-    {"pop", 13, 1},
+    {"pop", 13, 0},
     {"seek", 13, 1},
     {"contains", 13, 1},
 
@@ -186,7 +194,7 @@ char ToLower(char in)
     return in;
 }
 
-void FreeAtom(Atom *atom)
+/*void FreeAtom(Atom *atom)
 {
     if (atom == NULL)
     {
@@ -197,7 +205,7 @@ void FreeAtom(Atom *atom)
         FreeString(&atom->atom);
     }
     free(atom);
-}
+}*/
 
 int indexOf(char *search, char *string)
 {
@@ -502,31 +510,23 @@ bool IsAlphaNumeric(char c)
     free(atom);
 }*/
 
-void cpyatom(Atom *to, Atom *from)
+/*void cpyatom(Atom *to, Atom *from)
 {
-    /*if (to->atom != NULL)
-    {
-        free(to->atom);
-    }*/
     to->type = from->type;
     to->precedence = from->precedence;
     to->parameters = from->parameters;
     to->atom = PoolString();
     strcpy(stringPool[to->atom], stringPool[from->atom]);
-}
+}*/
 
-void setatom(Atom *to, uint8_t type, uint8_t precedence, uint8_t parameters, char *name)
+/*void setatom(Atom *to, uint8_t type, uint8_t precedence, uint8_t parameters, char *name)
 {
-    /*if (to->atom != NULL)
-    {
-        free(to->atom);
-    }*/
     to->type = type;
     to->precedence = precedence;
     to->parameters = parameters;
     to->atom = PoolString();
     strcpy(stringPool[to->atom], name);
-}
+}*/
 
 int FloatLength(float value)
 {
@@ -539,43 +539,48 @@ int FloatLength(float value)
     debugPrintf("get float len %d", IntLength((int)value));
     return IntLength((int)value) + (isDecimal ? 1 : 0);
 }
-// Returns a malloced char*
-uint16_t SerializeVar(EngineVar *variable)
+
+uint16_t SerializeUnion(VariableUnion *variable, uint8_t type)
 {
-    if (variable->currentType == TYPE_STRING)
+    switch (type)
+    {
+    case TYPE_STRING:
     {
         uint16_t strCpy = PoolString();
-        strcpy(stringPool[strCpy], stringPool[variable->data.s]);
+        strcpy(stringPool[strCpy], stringPool[variable->s]);
         return strCpy;
     }
-    if (variable->currentType == TYPE_INT)
+    break;
+    case TYPE_INT:
     {
-        debugPrintf("int type serialize, %d\n", variable->data.i);
-        int numberLength = IntLength(variable->data.i);
+        //debugPrintf("int type serialize, %d\n", variable->i);
+        int numberLength = IntLength(variable->i);
 
-        debugPrintf("length: %d", numberLength);
+        //debugPrintf("length: %d", numberLength);
         uint16_t intChar = PoolString();
-        sprintf(stringPool[intChar], "%d", variable->data.i);
-        debugPrintf("out: %s\n", stringPool[intChar]);
+        sprintf(stringPool[intChar], "%d", variable->i);
+        //debugPrintf("out: %s\n", stringPool[intChar]);
         return intChar;
     }
-    if (variable->currentType == TYPE_FLOAT)
+    break;
+    case TYPE_FLOAT:
     {
         debugPrint("serialize float");
 
-        debugPrintf("val: %f\n", variable->data.f);
+        debugPrintf("val: %f\n", variable->f);
 
-        int numberLength = FloatLength(variable->data.f);
+        int numberLength = FloatLength(variable->f);
 
         uint16_t floatChar = PoolString();
 
-        snprintf(stringPool[floatChar], sizeof(stringPool[floatChar]), "%f", variable->data.f);
+        snprintf(stringPool[floatChar], sizeof(stringPool[floatChar]), "%f", variable->f);
         return floatChar;
     }
-    if (variable->currentType == TYPE_BOOL)
+    break;
+    case TYPE_BOOL:
     {
         uint16_t boolChar = PoolString();
-        if (variable->data.b)
+        if (variable->b)
         {
             stringPool[boolChar][0] = '1';
         }
@@ -586,29 +591,63 @@ uint16_t SerializeVar(EngineVar *variable)
         stringPool[boolChar][1] = '\0';
         return boolChar;
     }
-    if (variable->currentType == TYPE_VECTOR)
+    break;
+    case TYPE_VECTOR:
     {
         uint16_t vectorChar = PoolString();
 
-        sprintf(stringPool[vectorChar], "(%f,%f)", variable->data.XY.x, variable->data.XY.y);
+        sprintf(stringPool[vectorChar], "(%f,%f)", variable->XY.x, variable->XY.y);
         return vectorChar;
     }
+    break;
+    default:
+    {
+        uint16_t empty = PoolString();
+        stringPool[empty][0] = '\0';
+        return empty;
+    }
+    break;
+    }
+}
 
-    uint16_t empty = PoolString();
-    stringPool[empty][0] = '\0';
-    return empty;
+// Returns a malloced char*
+uint16_t SerializeVar(EngineVar *variable)
+{
+    if (variable->listData.count > 0)
+    {
+        uint16_t output = PoolString();
+        uint8_t index = 0;
+        stringPool[output][index++] = '{';
+        while (variable->listData.count > 0)
+        {
+            VariableUnion *pop = (VariableUnion *)PopListFirst(&variable->listData);
+            uint16_t unionSerialized = SerializeUnion(pop, variable->currentType);
+            strcpy(stringPool[output] + index, stringPool[unionSerialized]);
+            index += strlen(stringPool[unionSerialized]);
+            stringPool[output][index++] = ',';
+            FreeString(&unionSerialized);
+        }
+        stringPool[output][index - 1] = '}';
+        stringPool[output][index++] = '\0';
+        return output;
+    }
+    else
+    {
+        uint16_t unionSerialized = SerializeUnion(&variable->data, variable->currentType);
+        return unionSerialized;
+    }
 }
 
 // If one is a float and one is an int, upgrade to float
 void GreatestCommonType(Atom *atom1, Atom *atom2)
 {
-    if (atom1->type == TYPE_INT && atom2->type == TYPE_FLOAT)
+    if (atom1->dataType == TYPE_INT && atom2->dataType == TYPE_FLOAT)
     {
-        atom1->type = TYPE_FLOAT;
+        atom1->dataType = TYPE_FLOAT;
     }
-    if (atom2->type == TYPE_INT && atom1->type == TYPE_FLOAT)
+    if (atom2->dataType == TYPE_INT && atom1->dataType == TYPE_FLOAT)
     {
-        atom2->type = TYPE_FLOAT;
+        atom2->dataType = TYPE_FLOAT;
     }
 }
 
@@ -631,30 +670,47 @@ void JumpToFunction(ScriptData *scriptData, char *functionName)
     }
 }
 
-void PushStringToVariable(EngineVar *to, EngineVar *from)
+Atom *MallocAtom(uint8_t atomType, uint8_t datatype, uint8_t precedence, uint8_t parameters)
 {
-    if (!to->isList)
-    {
-        return;
-    }
-
-    VariableUnion *copy = malloc(sizeof(VariableUnion));
-    *copy = from->data;
-    PushList(&to->listData, copy);
+    Atom *output = malloc(sizeof(Atom));
+    output->atomType = atomType;
+    output->dataType = datatype;
+    output->precedence = precedence;
+    output->parameters = parameters;
+    output->listData = NULL;
+    return output;
+}
+Atom *MallocTokenAtom(uint8_t atomType, uint8_t precedence, uint8_t parameters, char *token)
+{
+    Atom *output = malloc(sizeof(Atom));
+    output->atomType = atomType;
+    output->dataType = TYPE_STRING;
+    output->precedence = precedence;
+    output->parameters = parameters;
+    output->data.s = PoolString();
+    strcpy(stringPool[output->data.s], token);
+    output->listData = NULL;
+    return output;
 }
 
 float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, ScriptData *scriptData)
 {
-    debugPrint("shunt yard");
-    Atom operationStack[50] = {0};
-    uint8_t operatorIndex = 0;
-    Atom operandStack[50] = {0};
-    uint8_t operandIndex = 0;
+    GeneralList operators;
+    GeneralList operands;
+    GeneralList tokens;
+    InitializeList(&operators);
+    InitializeList(&operands);
+    InitializeList(&tokens);
 
-    Atom allAtoms[50] = {0};
-    uint16_t atomIndex = 0;
+    debugPrintf("%s\n", equation);
 
-    // Tokenize the input into atoms
+    ///////////////////////////////////
+    // tokenize the equation
+    // variables are set to atom type unkown, and data type string
+    // operators are set to atom type operator, and data type string
+    // Else is set to atom type value, and basic data types
+    ///////////////////////////////////
+
     for (int i = 0; i < equationLength; i++)
     {
         debugPrintf("tokenize %c\n", equation[i]);
@@ -667,23 +723,18 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         }
         if (equation[i] == ',')
         {
-            setatom(&allAtoms[atomIndex++], OPERATOR_ATOM, 0, 0, ",");
+            PushList(&tokens, MallocTokenAtom(OPERATOR, 0, 0, ","));
             continue;
         }
         if (equation[i] == '(')
         {
 
-            setatom(&allAtoms[atomIndex++], OPERATOR_ATOM, 0, 0, "(");
-
-            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            PushList(&tokens, MallocTokenAtom(OPERATOR, 0, 0, "("));
             continue;
         }
         if (equation[i] == ')')
         {
-
-            setatom(&allAtoms[atomIndex++], OPERATOR_ATOM, 0, 0, ")");
-
-            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
+            PushList(&tokens, MallocTokenAtom(OPERATOR, 0, 0, ")"));
             continue;
         }
 
@@ -698,13 +749,23 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             if (equation[i] == '\0')
             {
-                for (int i = 0; i < operatorIndex; i++)
+                while (tokens.count > 0)
                 {
-                    FreeString(&operationStack[i].atom);
-                }
-                for (int i = 0; i < operandIndex; i++)
-                {
-                    FreeString(&operandStack[i].atom);
+                    Atom *current = (Atom *)PopList(&tokens);
+                    if (current->dataType == TYPE_STRING)
+                    {
+                        FreeString(&current->data.s);
+                    }
+                    while (current->listData != NULL && current->listData->count > 0)
+                    {
+                        VariableUnion *listElement = (VariableUnion *)PopList(current->listData);
+                        if (current->dataType == TYPE_STRING)
+                        {
+                            FreeString(&listElement->s);
+                        }
+                        free(listElement);
+                    }
+                    free(current);
                 }
                 return CreateError(EQUATION_ERROR, SYNTAX_UNKNOWN, 0);
             }
@@ -715,67 +776,38 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
             stringPool[string][index - i - 1] = '\0';
 
-            setatom(&allAtoms[atomIndex++], TYPE_STRING, 0, 0, stringPool[string]);
+            Atom *newAtom = MallocAtom(VALUE, TYPE_STRING, 0, 0);
+            newAtom->data.s = PoolString();
+            strcpy(stringPool[newAtom->data.s], stringPool[string]);
+            PushList(&tokens, newAtom);
 
             FreeString(&string);
-
-            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
 
             i += index - i;
             continue;
         }
 
+        debugPrint("Finding boolean");
+
         if (strcmp(equation + i, "false") == 0)
         {
-            setatom(&allAtoms[atomIndex++], TYPE_FLOAT, 0, 0, "0");
+            Atom *newAtom = MallocAtom(VALUE, TYPE_FLOAT, 0, 0);
+            newAtom->data.f = 0;
+            PushList(&tokens, newAtom);
             i += 4;
             continue;
         }
         if (strcmp(equation + i, "true") == 0)
         {
-            setatom(&allAtoms[atomIndex++], TYPE_FLOAT, 0, 0, "1");
+            Atom *newAtom = MallocAtom(VALUE, TYPE_FLOAT, 0, 0);
+            newAtom->data.f = 1;
+            PushList(&tokens, newAtom);
             i += 3;
             continue;
         }
 
-        /*bool isVariable = false;
-        for (int variable = 0; variable < scriptData->variableCount; variable++)
-        {
-            EngineVar *var = (EngineVar *)ListGetIndex(&scriptData->variables, variable);
-            debugPrintf("Var name: %s\n", var->name);
-            if (indexOf(var->name, equation + i) == 0)
-            {
-                debugPrint("var match");
-                uint16_t value = SerializeVar(var);
+        debugPrint("Finding operator");
 
-                if (var->currentType == TYPE_FLOAT || var->currentType == TYPE_INT)
-                {
-                    setatom(&allAtoms[atomIndex++], TYPE_FLOAT, 0, 0, stringPool[value]);
-                }
-                else if (var->currentType == TYPE_STRING)
-                {
-                    setatom(&allAtoms[atomIndex++], TYPE_STRING, 0, 0, stringPool[value]);
-                }
-                else if (var->currentType == TYPE_VECTOR)
-                {
-                    setatom(&allAtoms[atomIndex++], TYPE_VECTOR, 0, 0, stringPool[value]);
-                }
-
-                debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
-                isVariable = true;
-                i += strlen(var->name) - 1;
-
-                FreeString(&value);
-                break;
-            }
-        }
-        if (isVariable)
-        {
-            continue;
-        }
-        */
-
-        // debugPrint("Finding operator");
         //  Search through each operator for matches
         bool atomDone = false;
         for (int operator= 0; operator<OPERATOR_COUNT; operator++)
@@ -797,6 +829,8 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
             }
             if (match)
             {
+                debugPrint("found operator");
+
                 atomDone = true;
 
                 bool isUnarySubtract = false;
@@ -805,36 +839,38 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                 {
                     debugPrint("is subtraction");
 
-                    if (atomIndex == 0 || allAtoms[atomIndex - 1].type == OPERATOR_ATOM)
+                    if (tokens.count == 0)
                     {
-                        debugPrint("is unary");
-                        isUnarySubtract = true;
+                        Atom *previousToken = (Atom *)ListGetIndex(&tokens, tokens.count - 1);
 
-                        char unarySubtractString[2] = {UNARY_SUBTRACT, '\0'};
+                        if (previousToken->atomType == OPERATOR)
+                        {
+                            debugPrint("is unary");
+                            isUnarySubtract = true;
 
-                        setatom(
-                            &allAtoms[atomIndex++],
-                            OPERATOR_ATOM,
-                            OPERATOR_PRECEDENT_LIST[operator].precedence,
-                            1,
-                            unarySubtractString
-                        );
+                            char unarySubtractString[2] = {UNARY_SUBTRACT, '\0'};
+
+                            PushList(&tokens, MallocTokenAtom(OPERATOR, OPERATOR_PRECEDENT_LIST[operator].precedence, 1, unarySubtractString));
+                        }
                     }
                 }
 
                 if (!isUnarySubtract)
                 {
-                    setatom(
-                        &allAtoms[atomIndex++],
-                        OPERATOR_ATOM,
-                        OPERATOR_PRECEDENT_LIST[operator].precedence,
-                        OPERATOR_PRECEDENT_LIST[operator].parameters,
-                        OPERATOR_PRECEDENT_LIST[operator].operator
+                    debugPrint("malloc token");
+
+                    PushList(&tokens, 
+                        MallocTokenAtom(
+                            OPERATOR, 
+                            OPERATOR_PRECEDENT_LIST[operator].precedence, 
+                            OPERATOR_PRECEDENT_LIST[operator].parameters, 
+                            OPERATOR_PRECEDENT_LIST[operator].operator
+                        )
                     );
+                    debugPrint("done malloc");
                 }
 
                 i += operatorLength - 1;
-                debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
                 break;
             }
         }
@@ -842,594 +878,284 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
         if (atomDone)
             continue;
 
-        // debugPrint("Finding number");
+        debugPrint("Finding number");
         //  If the current char is a number, continue searching until the end
         uint8_t numberLength = 0;
-        while (IsNumber(equation[i + numberLength]))
+        while (i + numberLength < equationLength && IsNumber(equation[i + numberLength]))
         {
             // debugPrintf("%c\n",equation[i+numberLength]);
             numberLength++;
         }
+        debugPrintf("Length: %d\n", numberLength);
         if (numberLength != 0)
         {
-            allAtoms[atomIndex].atom = PoolString();
+            char buffer[32];
+
+            debugPrint("before loop");
 
             for (int numberIndex = 0; numberIndex < numberLength; numberIndex++)
             {
-                // debugPrintf("%c\n", equation[i + numberIndex]);
-                stringPool[allAtoms[atomIndex].atom][numberIndex] = equation[i + numberIndex];
+                debugPrint("loop");
+
+                buffer[numberIndex] = equation[i + numberIndex];
             }
-            stringPool[allAtoms[atomIndex].atom][numberLength] = '\0';
-            allAtoms[atomIndex++].type = TYPE_FLOAT;
+            buffer[numberLength] = '\0';
+
+            debugPrint("buffered");
+
+            Atom *newAtom = MallocAtom(VALUE, TYPE_FLOAT, 0, 0);
+            debugPrint("malloced");
+
+            newAtom->data.f = atof(buffer);
+            PushList(&tokens, newAtom);
+            debugPrint("pushed");
+
+            debugPrint("number done");
+
             i += numberLength - 1;
-            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
             continue;
         }
 
+        debugPrint("Finding other");
+
         if (IsAlphaNumeric(equation[i]))
         {
-            allAtoms[atomIndex].atom = PoolString();
+            debugPrint("alphanumeric");
+            Atom *newAtom = MallocAtom(UNKOWN_TOKEN, TYPE_STRING, UNKOWN_PRECEDENCE, 0);
+
+            newAtom->data.s = PoolString();
+
+            debugPrint("allocated resources");
 
             uint8_t stringIndex = 0;
             while (i + stringIndex < equationLength && IsAlphaNumeric(equation[i + stringIndex]))
             {
-                stringPool[allAtoms[atomIndex].atom][stringIndex] = equation[i + stringIndex];
+                debugPrintf("char: %c to %d\n", equation[i + stringIndex], (int)newAtom->data.s);
+                stringPool[newAtom->data.s][stringIndex] = equation[i + stringIndex];
                 stringIndex++;
             }
 
-            stringPool[allAtoms[atomIndex].atom][stringIndex] = '\0';
-            allAtoms[atomIndex].parameters = 0;
-            allAtoms[atomIndex++].type = TYPE_UNKOWN;
+            stringPool[newAtom->data.s][stringIndex] = '\0';
+
+            debugPrint("copied to pool");
+
+            PushList(&tokens, newAtom);
+
+            debugPrint("pushed");
 
             i += stringIndex - 1;
-            debugPrintf("Atom: %s\n", stringPool[allAtoms[atomIndex - 1].atom]);
             continue;
         }
     }
 
-    // At this point, the string should be tokenized. Shunt yard can commence
-
-    for (int i = 0; i < atomIndex; i++)
+// DEBUG
+#ifdef DEBUG
+    for (int i = 0; i < tokens.count; i++)
     {
-        debugPrintf("Atom shunt yard %s\n", stringPool[allAtoms[i].atom]);
+        Atom *atom = (Atom *)ListGetIndex(&tokens, i);
+        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+        debugPrintf("--------------------- token: %s\n", stringPool[serialized]);
+        FreeString(&serialized);
+    }
+#endif
 
-        if (stringPool[allAtoms[i].atom][0] == ',')
+    ////////////////////////////
+    // Shunt yard the tokens
+    // When pushing operators, if the previous one is >= precedence, then push it to operand
+    // Push rest when done
+    ////////////////////////////
+
+    debugPrint("<--------- SHUNT START ------------->");
+
+    while (tokens.count > 0)
+    {
+
+        Atom *token = (Atom *)PopListFirst(&tokens);
+
+        debugPrint("Atom shunt yard");
+
+        if (token->atomType == OPERATOR || token->atomType == UNKOWN_TOKEN)
         {
-            while (operatorIndex > 0 && stringPool[operationStack[operatorIndex - 1].atom][0] != '(')
+            if (stringPool[token->data.s][0] == ',')
             {
-                debugPrintf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
-                cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
-
-                debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
-                FreeString(&operationStack[--operatorIndex].atom);
-            }
-            FreeString(&allAtoms[i].atom);
-            // free?
-            continue;
-        }
-
-        if (allAtoms[i].type == OPERATOR_ATOM)
-        {
-            if (stringPool[allAtoms[i].atom][0] == '.')
-            {
-                // If the operator is parenthesis, pop off all of the previous operations until you get to the matching one
-                debugPrint(".");
-                if (operatorIndex == 0)
+                debugPrint(",");
+                // If count > 0, and last is not operator OR previous is not (
+                while (
+                    operators.count > 0 && (((Atom *)ListGetIndex(&operators, operators.count - 1))->atomType != OPERATOR ||
+                                            stringPool[((Atom *)ListGetIndex(&operators, operators.count - 1))->data.s][0] != '('))
                 {
-                    for (int i = 0; i < operatorIndex; i++)
-                    {
-                        free(&operationStack[i]);
-                    }
-                    for (int i = 0; i < operandIndex; i++)
-                    {
-                        free(&operandStack[i]);
-                    }
+                    debugPrint("move from parenthesis");
 
-                    return CreateError(EQUATION_ERROR, SYNTAX_UNKNOWN, 0);
+                    PushList(&operands, PopList(&operators));
+
+                    debugPrint("moved to operand stack\n");
                 }
-
-                cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
-                FreeString(&operationStack[--operatorIndex].atom);
-
-                cpyatom(&operandStack[operandIndex++], &allAtoms[i]);
-
-                for (int i = 0; i < operandIndex; i++)
-                {
-                    debugPrintf("operands after '.': %s\n", stringPool[operandStack[i].atom]);
-                }
+                FreeString(&token->data.s);
+                free(token);
+                // free?
+                continue;
             }
-            else if (stringPool[allAtoms[i].atom][0] == ')')
+
+            if (stringPool[token->data.s][0] == ')')
             {
                 // If the operator is parenthesis, pop off all of the previous operations until you get to the matching one
                 debugPrint("parenthesis");
-                while (operatorIndex > 0 && stringPool[operationStack[operatorIndex - 1].atom][0] != '(')
+                while (
+                    operators.count > 0 && (((Atom *)ListGetIndex(&operators, operators.count - 1))->atomType != OPERATOR ||
+                                            stringPool[((Atom *)ListGetIndex(&operators, operators.count - 1))->data.s][0] != '('))
                 {
-                    debugPrintf("move from parenthesis %s\n", stringPool[operationStack[operatorIndex - 1].atom]);
-                    cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
+                    debugPrint("move from parenthesis");
 
-                    debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
-                    FreeString(&operationStack[--operatorIndex].atom);
+                    PushList(&operands, PopList(&operators));
+
+                    debugPrint("moved to operand stack\n");
                 }
-                FreeString(&operationStack[--operatorIndex].atom);
+                Atom *popLast = (Atom *)PopList(&operators);
+                FreeString(&popLast->data.s);
+                free(popLast);
+                FreeString(&token->data.s);
+                free(token);
             }
             else
             {
                 // If operator is not parenthesis, then move operators to the operands IF the precedence is greater or equal, then push operator
-                if (allAtoms[i].precedence != 0 && operandIndex > 0)
+                if (token->precedence != 0 && operators.count > 0)
                 {
-                    while (operatorIndex > 0 && operationStack[operatorIndex - 1].precedence >= allAtoms[i].precedence)
+                    debugPrintf("Current: %d, previous %d\n",
+                                token->precedence,
+                                ((Atom *)ListGetIndex(&operators, operators.count - 1))->precedence);
+                    while (operators.count > 0 && ((Atom *)ListGetIndex(&operators, operators.count - 1))->precedence >= token->precedence)
                     {
-                        cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
+                        PushList(&operands, PopList(&operators));
 
-                        debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
-                        FreeString(&operationStack[--operatorIndex].atom);
+                        debugPrint("moved to operand stack");
                     }
                 }
-                cpyatom(&operationStack[operatorIndex++], &allAtoms[i]);
-                debugPrintf("added %s to operation stack\n", stringPool[allAtoms[i].atom]);
+                PushList(&operators, token);
+                debugPrint("added to operation stack");
             }
         }
         else
         {
-            cpyatom(&operandStack[operandIndex++], &allAtoms[i]);
-            debugPrintf("added %s to operand stack\n", stringPool[allAtoms[i].atom]);
+            PushList(&operands, token);
+            debugPrint("added to operand stack");
         }
-        FreeString(&allAtoms[i].atom);
     }
     debugPrint("shunt done, pushing remain");
     // push remaining operators to output
-    while (operatorIndex > 0)
+    while (operators.count > 0)
     {
-        cpyatom(&operandStack[operandIndex++], &operationStack[operatorIndex - 1]);
-        debugPrintf("moved %s to operand stack\n", stringPool[operationStack[operatorIndex - 1].atom]);
-        FreeString(&operationStack[--operatorIndex].atom);
+        PushList(&operands, PopList(&operators));
+        debugPrint("moved to operand stack");
     }
 
-    for (int i = 0; i < operatorIndex; i++)
-    {
-        FreeString(&operationStack[i].atom);
-    }
+    debugPrintf("operators left: %d\n", operators.count);
 
-    for (int i = 0; i < operandIndex; i++)
+// DEBUG
+#ifdef DEBUG
+    for (int i = 0; i < operands.count; i++)
     {
-        debugPrintf("RPN: %s\n", stringPool[operandStack[i].atom]);
-        // free(operandStack[i].atom);
+        Atom *atom = (Atom *)ListGetIndex(&operands, i);
+        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+        debugPrintf("-------------RPN: %s\n", stringPool[serialized]);
+        FreeString(&serialized);
     }
+#endif
 
-    EngineVar *context = VarConstructor("", 0, NO_TYPE, false);
+    Atom *context = MallocAtom(VALUE, NO_TYPE, 0, 0);
     if (scriptData->objectIndex != -1 && scriptData->scriptIndex != -1)
     {
-        context->currentType = TYPE_SCRIPT;
+        context->dataType = TYPE_SCRIPT;
         context->data.objIndex = scriptData->objectIndex;
         context->data.scriptIndex = scriptData->scriptIndex;
-        printf("Context, %d:%d\n", context->data.objIndex, context->data.scriptIndex);
+        debugPrintf("Context, %d:%d\n", context->data.objIndex, context->data.scriptIndex);
     }
 
-    // The input is now in Reverse Polish Notation
+    //////////////////////////
+    // Solve using the operators
+    // Unkown types are retreived using the context var
+    // the '.' operator sets the context to the previous atom
+    // TODO: Check edge cases
+    //////////////////////////
 
-    
-
-    for (int i = 0; i < operandIndex; i++)
+    for (int index = 0; index < operands.count; index++)
     {
-        debugPrintf("%d\n", i);
-
-        if (operandStack[i].type == OPERATOR_ATOM || operandStack[i].type == TYPE_UNKOWN)
+        debugPrintf("solving index %d\n", index);
+        Atom *currentAtom = (Atom *)ListGetIndex(&operands, index);
+        if (currentAtom->atomType == OPERATOR || currentAtom->atomType == UNKOWN_TOKEN)
         {
-            printf("Context, %d:%d, %d\n", context->data.objIndex, context->data.scriptIndex, context->currentType);
-            if (operandStack[i].type == TYPE_UNKOWN)
-            {
-                debugPrint("unknown type, exploring");
-            }
+            debugPrintf("Context, %d:%d\n", context->data.objIndex, context->data.scriptIndex);
             bool isValid = true;
-            debugPrintf("operation: %s, params: %d\n", stringPool[operandStack[i].atom], operandStack[i].parameters);
 
-            uint8_t PARAMETER_COUNT = 2;
+            GeneralList parameters;
+            InitializeList(&parameters);
 
-            uint16_t parameters[PARAMETER_COUNT];
+            debugPrintf("Solving: %s, %d\n", stringPool[currentAtom->data.s], currentAtom->parameters);
 
-            for (int freeParam = 0; freeParam < PARAMETER_COUNT; freeParam++)
-                parameters[freeParam] = PoolVar("");
-
-            for (int x = 0; x < operandStack[i].parameters; x++)
+            for (int checkParam = 0; checkParam < currentAtom->parameters; checkParam++)
             {
-                if (operandStack[i - x - 1].type == OPERATOR_ATOM)
+                if (index - checkParam - 1 < 0)
                 {
                     isValid = false;
                     break;
                 }
-                else
+
+                Atom *previousAtom = (Atom *)ListGetIndex(&operands, index - checkParam - 1);
+                if (previousAtom->atomType == OPERATOR)
                 {
-                    if (operandStack[i - x - 1].type == TYPE_FLOAT)
-                    {
-                        debugPrint("normal param");
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.f = atof(stringPool[operandStack[i - x - 1].atom]);
-                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_FLOAT;
-                    }
-                    else if (operandStack[i - x - 1].type == TYPE_VECTOR)
-                    {
-                        debugPrint("vector param");
-                        float vectX = 0;
-                        float vectY = 0;
-                        sscanf((stringPool[operandStack[i - x - 1].atom]), "(%f,%f)", &vectX, &vectY);
-                        debugPrintf("v:%f,%f\n", vectX, vectY);
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.x = vectX;
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.XY.y = vectY;
-                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_VECTOR;
-                    }
-                    else if (operandStack[i - x - 1].type == TYPE_STRING)
-                    {
-                        debugPrint("string param");
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.s = PoolString();
-                        strcpy(stringPool[varPool[parameters[operandStack[i].parameters - x - 1]].data.s], stringPool[operandStack[i - x - 1].atom]);
-                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_STRING;
-                        debugPrint("copied");
-                    }
-                    else if (operandStack[i - x - 1].type == TYPE_OBJ)
-                    {
-                        debugPrint("obj param");
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.objIndex = atoi(stringPool[operandStack[i - x - 1].atom]);
-                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_OBJ;
-                        debugPrint("copied");
-                    }
-                    else if (operandStack[i - x - 1].type == TYPE_SCRIPT)
-                    {
-                        debugPrint("script param");
-                        int objIndex = 0;
-                        int scrIndex = 0;
-
-                        sscanf(stringPool[operandStack[i - x - 1].atom], "%d %d", &objIndex, &scrIndex);
-
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.objIndex = objIndex;
-                        varPool[parameters[operandStack[i].parameters - x - 1]].data.scriptIndex = scrIndex;
-                        varPool[parameters[operandStack[i].parameters - x - 1]].currentType = TYPE_SCRIPT;
-                        debugPrint("copied");
-                    }
-                    else
-                    {
-                        debugPrint("UNKOWN SHUNT YARD ATOM TYPE");
-                        while (1)
-                            sleep_ms(1000);
-                    }
+                    isValid = false;
+                    break;
                 }
             }
-            uint16_t result = PoolVar("");
+
             if (!isValid)
             {
-                debugPrint("invalid parameters");
-                for (int freeParam = 0; freeParam < PARAMETER_COUNT; freeParam++)
-                {
-                    if (varPool[parameters[freeParam]].currentType == TYPE_STRING)
-                    {
-                        FreeString(&varPool[parameters[freeParam]].data.s);
-                    }
-                    FreeVar(&parameters[freeParam]);
-                }
                 continue;
             }
 
-            uint8_t parameterCount = operandStack[i].parameters;
-
-            bool operatorReturns = true;
-
-            if (parameterCount == 1)
+            for (int checkParam = 0; checkParam < currentAtom->parameters; checkParam++)
             {
-                if (strcmp(stringPool[operandStack[i].atom], ".") == 0)
-                {
-                    context->currentType = varPool[parameters[0]].currentType;
-                    context->data = varPool[parameters[0]].data;
-                    parameterCount++;
-                    operatorReturns = false;
-                }
-
-                if (varPool[parameters[0]].currentType == TYPE_STRING)
-                {
-                    if (strcmp(stringPool[operandStack[i].atom], "input") == 0)
-                    {
-                        debugPrint("input operation");
-                        varPool[result].currentType = TYPE_FLOAT;
-                        switch (ToLower(stringPool[varPool[parameters[0]].data.s][0]))
-                        {
-                        case 'w':
-                            debugPrintf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
-                            varPool[result].data.f = (gpio_get(BUTTON_W) == 0);
-                            break;
-                        case 'd':
-                            varPool[result].data.f = (gpio_get(BUTTON_D) == 0);
-                            break;
-                        case 'a':
-                            varPool[result].data.f = (gpio_get(BUTTON_A) == 0);
-                            break;
-                        case 's':
-                            varPool[result].data.f = (gpio_get(BUTTON_S) == 0);
-                            break;
-
-                        case 'i':
-                            varPool[result].data.f = (gpio_get(BUTTON_I) == 0);
-                            break;
-                        case 'j':
-                            varPool[result].data.f = (gpio_get(BUTTON_J) == 0);
-                            break;
-                        case 'k':
-                            varPool[result].data.f = (gpio_get(BUTTON_K) == 0);
-                            break;
-                        case 'l':
-                            varPool[result].data.f = (gpio_get(BUTTON_L) == 0);
-                            break;
-                        default:
-                            varPool[result].data.f = -1;
-                            break;
-                        }
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "ObjectByName") == 0)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-
-                        for (int x = 0; x < scenes[sceneIndex].objectCount; x++)
-                        {
-                            if (strcmp(stringPool[varPool[parameters[0]].data.s], scenes[sceneIndex].objects[x]->name) == 0)
-                            {
-                                varPool[result].currentType = TYPE_OBJ;
-                                varPool[result].data.objIndex = x;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (varPool[parameters[0]].currentType == TYPE_VECTOR)
-                {
-                    if (strcmp(stringPool[operandStack[i].atom], "setPosition") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        debugPrintf("set pos (%f,%f)\n", varPool[parameters[0]].data.XY.x, varPool[parameters[0]].data.XY.y);
-
-                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = varPool[parameters[0]].data.XY.y;
-
-                        debugPrint("set");
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
-                    {
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = varPool[parameters[0]].data.XY.y;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "setVelocity") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x = varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y = varPool[parameters[0]].data.XY.y;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "addPosition") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                        printf("new pos (%f,%f)\n",
-                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x,
-                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y);
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
-                    {
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "addVelocity") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x += varPool[parameters[0]].data.XY.x;
-                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y += varPool[parameters[0]].data.XY.y;
-                    }
-                }
-                if (varPool[parameters[0]].currentType == TYPE_FLOAT)
-                {
-                    varPool[result].currentType = TYPE_FLOAT;
-                    if (strcmp(stringPool[operandStack[i].atom], "cos") == 0)
-                    {
-                        debugPrint("COS OPERATION");
-                        varPool[result].data.f = cos(varPool[parameters[0]].data.f);
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "sin") == 0)
-                    {
-                        debugPrint("SIN OPERATION");
-                        varPool[result].data.f = sin(varPool[parameters[0]].data.f);
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-
-                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = varPool[parameters[0]].data.f;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "setSprite") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-                        GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)varPool[parameters[0]].data.f;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "setAngle") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f = (float)varPool[parameters[0]].data.f;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "addAngle") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)varPool[parameters[0]].data.f;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "leftLED") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-                        gpio_put(LEFT_LIGHT, varPool[parameters[0]].data.f != 0);
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "rightLED") == 0 && scriptData->linkedObject != NULL)
-                    {
-                        varPool[result].currentType = NO_TYPE;
-                        gpio_put(RIGHT_LIGHT, varPool[parameters[0]].data.f != 0);
-                    }
-
-                    if (stringPool[operandStack[i].atom][0] == UNARY_SUBTRACT)
-                    {
-                        debugPrint("UNARY NEGATE OP");
-                        varPool[result].data.f = -varPool[parameters[0]].data.f;
-                    }
-                }
-                if (context->currentType == TYPE_OBJ)
-                {
-                    if (varPool[parameters[0]].currentType == TYPE_STRING)
-                    {
-                        if (strcmp(stringPool[operandStack[i].atom], "ScriptByName") == 0)
-                        {
-                            varPool[result].currentType = NO_TYPE;
-
-                            for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptCount; x++)
-                            {
-                                debugPrintf("script: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name);
-                                if (strcmp(stringPool[varPool[parameters[0]].data.s], scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name) == 0)
-                                {
-                                    varPool[result].currentType = TYPE_SCRIPT;
-
-                                    debugPrintf("got script: %d:%d", context->data.objIndex, x);
-                                    varPool[result].data.objIndex = context->data.objIndex;
-                                    varPool[result].data.scriptIndex = x;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (context->isList)
-                {
-                    if (strcmp(stringPool[operandStack[i].atom], "push") == 0)
-                    {
-                        varPool[result].currentType = context->currentType;
-                        varPool[result].isList = true;
-                        PushStringToVariable(&varPool[result], &varPool[parameters[0]]);
-                    }
-                }
+                debugPrint("push param");
+                PushList(&parameters, DeleteListElement(&operands, index - currentAtom->parameters));
             }
-            else if (parameterCount == 2)
+            index -= currentAtom->parameters;
+
+// DEBUG
+#ifdef DEBUG
+            for (int print = 0; print < parameters.count; print++)
             {
-                if (strcmp(stringPool[operandStack[i].atom], "+") == 0)
-                {
-                    debugPrint("add");
-                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
-                    {
-                        debugPrint("type float");
-                        varPool[result].data.f = varPool[parameters[0]].data.f + varPool[parameters[1]].data.f;
-                        varPool[result].currentType = TYPE_FLOAT;
-                    }
-                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_STRING))
-                    {
-                        debugPrint("type string");
-                        varPool[result].data.s = PoolString();
-                        sprintf(stringPool[varPool[result].data.s], "%s%s", stringPool[varPool[parameters[0]].data.s], stringPool[varPool[parameters[1]].data.s]);
-
-                        debugPrintf("concat result: %s\n", stringPool[varPool[result].data.s]);
-                        // free(varPool[parameters[0]].data.s);
-                        // free(varPool[parameters[1]].data.s);
-                        varPool[result].currentType = TYPE_STRING;
-                    }
-                    if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_VECTOR))
-                    {
-                        varPool[result].data.XY.x = varPool[parameters[0]].data.XY.x + varPool[parameters[1]].data.XY.x;
-                        varPool[result].data.XY.y = varPool[parameters[0]].data.XY.y + varPool[parameters[1]].data.XY.y;
-                        varPool[result].currentType = TYPE_FLOAT;
-                    }
-                }
-                if (EqualType(&varPool[parameters[0]], &varPool[parameters[1]], TYPE_FLOAT))
-                {
-                    debugPrintf("FLOAT OP: %s\n", stringPool[operandStack[i].atom]);
-                    varPool[result].currentType = TYPE_FLOAT;
-                    if (strcmp(stringPool[operandStack[i].atom], "-") == 0)
-                    {
-                        varPool[result].data.f = varPool[parameters[0]].data.f - varPool[parameters[1]].data.f;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "*") == 0)
-                    {
-                        varPool[result].data.f = varPool[parameters[0]].data.f * varPool[parameters[1]].data.f;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "/") == 0)
-                    {
-                        varPool[result].data.f = varPool[parameters[0]].data.f / varPool[parameters[1]].data.f;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "%") == 0)
-                    {
-                        varPool[result].data.f = (int)varPool[parameters[0]].data.f % (int)varPool[parameters[1]].data.f;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "pow") == 0)
-                    {
-                        varPool[result].data.f = pow(varPool[parameters[0]].data.f, varPool[parameters[1]].data.f);
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "|") == 0)
-                    {
-                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f | (int)varPool[parameters[1]].data.f);
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "&") == 0)
-                    {
-                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f & (int)varPool[parameters[1]].data.f);
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "^") == 0)
-                    {
-                        varPool[result].data.f = (float)((int)varPool[parameters[0]].data.f ^ (int)varPool[parameters[1]].data.f);
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "==") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f == varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "<") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f < varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], ">") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f > varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "<=") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f <= varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], ">=") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f >= varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-                    if (strcmp(stringPool[operandStack[i].atom], "!=") == 0)
-                    {
-                        varPool[result].data.f = (varPool[parameters[0]].data.f != varPool[parameters[1]].data.f) ? 1 : 0;
-                    }
-
-                    if (strcmp(stringPool[operandStack[i].atom], "Vector") == 0)
-                    {
-                        varPool[result].currentType = TYPE_VECTOR;
-                        varPool[result].data.XY.x = varPool[parameters[0]].data.f;
-                        varPool[result].data.XY.y = varPool[parameters[1]].data.f;
-                    }
-                }
+                Atom *atom = (Atom *)ListGetIndex(&parameters, print);
+                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+                debugPrintf("-------------parameters: %s\n", stringPool[serialized]);
+                FreeString(&serialized);
             }
-            else if (parameterCount == 0)
+#endif
+
+            char operatorString[50];
+            strcpy(operatorString, stringPool[currentAtom->data.s]);
+            FreeString(&currentAtom->data.s);
+
+            // Branch from parameter count -> context -> type -> operator
+
+            switch (parameters.count)
             {
-                if (strcmp(stringPool[operandStack[i].atom], "PI") == 0)
+            case 0:
+            {
+                if (strcmp(operatorString, "PI") == 0)
                 {
-                    varPool[result].currentType = TYPE_FLOAT;
-                    varPool[result].data.f = 3.14159265459;
+                    currentAtom->dataType = TYPE_FLOAT;
+                    currentAtom->data.f = 3.14159265459;
+                    currentAtom->atomType = VALUE;
                 }
-                debugPrint("no params");
-                if (context->currentType == TYPE_SCRIPT)
+                debugPrint("no params");out:
+                if (context->dataType == TYPE_SCRIPT)
                 {
                     debugPrint("is script context");
-                    if (operandStack[i].type == TYPE_UNKOWN)
+                    if (currentAtom->atomType == UNKOWN_TOKEN)
                     {
 
-                        varPool[result].currentType = NO_TYPE;
+                        currentAtom->atomType = VALUE;
+                        currentAtom->dataType = NO_TYPE;
 
                         debugPrint("unkown type");
                         debugPrintf("obj name: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->name);
@@ -1437,22 +1163,25 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
 
                         for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variableCount; x++)
                         {
-                            EngineVar *variable = ((EngineVar *)ListGetIndex(&scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variables, i));
+                            EngineVar *variable = ((EngineVar *)ListGetIndex(&scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variables, x));
                             debugPrintf("check var: %s\n", variable->name);
-                            if (strcmp(stringPool[operandStack[i].atom], variable->name) == 0)
+                            if (strcmp(operatorString, variable->name) == 0)
                             {
                                 debugPrintf("found var, %d\n", variable->currentType);
-                                varPool[result].currentType = variable->currentType;
-                                varPool[result].data = variable->data;
+                                currentAtom->dataType = variable->currentType;
+                                currentAtom->data = variable->data;
+                                currentAtom->listData = &variable->listData;
+                                debugPrintf("variable elemets: %d\n", variable->listData.count);
+
                                 break;
                             }
                         }
 
                         for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functionCount; x++)
                         {
-                            EngineFunction *function = scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functions[i];
+                            EngineFunction *function = scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functions[x];
                             debugPrintf("check function: %s\n", function->name);
-                            if (strcmp(stringPool[operandStack[i].atom], function->name) == 0)
+                            if (strcmp(operatorString, function->name) == 0)
                             {
                                 JumpToFunction(scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex], function->name);
                                 break;
@@ -1460,164 +1189,470 @@ float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, Scri
                         }
                     }
                 }
+                if (context->listData != NULL)
+                {
+                    if (strcmp(operatorString, "pop") == 0)
+                    {
+                        debugPrintf("context elemets before pop: %d\n", context->listData->count);
+                        VariableUnion *popValue = (VariableUnion *)PopList(context->listData);
+
+                        currentAtom->atomType = VALUE;
+                        currentAtom->dataType = context->dataType;
+                        currentAtom->data = *popValue;
+
+                        free(popValue);
+
+                        debugPrintf("context elemets after pop: %d\n", context->listData->count);
+                    }
+                }
+            }
+            break;
+            case 1:
+            {
+                Atom *parameter0 = (Atom *)ListGetIndex(&parameters, 0);
+                if (strcmp(operatorString, ".") == 0)
+                {
+                    context->dataType = parameter0->dataType;
+                    context->data = parameter0->data;
+                    context->listData = parameter0->listData;
+                    if (context->listData != NULL)
+                        debugPrintf("parameter elemets: %d\n", parameter0->listData->count);
+                    else
+                        debugPrint("context is not list");
+                    FreeString(&currentAtom->data.s);
+                    free(DeleteListElement(&operands, index));
+                    break;
+                }
+
+                if (parameter0->dataType == TYPE_STRING)
+                {
+                    if (strcmp(operatorString, "input") == 0)
+                    {
+                        debugPrint("input operation");
+                        currentAtom->dataType = TYPE_FLOAT;
+                        currentAtom->atomType = VALUE;
+                        switch (ToLower(stringPool[parameter0->data.s][0]))
+                        {
+                        case 'w':
+                            debugPrintf("W state: %d\n", (gpio_get(BUTTON_W) == 0 ? 1 : 0));
+                            currentAtom->data.f = (gpio_get(BUTTON_W) == 0);
+                            break;
+                        case 'd':
+                            currentAtom->data.f = (gpio_get(BUTTON_D) == 0);
+                            break;
+                        case 'a':
+                            currentAtom->data.f = (gpio_get(BUTTON_A) == 0);
+                            break;
+                        case 's':
+                            currentAtom->data.f = (gpio_get(BUTTON_S) == 0);
+                            break;
+
+                        case 'i':
+                            currentAtom->data.f = (gpio_get(BUTTON_I) == 0);
+                            break;
+                        case 'j':
+                            currentAtom->data.f = (gpio_get(BUTTON_J) == 0);
+                            break;
+                        case 'k':
+                            currentAtom->data.f = (gpio_get(BUTTON_K) == 0);
+                            break;
+                        case 'l':
+                            currentAtom->data.f = (gpio_get(BUTTON_L) == 0);
+                            break;
+                        default:
+                            currentAtom->data.f = -1;
+                            break;
+                        }
+                    }
+                    if (strcmp(operatorString, "ObjectByName") == 0)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        currentAtom->atomType = VALUE;
+
+                        for (int x = 0; x < scenes[sceneIndex].objectCount; x++)
+                        {
+                            if (strcmp(stringPool[parameter0->data.s], scenes[sceneIndex].objects[x]->name) == 0)
+                            {
+                                debugPrint("found obj");
+                                currentAtom->dataType = TYPE_OBJ;
+                                currentAtom->data.objIndex = x;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (parameter0->dataType == TYPE_VECTOR)
+                {
+                    currentAtom->dataType = NO_TYPE;
+                    currentAtom->atomType = VALUE;
+                    if (strcmp(operatorString, "setPosition") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        debugPrintf("set pos (%f,%f)\n", parameter0->data.XY.x, parameter0->data.XY.y);
+
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x = parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y = parameter0->data.XY.y;
+
+                        debugPrint("set");
+                    }
+                    if (strcmp(operatorString, "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x = parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y = parameter0->data.XY.y;
+                    }
+
+                    if (strcmp(operatorString, "setVelocity") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x = parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y = parameter0->data.XY.y;
+                    }
+
+                    if (strcmp(operatorString, "addPosition") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x += parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y += parameter0->data.XY.y;
+                        printf("new pos (%f,%f)\n",
+                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.x,
+                               GetObjectDataByName(scriptData->linkedObject, "position")->data.XY.y);
+                    }
+                    if (strcmp(operatorString, "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_VECTOR)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.x += parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY.y += parameter0->data.XY.y;
+                    }
+
+                    if (strcmp(operatorString, "addVelocity") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.x += parameter0->data.XY.x;
+                        GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY.y += parameter0->data.XY.y;
+                    }
+                }
+                if (parameter0->dataType == TYPE_FLOAT)
+                {
+                    currentAtom->atomType = VALUE;
+                    currentAtom->dataType = TYPE_FLOAT;
+                    if (strcmp(operatorString, "cos") == 0)
+                    {
+                        debugPrint("COS OPERATION");
+                        currentAtom->data.f = cos(parameter0->data.f);
+                    }
+                    if (strcmp(operatorString, "sin") == 0)
+                    {
+                        debugPrint("SIN OPERATION");
+                        currentAtom->data.f = sin(parameter0->data.f);
+                    }
+
+                    if (strcmp(operatorString, "setScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = parameter0->data.f;
+                    }
+
+                    if (strcmp(operatorString, "addScale") == 0 && scriptData->linkedObject != NULL && GetObjectDataByName(scriptData->linkedObject, "scale")->currentType == TYPE_INT)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+
+                        GetObjectDataByName(scriptData->linkedObject, "scale")->data.i = parameter0->data.f;
+                    }
+
+                    if (strcmp(operatorString, "setSprite") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i = (int)parameter0->data.f;
+                    }
+
+                    if (strcmp(operatorString, "setAngle") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f = (float)parameter0->data.f;
+                    }
+                    if (strcmp(operatorString, "addAngle") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)parameter0->data.f;
+                    }
+
+                    if (strcmp(operatorString, "leftLED") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        gpio_put(LEFT_LIGHT, parameter0->data.f != 0);
+                    }
+                    if (strcmp(operatorString, "rightLED") == 0 && scriptData->linkedObject != NULL)
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        gpio_put(RIGHT_LIGHT, parameter0->data.f != 0);
+                    }
+
+                    if (operatorString[0] == UNARY_SUBTRACT)
+                    {
+                        debugPrint("UNARY NEGATE OP");
+                        currentAtom->data.f = -parameter0->data.f;
+                    }
+                }
+                if (context->dataType == TYPE_OBJ)
+                {
+                    if (parameter0->dataType == TYPE_STRING)
+                    {
+                        if (strcmp(operatorString, "ScriptByName") == 0)
+                        {
+                            currentAtom->atomType = VALUE;
+                            currentAtom->dataType = NO_TYPE;
+
+                            for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptCount; x++)
+                            {
+                                debugPrintf("script: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name);
+                                if (strcmp(stringPool[parameter0->data.s], scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name) == 0)
+                                {
+                                    currentAtom->dataType = TYPE_SCRIPT;
+
+                                    debugPrintf("got script: %d:%d", context->data.objIndex, x);
+                                    currentAtom->data.objIndex = context->data.objIndex;
+                                    currentAtom->data.scriptIndex = x;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (context->listData != NULL)
+                {
+                    if (strcmp(operatorString, "push") == 0)
+                    {
+                        currentAtom->atomType = VALUE;
+                        currentAtom->dataType = context->dataType;
+                        currentAtom->listData = context->listData;
+
+                        debugPrintf("context elemets: %d\n", context->listData->count);
+
+                        VariableUnion *copy = malloc(sizeof(VariableUnion));
+                        if (currentAtom->dataType == TYPE_INT && parameter0->dataType == TYPE_FLOAT)
+                        {
+                            (*copy).i = (int)parameter0->data.f;
+                        }
+                        else if (currentAtom->dataType == TYPE_FLOAT && parameter0->dataType == TYPE_INT)
+                        {
+                            (*copy).f = (float)parameter0->data.i;
+                        }
+                        else
+                        {
+                            (*copy) = parameter0->data;
+                        }
+
+                        PushList(currentAtom->listData, copy);
+                        for (int list = 0; list < currentAtom->listData->count; list++)
+                        {
+                            VariableUnion *getUnion = (VariableUnion *)ListGetIndex(currentAtom->listData, list);
+                            uint16_t serialized = SerializeUnion(getUnion, currentAtom->dataType);
+                            debugPrintf("---list elements: %s\n", stringPool[serialized]);
+                            FreeString(&serialized);
+                        }
+                    }
+                }
+            }
+            break;
+            case 2:
+            {
+                Atom *parameter0 = (Atom *)ListGetIndex(&parameters, 0);
+                Atom *parameter1 = (Atom *)ListGetIndex(&parameters, 1);
+                currentAtom->atomType = VALUE;
+                if (strcmp(operatorString, "+") == 0)
+                {
+                    debugPrint("add");
+                    if (parameter0->dataType == TYPE_FLOAT && parameter1->dataType == TYPE_FLOAT)
+                    {
+                        debugPrint("type float");
+                        currentAtom->data.f = parameter0->data.f + parameter1->data.f;
+                        currentAtom->dataType = TYPE_FLOAT;
+                    }
+                    if (parameter0->dataType == TYPE_STRING && parameter1->dataType == TYPE_STRING)
+                    {
+                        debugPrint("type string");
+                        sprintf(operatorString, "%s%s", stringPool[parameter0->data.s], stringPool[parameter1->data.s]);
+
+                        debugPrintf("concat result: %s\n", operatorString);
+                        // free(parameter0->data.s);
+                        // free(parameter1->data.s);
+                        currentAtom->dataType = TYPE_STRING;
+                    }
+                    if (parameter0->dataType == TYPE_VECTOR && parameter1->dataType == TYPE_VECTOR)
+                    {
+                        currentAtom->data.XY.x = parameter0->data.XY.x + parameter1->data.XY.x;
+                        currentAtom->data.XY.y = parameter0->data.XY.y + parameter1->data.XY.y;
+                        currentAtom->dataType = TYPE_VECTOR;
+                    }
+                }
+                if (parameter0->dataType == TYPE_FLOAT && parameter1->dataType == TYPE_FLOAT)
+                {
+                    debugPrintf("FLOAT OP: %s\n", operatorString);
+                    currentAtom->dataType = TYPE_FLOAT;
+                    if (strcmp(operatorString, "-") == 0)
+                    {
+                        currentAtom->data.f = parameter0->data.f - parameter1->data.f;
+                    }
+                    if (strcmp(operatorString, "*") == 0)
+                    {
+                        currentAtom->data.f = parameter0->data.f * parameter1->data.f;
+                    }
+                    if (strcmp(operatorString, "/") == 0)
+                    {
+                        currentAtom->data.f = parameter0->data.f / parameter1->data.f;
+                    }
+                    if (strcmp(operatorString, "%") == 0)
+                    {
+                        currentAtom->data.f = (int)parameter0->data.f % (int)parameter1->data.f;
+                    }
+
+                    if (strcmp(operatorString, "pow") == 0)
+                    {
+                        currentAtom->data.f = pow(parameter0->data.f, parameter1->data.f);
+                    }
+
+                    if (strcmp(operatorString, "|") == 0)
+                    {
+                        currentAtom->data.f = (float)((int)parameter0->data.f | (int)parameter1->data.f);
+                    }
+                    if (strcmp(operatorString, "&") == 0)
+                    {
+                        currentAtom->data.f = (float)((int)parameter0->data.f & (int)parameter1->data.f);
+                    }
+                    if (strcmp(operatorString, "^") == 0)
+                    {
+                        currentAtom->data.f = (float)((int)parameter0->data.f ^ (int)parameter1->data.f);
+                    }
+
+                    if (strcmp(operatorString, "==") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f == parameter1->data.f) ? 1 : 0;
+                    }
+                    if (strcmp(operatorString, "<") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f < parameter1->data.f) ? 1 : 0;
+                    }
+                    if (strcmp(operatorString, ">") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f > parameter1->data.f) ? 1 : 0;
+                    }
+                    if (strcmp(operatorString, "<=") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f <= parameter1->data.f) ? 1 : 0;
+                    }
+                    if (strcmp(operatorString, ">=") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f >= parameter1->data.f) ? 1 : 0;
+                    }
+                    if (strcmp(operatorString, "!=") == 0)
+                    {
+                        currentAtom->data.f = (parameter0->data.f != parameter1->data.f) ? 1 : 0;
+                    }
+
+                    if (strcmp(operatorString, "Vector") == 0)
+                    {
+                        currentAtom->dataType = TYPE_VECTOR;
+                        currentAtom->data.XY.x = parameter0->data.f;
+                        currentAtom->data.XY.y = parameter1->data.f;
+                    }
+                }
+            }
+            break;
             }
 
-            if (parameterCount > 0)
+            while (parameters.count > 0)
             {
-
-                // shift the rest of the operands
-                for (int x = i + 1; x < operandIndex; x++)
+                Atom *param = PopList(&parameters);
+                if (param->dataType == TYPE_STRING)
                 {
-                    FreeString(&operandStack[x - parameterCount].atom);
-                    cpyatom(&operandStack[x - parameterCount], &operandStack[x]);
-                    debugPrintf("shift: %s to %d\n", stringPool[operandStack[x].atom], x - parameterCount);
-                    // free(operandStack[x].atom);
+                    FreeString(&param->data.s);
                 }
-                for (int x = 0; x < parameterCount; x++)
-                {
-                    FreeString(&operandStack[operandIndex - x - 1].atom);
-                }
-                operandIndex -= parameterCount;
+                free(param);
             }
+            index = -1;
 
-            if (operatorReturns)
+// DEBUG
+#ifdef DEBUG
+            for (int x = 0; x < operands.count; x++)
             {
-                FreeString(&operandStack[i - parameterCount].atom);
 
-                if (varPool[result].currentType == TYPE_INT)
+                Atom *atom = (Atom *)ListGetIndex(&operands, x);
+                if (atom->listData != NULL)
                 {
-                    debugPrintf("Completed an int operation result: %d\n", varPool[result].data.i);
-
-                    char strResult[20];
-
-                    snprintf(strResult, sizeof(strResult), "%d", varPool[result].data.i);
-
-                    setatom(&operandStack[i - parameterCount], TYPE_FLOAT, 0, 0, strResult);
-                }
-                else if (varPool[result].currentType == TYPE_FLOAT)
-                {
-                    debugPrintf("Completed an float operation result: %f\n", varPool[result].data.f);
-                }
-                else if (varPool[result].currentType == TYPE_VECTOR)
-                {
-                    uint16_t serializedVector = SerializeVar(&varPool[result]);
-
-                    setatom(&operandStack[i - parameterCount], TYPE_VECTOR, 0, 0, stringPool[serializedVector]);
-                    debugPrintf("new Vector: %s\n", stringPool[operandStack[i - parameterCount].atom]);
-
-                    FreeString(&serializedVector);
-                }
-                else if (varPool[result].currentType == TYPE_OBJ)
-                {
-                    char strResult[20];
-
-                    snprintf(strResult, sizeof(strResult), "%d", varPool[result].data.objIndex);
-
-                    setatom(&operandStack[i - parameterCount], TYPE_OBJ, 0, 0, strResult);
-                }
-                else if (varPool[result].currentType == TYPE_SCRIPT)
-                {
-                    char strResult[20];
-
-                    snprintf(strResult, sizeof(strResult), "%d %d", varPool[result].data.objIndex, varPool[result].data.scriptIndex);
-
-                    setatom(&operandStack[i - parameterCount], TYPE_SCRIPT, 0, 0, strResult);
+                    debugPrintf("is List! elemetn count: %d\n", atom->listData->count);
                 }
                 else
                 {
-                    if (varPool[result].currentType == NO_TYPE)
-                    {
-                        varPool[result].currentType = TYPE_STRING;
-                        varPool[result].data.s = PoolString();
-                        stringPool[varPool[result].data.s][0] = '\0';
-                    }
-                    debugPrintf("Completed an str operation result: %s\n", stringPool[varPool[result].data.s]);
-
-                    setatom(&operandStack[i - parameterCount], TYPE_STRING, 0, 0, stringPool[varPool[result].data.s]);
+                    debugPrint("not list");
                 }
+
+                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+                debugPrintf("-------------OUT: %s\n", stringPool[serialized]);
+                FreeString(&serialized);
             }
-
-            for (int freeParam = 0; freeParam < PARAMETER_COUNT; freeParam++)
-            {
-                if (varPool[parameters[freeParam]].currentType == TYPE_STRING)
-                {
-                    FreeString(&varPool[parameters[freeParam]].data.s);
-                }
-                FreeVar(&parameters[freeParam]);
-            }
-
-            FreeVar(&result);
-
-            i = -1;
-
-            for (int x = 0; x < operandIndex; x++)
-            {
-                debugPrintf("OUT: %s\n", stringPool[operandStack[x].atom]);
-
-                // debugPrint("debugPrint done");
-            }
-            debugPrintf("%d\n", operandStack[i].type);
-
-            debugPrintf("%d\n", i);
-
-            debugPrintf("%d\n\n", operandIndex);
+#endif
         }
+    }
+
+    debugPrint("solved");
+
+    ///////////////////////////
+    // Solved
+    // Output the first operator
+    // Clear any leftover values
+    ///////////////////////////
+
+// DEBUG
+#ifdef DEBUG
+    for (int i = 0; i < operands.count; i++)
+    {
+        debugPrintf("%d", i);
+
+        Atom *atom = (Atom *)ListGetIndex(&operands, i);
+        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+        debugPrintf("-------------OUT: %s\n", stringPool[serialized]);
+        FreeString(&serialized);
+    }
+#endif
+
+    if (operands.count == 0)
+    {
+        output->currentType = NO_TYPE;
+        free(context);
+        return 0;
+    }
+
+    Atom *outputAtom = (Atom *)PopListFirst(&operands);
+    debugPrint("popped");
+
+    output->currentType = outputAtom->dataType;
+    output->data = outputAtom->data;
+    debugPrint("basic copied");
+    if (outputAtom->listData != NULL)
+        CpyList(&output->listData, outputAtom->listData, sizeof(VariableUnion));
+    debugPrint("copied list");
+
+    free(outputAtom);
+
+    debugPrint("set output");
+
+    while (operands.count > 0)
+    {
+        Atom *current = (Atom *)PopList(&operands);
+        if (current->dataType == TYPE_STRING)
+        {
+            FreeString(&current->data.s);
+        }
+        while (current->listData != NULL && current->listData->count > 0)
+        {
+            VariableUnion *listElement = (VariableUnion *)PopList(current->listData);
+            if (current->dataType == TYPE_STRING)
+            {
+                FreeString(&listElement->s);
+            }
+            free(listElement);
+        }
+        free(current);
     }
 
     free(context);
 
-    debugPrint("Outputting shunt yard");
-
-    if (operandIndex > 1)
-    {
-        for (int i = 0; i < operandIndex; i++)
-        {
-            // debugPrintf("atom: %s\n", operandStack[i].atom);
-            FreeString(&operandStack[i].atom);
-        }
-
-        return CreateError(EQUATION_ERROR, EQUATION_UNSOLVED, 0);
-    }
-    else
-    {
-        if (operandStack[0].type == TYPE_FLOAT)
-        {
-
-            output->data.f = atof(stringPool[operandStack[0].atom]);
-
-            if (floor(output->data.f) == output->data.f)
-            {
-                output->data.i = floor(output->data.f);
-                output->currentType = TYPE_INT;
-                debugPrint("type int");
-            }
-            else
-            {
-                output->currentType = TYPE_FLOAT;
-                debugPrint("type float");
-            }
-        }
-        if (operandStack[0].type == TYPE_STRING)
-        {
-            debugPrint("output is string");
-            output->currentType = TYPE_STRING;
-            output->data.s = PoolString();
-            debugPrint("copying");
-            debugPrintf("from: %s\n", stringPool[operandStack[0].atom]);
-            debugPrintf("to: %s\n", stringPool[output->data.s]);
-            strcpy(stringPool[output->data.s], stringPool[operandStack[0].atom]);
-            debugPrint("copy done");
-            FreeString(&varPool[operandStack[0].atom].data.s);
-            debugPrint("freed string");
-        }
-    }
-
-    debugPrint("freeing operands");
-    for (int i = 0; i < operandIndex; i++)
-    {
-        FreeString(&operandStack[i].atom);
-    }
-    debugPrint("done");
     return 0;
 }
 
@@ -1886,12 +1921,15 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l, bool declareFunctions)
                 return CreateError(GENERAL_ERROR, SYNTAX_UNKNOWN, l);
             }
 
-            debugPrintf("right side: %s\n", trimmedLine + index);
+            debugPrintf("right side: %s\n", stringPool[trimmedLine] + index);
+
+            printf("var name before pool: %s\n", newVariable->name);
 
             uint16_t assignValue = PoolVar("");
+            printf("var name before shunt: %s\n", newVariable->name);
 
             uint32_t error = ShuntYard(stringPool[trimmedLine] + index, strlen(stringPool[trimmedLine] + index), &varPool[assignValue], output);
-
+            printf("var name after shunt: %s\n", newVariable->name);
             if (error != 0)
             {
                 FreeString(&trimmedLine);
@@ -1957,6 +1995,8 @@ uint32_t DeclareEntity(ScriptData *output, uint16_t l, bool declareFunctions)
             }
 
             FreeVar(&assignValue);
+
+            InitializeList(&newVariable->listData);
 
             debugPrintf("variable declared: %s=type %d\n", newVariable->name, newVariable->currentType);
             PushList(&output->variables, newVariable);
@@ -2191,7 +2231,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
                 }
                 free(variable);
 
-                DeleteListElement(&scriptData->variables, i);
+                free(DeleteListElement(&scriptData->variables, i));
 
                 scriptData->variableCount--;
             }
@@ -2215,7 +2255,7 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         }
     }
 
-    if (varIndex != -1)
+    if (varIndex != -1 && indexOf("=", stringPool[trimmedLine]) != -1)
     {
         int index = indexOf("=", stringPool[trimmedLine]) - 1;
         uint8_t assignType = stringPool[trimmedLine][index];
@@ -2621,6 +2661,16 @@ uint32_t ExecuteLine(EngineScript *script, ScriptData *scriptData)
         {
             FreeString(&varPool[out].data.s);
         }
+        while (varPool[out].listData.count > 0)
+        {
+            VariableUnion *pop = (VariableUnion *)PopList(&varPool[out].listData);
+            if (varPool[out].currentType == TYPE_STRING)
+            {
+                FreeString(&pop->s);
+            }
+            free(pop);
+        }
+
         FreeVar(&out);
     }
 
@@ -2643,11 +2693,17 @@ void ResetScriptData(ScriptData *scriptData)
             {
                 FreeString(&variable->data.s);
             }
-            free(variable);
+            while (variable->listData.count > 0)
+            {
+                free(PopList(&variable->listData));
+            }
 
             DeleteListElement(&scriptData->variables, i);
 
+            free(variable);
+
             scriptData->variableCount--;
+            i = -1;
         }
     }
     scriptData->currentScope = 0;

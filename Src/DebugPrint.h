@@ -1,7 +1,7 @@
 #ifndef DEBUG_PRINT 
 #define DEBUG_PRINT
 
-//#define DEBUG 1
+#define DEBUG 1
 
 #ifdef DEBUG
 #define debugPrintf(...) printf("DEBUG: " __VA_ARGS__)
