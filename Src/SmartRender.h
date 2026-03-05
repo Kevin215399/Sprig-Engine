@@ -596,7 +596,7 @@ void SmartClear()
 void BufferSpriteRects(uint16_t sprite[SPRITE_WIDTH][SPRITE_HEIGHT], uint16_t color, float dx, float dy, float scaleX, float scaleY, int angle)
 {
     angle %= 360;
-    print("solving");
+    debugPrint("renderer solving");
     bool renderedPixels[SPRITE_WIDTH][SPRITE_HEIGHT];
 
     memset(renderedPixels, 0, sizeof(renderedPixels));

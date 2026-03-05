@@ -174,7 +174,7 @@ uint8_t sceneScale = 4;
 
 void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, int angle)
 {
-    printf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
+    debugPrintf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
     if (sprite < 0)
     {
         const uint16_t (*icon)[16];
@@ -357,6 +357,8 @@ void RecompileScene()
 
             currentScene->objects[i]->scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i]->scriptIndexes[s]]);
             currentScene->objects[i]->scriptData[s]->linkedObject = currentScene->objects[i];
+            currentScene->objects[i]->scriptData[s]->objectIndex = i;
+            currentScene->objects[i]->scriptData[s]->scriptIndex = currentScene->objects[i]->scriptIndexes[s];
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -376,11 +378,12 @@ void RecompileScene()
 
             for (int t = 0; t < currentScene->objects[i]->scriptData[s]->variableCount; t++)
             {
-                printf("set scr variable out: %s\n", currentScene->objects[i]->scriptData[s]->data[t].name);
+                EngineVar *var = (EngineVar *)ListGetIndex(&currentScene->objects[i]->scriptData[s]->variables, t);
+                printf("set scr variable out: %s\n", var->name);
 
-                if (currentScene->objects[i]->scriptData[s]->data[t].currentType == TYPE_FLOAT)
+                if (var->currentType == TYPE_FLOAT)
                 {
-                    printf("is float: %f\n", currentScene->objects[i]->scriptData[s]->data[t].data.f);
+                    printf("is float: %f\n", var->data.f);
                 }
             }
 
@@ -1000,7 +1003,7 @@ void ManageSceneUI()
                 objectPackageCount++;
             }
 
-            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount  + objectPackageCount;
+            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + objectPackageCount;
             if (modulePage >= scriptCount)
             {
                 modulePage = 0;
@@ -1028,13 +1031,16 @@ void ManageSceneUI()
 
                 for (int i = 0; i < scriptVariables; i++)
                 {
-                    passVars[i] = &currentScene->objects[currentObject]->scriptData[scriptIndex]->data[i];
+
+                    EngineVar *var = (EngineVar *)ListGetIndex(&currentScene->objects[currentObject]->scriptData[scriptIndex]->variables, i);
+
+                    passVars[i] = var;
 
                     printf("passing data: %s\n", passVars[i]->name);
 
                     if (passVars[i]->currentType == TYPE_FLOAT)
                     {
-                        printf("is float: %f\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->data[i].data.f);
+                        printf("is float: %f\n", var->data.f);
                     }
                     else
                     {
@@ -1369,7 +1375,7 @@ void ManageSceneUI()
                                     }
                                     if (EqualType(inputLink->link, output, TYPE_OBJ))
                                     {
-                                        inputLink->link->data.objID = output->data.objID;
+                                        inputLink->link->data.objIndex = output->data.objIndex;
                                     }
                                 }
                                 free(output);
@@ -1422,6 +1428,8 @@ void ManageSceneUI()
                     {
                         currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount] = ScriptDataConstructor(&scripts[script]);
                         currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->linkedObject = currentScene->objects[currentObject];
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->objectIndex = currentObject;
+                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->scriptIndex = currentScene->objects[currentObject]->scriptCount;
                         currentScene->objects[currentObject]->scriptIndexes[currentScene->objects[currentObject]->scriptCount] = script;
                         // Function prototypes
                         uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -1435,7 +1443,7 @@ void ManageSceneUI()
 
                         for (int t = 0; t < currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variableCount; t++)
                         {
-                            printf("set scr variable out: %s\n", currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->data[t].name);
+                            printf("set scr variable out: %s\n", ((EngineVar *)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
                         }
 
                         if (errorNum != 0)
@@ -1519,7 +1527,7 @@ void ManageSceneUI()
                 if (name != NULL)
                 {
                     print("adding obj");
-                    currentScene->objects[currentScene->objectCount] = ObjectConstructor(0, name, strlen(name));
+                    currentScene->objects[currentScene->objectCount] = ObjectConstructor(currentScene->objectCount, name, strlen(name));
                     currentScene->objectCount++;
                     free(name);
                 }
@@ -1839,16 +1847,16 @@ void SceneMenu()
                     if (sceneName != NULL)
                     {
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
-                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Camera", strlen("Camera"));
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Camera", strlen("Camera"));
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
 
                         scenes[index].objectCount++;
 
-                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(0, "Object1", strlen("Object1"));
+                        scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Object1", strlen("Object1"));
                         scenes[index].objectCount++;
-
+                        sceneIndex = index;
                         EditScene(index);
                     }
                     free(sceneName);
@@ -1856,6 +1864,7 @@ void SceneMenu()
                 else
                 {
                     int index = SelectScene();
+                    sceneIndex = index;
                     printf("sceneNumber: %d\n", index);
                     if (index != -1)
                     {
@@ -1940,7 +1949,7 @@ void GameRenderThread()
             }
             SmartShow();
 
-            print("........ CORE 1 FINISHED RENDER");
+            debugPrintf("........ CORE 1 FINISHED RENDER");
 
             multicore_fifo_push_blocking(RENDERER_READY);
         }
@@ -1999,11 +2008,12 @@ uint32_t RunProgram()
             scrData->backupVarCount = scrData->variableCount;
             for (int var = 0; var < scrData->variableCount; var++)
             {
+                EngineVar *varPointer = (EngineVar *)ListGetIndex(&scrData->variables, var);
                 printf("backup: %d\n", var);
-                strcpy(scrData->backupData[var].name, scrData->data[var].name);
-                scrData->backupData[var].currentType = scrData->data[var].currentType;
+                strcpy(scrData->backupData[var].name, varPointer->name);
+                scrData->backupData[var].currentType = varPointer->currentType;
 
-                scrData->backupData[var].data = scrData->data[var].data;
+                scrData->backupData[var].data = varPointer->data;
             }
             print("backed up!");
         }
@@ -2052,7 +2062,7 @@ uint32_t RunProgram()
 
             GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x *= multiplier;
             GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y *= multiplier;
-            //print("modified velocity");
+            // print("modified velocity");
         }
 
         // print("showed");
@@ -2072,8 +2082,10 @@ uint32_t RunProgram()
 
             for (int scr = 0; scr < testCount; scr++)
             {
-                currentScene->objects[obj]->scriptData[scr]->currentLine = 0;
-                while (currentScene->objects[obj]->scriptData[scr]->currentLine < currentScene->objects[obj]->scriptData[scr]->lineCount)
+                char funcName[32] = "main";
+                JumpToFunction(currentScene->objects[obj]->scriptData[scr], funcName);
+
+                while (currentScene->objects[obj]->scriptData[scr]->instructionStack.count > 0)
                 {
                     uint32_t errorNum = ExecuteLine(currentScene->objects[obj]->scriptData[scr]->script, currentScene->objects[obj]->scriptData[scr]);
                     uint16_t error = UnpackErrorMessage(errorNum);
@@ -2086,6 +2098,8 @@ uint32_t RunProgram()
                     }
                     FreeString(&error);
                 }
+
+                ResetScriptData(currentScene->objects[obj]->scriptData[scr]);
             }
         }
 
@@ -2129,11 +2143,13 @@ uint32_t RunProgram()
             }
 
             multicore_fifo_push_blocking(START_RENDER);
-        } else {
-            print(".... MULTI STEPPING PROGRAM");
+        }
+        else
+        {
+            debugPrintf(".... MULTI STEPPING PROGRAM");
         }
 
-        //print("/////////////////////////////////////////////////////////////////////// EXIT");
+        // print("/////////////////////////////////////////////////////////////////////// EXIT");
 
         if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
         {
@@ -2141,7 +2157,8 @@ uint32_t RunProgram()
             if (millis() - exitHoldTime > 2000)
             {
                 int flag = multicore_fifo_pop_blocking();
-                while(flag != RENDERER_READY){
+                while (flag != RENDERER_READY)
+                {
                     flag = multicore_fifo_pop_blocking();
                 }
                 multicore_fifo_push_blocking(EXIT_RENDERER);
@@ -2164,10 +2181,11 @@ uint32_t RunProgram()
             scrData->variableCount = scrData->backupVarCount;
             for (int var = 0; var < scrData->variableCount; var++)
             {
-                strcpy(scrData->data[var].name, scrData->backupData[var].name);
-                scrData->data[var].currentType = scrData->backupData[var].currentType;
+                EngineVar *varPointer = (EngineVar *)ListGetIndex(&scrData->variables, var);
+                strcpy(varPointer->name, scrData->backupData[var].name);
+                varPointer->currentType = scrData->backupData[var].currentType;
 
-                scrData->data[var].data = scrData->backupData[var].data;
+                varPointer->data = scrData->backupData[var].data;
             }
             if (scrData->variableCount > 0)
                 free(scrData->backupData);

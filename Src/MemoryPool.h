@@ -2,6 +2,7 @@
 #define MEMORY_POOL
 
 #include "EngineStructs.h"
+#include "DebugPrint.h"
 
 #define VAR_POOL_COUNT 120
 #define STRING_POOL_COUNT 400
@@ -50,7 +51,7 @@ uint16_t PoolVar(char *varName)
     strncpy(varPool[index].name, varName, 16);
     varPool[index].name[15] = '\0';
 
-    //printf("Pooled var to index: %d\n", index);
+    debugPrintf("Pooled var to index: %d\n", index);
 
     WriteBoolToByte(&varPoolFree[index / 8], true, index % 8);
 
@@ -59,7 +60,7 @@ uint16_t PoolVar(char *varName)
 
 void FreeVar(uint16_t *index)
 {
-    //printf("Freed var from pool: %d\n",*index);
+    debugPrintf("Freed var from pool: %d\n", *index);
     WriteBoolToByte(&varPoolFree[*index / 8], false, *index % 8);
     *index = NULL_POOL;
 }
@@ -80,9 +81,9 @@ uint16_t PoolString()
         isFilled = BoolFromByte(stringPoolFree[index / 8], index % 8);
     }
 
-    stringPool[index][0] = '\0';
+    memset(stringPool[index],0,sizeof(stringPool[index]));
 
-   // printf("Pooled string to index: %d\n", index);
+    debugPrintf("Pooled string to index: %d\n", (int)index);
 
     WriteBoolToByte(&stringPoolFree[index / 8], true, index % 8);
 
@@ -91,7 +92,9 @@ uint16_t PoolString()
 
 void FreeString(uint16_t *index)
 {
-    //printf("Freed string from pool: %d\n",*index);
+    if (*index == NULL_POOL)
+        return;
+    debugPrintf("Freed string from pool: %d\n", *index);
     WriteBoolToByte(&stringPoolFree[*index / 8], false, *index % 8);
     *index = NULL_POOL;
 }
