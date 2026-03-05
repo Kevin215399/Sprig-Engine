@@ -351,12 +351,11 @@ EngineObject *DeserializeObject(char *serializedObject)
     objectOut->name[15] = '\0';
 
     objectOut->scriptCount = scriptCount;
-    objectOut->colliderCount = 0;
 
     objectOut->objectDataCount = 0;
     objectOut->objectDataTail = NULL;
 
-    objectOut->colliderBoxes = NULL;
+    InitializeList(&objectOut->colliderRects);
 
     for (int i = 0; i < dataCount; i++)
     {
@@ -443,7 +442,7 @@ void SaveProject(File *file)
         bufferIndex = 0;
     }
 
-    int blockChange = spriteCount+1;
+    int blockChange = spriteCount + 1;
 
     file->startBlock -= blockChange;
 
@@ -543,8 +542,10 @@ void ClearProject()
             }
 
             print("clear colliders");
-            if (scenes[s].objects[o]->colliderBoxes != NULL)
-                free(scenes[s].objects[o]->colliderBoxes);
+            while (scenes[s].objects[o]->colliderRects.count > 0)
+            {
+                free(PopList(&scenes[s].objects[o]->colliderRects));
+            }
             print("clear object");
 
             free(scenes[s].objects[o]);

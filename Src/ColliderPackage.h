@@ -12,295 +12,80 @@
 #define STATIC 0
 #define DYNAMIC 1
 
-
 #include "DebugPrint.h"
 
 typedef struct Rect
 {
-    Vector2 topLeft;
-    Vector2 scale;
-    struct Rect *previous;
-    struct Rect *next;
+    Vector2 localCenter;
+    Vector2 globalCenter;
+    Vector2 localScale;
+    Vector2 globalScale;
 
-    EngineObject *link;
-
-    uint16_t ID;
+    float angle;
+    EngineObject* link;
 } Rect;
-
-typedef struct RectReferer
-{
-
-    Rect *ref;
-
-    struct RectReferer *previous;
-    struct RectReferer *next;
-} RectReferer;
-
-Vector2 cellSize;
 
 typedef struct Cell
 {
-    Vector2 topleft;
-
-    RectReferer *rectsWithinCell;
-    uint16_t rectCount;
-
-    struct Cell *previous;
-    struct Cell *next;
+    Vector2 topLeft;
+    GeneralList rectsWithin;
 } Cell;
 
-Cell *cells = NULL;
-uint16_t cellCount = 0;
+GeneralList allColliders;
+GeneralList cells;
 
-Rect *colliderRects = NULL;
-uint16_t rectCount = 0;
 
-#define FLOAT_DIGITS 4
+#define CELL_SIZE_X 8
+#define CELL_SIZE_Y 8
 
-/////////////////////////// RECT HELPERS //////////////////////
+//////////////////////////////// HELPER FUNCTIONS
 
 float TruncateFloat(float value, int digits)
 {
     return floor(value * pow(10, digits)) / pow(10, digits);
 }
 
-#pragma region
-uint16_t NewRect(int x, int y, int w, int h, Rect **rectTail, uint16_t *count)
+//////////////////////////////// CONSTRUCTORS / SETUP
+
+Rect* NewRect(float centerX, float centerY, float scaleX, float scaleY, EngineObject* link)
 {
-    if ((*rectTail) == NULL)
-    {
-        (*rectTail) = (Rect *)malloc(sizeof(Rect));
+    Rect* output = malloc(sizeof(Rect));
+    output->localCenter.x = centerX;
+    output->localCenter.y = centerY;
+    output->localScale.x = scaleX;
+    output->localScale.y = scaleY;
 
-        (*rectTail)->previous = NULL;
-        (*rectTail)->next = NULL;
-    }
-    else
-    {
-        Rect *newRect = (Rect *)malloc(sizeof(Rect));
-        (*rectTail)->next = newRect;
-        newRect->previous = (*rectTail);
-        newRect->next = NULL;
+    output->globalCenter.x = 0;
+    output->globalCenter.y = 0;
+    output->globalScale.x = 0;
+    output->globalScale.y = 0;
 
-        (*rectTail) = newRect;
-    }
 
-    debugPrintf("new rect: %d,%d: %d,%d ID:%d\n", x, y, w, h, *count);
-
-    (*rectTail)->topLeft.x = x;
-    (*rectTail)->topLeft.y = y;
-    (*rectTail)->scale.x = w;
-    (*rectTail)->scale.y = h;
-    (*rectTail)->ID = *count;
-    return (*count)++;
-}
-
-Rect *GetRectByID(uint16_t ID, Rect *rectTail)
-{
-    Rect *currentRect = rectTail;
-    while (currentRect != NULL)
-    {
-        if (currentRect->ID == ID)
-        {
-            return currentRect;
-        }
-        currentRect = currentRect->previous;
-    }
-    return NULL;
-}
-
-void DeleteRect(uint16_t ID, Rect *rectTail)
-{
-    Rect *rectToDelete = GetRectByID(ID, rectTail);
-
-    rectToDelete->previous->next = rectToDelete->previous;
-    rectToDelete->next->previous = rectToDelete->previous;
-
-    rectToDelete->next = NULL;
-    rectToDelete->previous = NULL;
-    free(rectToDelete);
-}
-
-void ClearAllRects(Rect **rectTail, uint16_t *count)
-{
-    if (*count == 0)
-    {
-        return;
-    }
-    Rect *currentRect = *rectTail;
-    while (currentRect->previous != NULL)
-    {
-        currentRect = currentRect->previous;
-        free(currentRect->next);
-        currentRect->next = NULL;
-    }
-    free(currentRect);
-    *count = 0;
-    *rectTail = NULL;
-}
-#pragma endregion
-
-/////////////////////////// RECT REFERER HELPERS //////////////////////
-#pragma region
-uint16_t NewRectReferer(Rect *ref, Cell *cell)
-{
-    if (cell->rectsWithinCell == NULL)
-    {
-        cell->rectsWithinCell = (RectReferer *)malloc(sizeof(RectReferer));
-
-        cell->rectsWithinCell->previous = NULL;
-        cell->rectsWithinCell->next = NULL;
-    }
-    else
-    {
-        RectReferer *newRect = (RectReferer *)malloc(sizeof(RectReferer));
-        cell->rectsWithinCell->next = newRect;
-        newRect->previous = cell->rectsWithinCell;
-        newRect->next = NULL;
-
-        cell->rectsWithinCell = newRect;
-    }
-
-    cell->rectsWithinCell->ref = ref;
-    debugPrintf("new referer: %d\n", ref->ID);
-    return cell->rectCount++;
-}
-
-RectReferer *GetRectRefererInCell(int index, Cell *cell)
-{
-    RectReferer *currentCell = cell->rectsWithinCell;
-    for (int i = 0; i < index; i++)
-    {
-        currentCell = currentCell->previous;
-        if (currentCell == NULL)
-        {
-            return NULL;
-        }
-    }
-    return currentCell;
-}
-
-void ClearRectReferersInCell(Cell *cell)
-{
-    RectReferer *currentCell = cell->rectsWithinCell;
-    if (currentCell == NULL)
-    {
-        cell->rectCount = 0;
-        return;
-    }
-    while (currentCell->previous != NULL)
-    {
-        currentCell = currentCell->previous;
-        free(currentCell->next);
-        currentCell->next = NULL;
-    }
-    free(currentCell);
-    cell->rectCount = 0;
-    cell->rectsWithinCell = NULL;
-}
-#pragma endregion
-
-/////////////////////////// CELL HELPERS //////////////////////
-#pragma region
-uint16_t NewCell(int x, int y, Cell **cellTail)
-{
-    if ((*cellTail) == NULL)
-    {
-        (*cellTail) = (Cell *)malloc(sizeof(Cell));
-
-        (*cellTail)->previous = NULL;
-        (*cellTail)->next = NULL;
-    }
-    else
-    {
-        Cell *newRect = (Cell *)malloc(sizeof(Cell));
-        (*cellTail)->next = newRect;
-        newRect->previous = (*cellTail);
-        newRect->next = NULL;
-
-        (*cellTail) = newRect;
-    }
-
-    debugPrintf("new cell: %d,%d\n", x, y);
-
-    (*cellTail)->topleft.x = x;
-    (*cellTail)->topleft.y = y;
-
-    (*cellTail)->rectsWithinCell = NULL;
-    (*cellTail)->rectCount = 0;
-
-    return cellCount++;
-}
-
-Cell *GetCellByPosition(int x, int y, Cell *cellTail)
-{
-    debugPrint("GETTING CELL BY POS");
-    if (cellTail == NULL)
-    {
-        debugPrint("not found, null");
-        return NULL;
-    }
-    Cell *currentCell = cellTail;
-    while (currentCell != NULL)
-    {
-        float a = TruncateFloat(currentCell->topleft.x, FLOAT_DIGITS);
-        float b = TruncateFloat(currentCell->topleft.y, FLOAT_DIGITS);
-        // debugPrintf("pos: %f, %f\n", a, b);
-        if (a == x && b == y)
-        {
-            return currentCell;
-        }
-        currentCell = currentCell->previous;
-    }
-    debugPrint("not found");
-    return NULL;
-}
-
-Cell *GetCellByIndex(int index, Cell *cellTail)
-{
-    Cell *currentCell = cellTail;
-    for (int i = 0; i < index; i++)
-    {
-        currentCell = currentCell->previous;
-        if (currentCell == NULL)
-        {
-            return NULL;
-        }
-    }
-    return currentCell;
-}
-
-void ClearAllCells(Cell **cellTail)
-{
-    Cell *currentCell = *cellTail;
-    while (currentCell->previous != NULL)
-    {
-        currentCell = currentCell->previous;
-        free(currentCell->next);
-        currentCell->next = NULL;
-    }
-    free(currentCell);
-    cellCount = 0;
-    *cellTail = NULL;
-}
-#pragma endregion
-
-Rect RectToWorld(Rect *rect)
-{
-    Rect output;
-    output.topLeft.x = (rect->topLeft.x) * GetObjectDataByName(rect->link, "scale")->data.XY.x + GetObjectDataByName(rect->link, "position")->data.XY.x;
-    output.topLeft.y = (rect->topLeft.y) * GetObjectDataByName(rect->link, "scale")->data.XY.y + GetObjectDataByName(rect->link, "position")->data.XY.y;
-
-    output.scale.x = rect->scale.x * GetObjectDataByName(rect->link, "scale")->data.XY.x;
-    output.scale.y = rect->scale.y * GetObjectDataByName(rect->link, "scale")->data.XY.x;
-
+    output->link = link;
     return output;
 }
 
-// Converts a shape into a series of rectangles. Efficient, but CPU heavy
-uint8_t SpriteToMesh(EngineSprite *sprite)
+Cell* NewCell(float topLeftx, float topLefty)
 {
-    uint8_t rectsInMesh = 0;
+    Cell* output = malloc(sizeof(Cell));
+    output->topLeft.x = topLeftx;
+    output->topLeft.y = topLefty;
+    InitializeList(&output->rectsWithin);
+    return output;
+}
+
+void SetupCollisionPackage()
+{
+    InitializeList(&cells);
+    InitializeList(&allColliders);
+}
+
+// Converts a shape into a series of rectangles. Efficient, but CPU heavy
+void AddMeshToObject(EngineObject* object)
+{
     bool renderedPixels[SPRITE_WIDTH][SPRITE_HEIGHT];
+
+    EngineSprite* sprite = &sprites[GetObjectDataByName(object, "sprite")->data.i];
 
     for (int x = 0; x < SPRITE_WIDTH; x++)
         for (int y = 0; y < SPRITE_HEIGHT; y++)
@@ -358,368 +143,382 @@ uint8_t SpriteToMesh(EngineSprite *sprite)
                 }
             }
 
-            NewRect(x - SPRITE_WIDTH / 2, -y + SPRITE_HEIGHT / 2, width, height, &colliderRects, &rectCount);
-            debugPrintf("rect count: %d\n", rectCount);
-            rectsInMesh++;
+            uint16_t* rectID = malloc(sizeof(uint16_t));
+            *rectID = allColliders.count;
+            PushList(&object->colliderRects, rectID);
+
+            PushList(&allColliders, NewRect((float)x - (float)SPRITE_WIDTH / 2 + (float)width / 2, -(float)y + (float)SPRITE_HEIGHT / 2 - (float)height / 2, width, height, object));
+
+            debugPrintf("rect count: %d\n", allColliders.count);
+        }
+    }
+}
+
+float ProjectPoint(Vector2 point, float slope) {
+    return slope * point.x - point.y;
+}
+
+float Min4(float a, float b, float c, float d) {
+    return min(min(a, b), min(c, d));
+}
+float Max4(float a, float b, float c, float d) {
+    return max(max(a, b), max(c, d));
+}
+
+// rotates a point around a point in degrees
+Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
+{
+    Vector2 output;
+
+    angle *= (3.1415 / 180);
+
+    output.x = pivot.x + (point.x - pivot.x) * cos(angle) - (point.y - pivot.y) * sin(angle);
+    output.y = pivot.y + (point.x - pivot.x) * sin(angle) + (point.y - pivot.y) * cos(angle);
+
+    return output;
+}
+
+//Returns true if they are overlapping
+bool SATWithSlope(Rect* rectA, Rect* rectB, float slope, bool isVertical) {
+
+    //first 4 points = rect a, rest = rect b
+    float projectedPoints[8];
+
+
+    Vector2 point;
+    Vector2 pivot;
+
+    pivot.x = rectA->globalCenter.x;
+    pivot.y = rectA->globalCenter.y;
+
+    for (int p = 0; p < 8; p++) {
+        //once the second rect is reached, change pivot
+        if (p == 4) {
+            pivot.x = rectB->globalCenter.x;
+            pivot.y = rectB->globalCenter.y;
+        }
+
+        Rect* currentRect;
+
+        if (p < 4) {
+            currentRect = rectA;
+        }
+        else {
+            currentRect = rectB;
+        }
+
+        point.x = currentRect->globalCenter.x + (p % 2 == 0 ? 1 : -1) * (currentRect->globalScale.x / 2);
+        point.y = currentRect->globalCenter.y + (p % 4 < 2 ? 1 : -1) * (currentRect->globalScale.y / 2);
+
+        point = RotatePoint(point, pivot, currentRect->angle);
+
+        if (!isVertical)
+            projectedPoints[p] = ProjectPoint(point, slope);
+        else
+            projectedPoints[p] = point.y;
+    }
+    for (int i = 0; i < 8; i++) {
+        debugPrintf("SAT POINTS: %f\n", projectedPoints[i]);
+    }
+
+    float aMin = Min4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
+    float aMax = Max4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
+
+    float bMin = Min4(projectedPoints[4], projectedPoints[5], projectedPoints[6], projectedPoints[7]);
+    float bMax = Max4(projectedPoints[4], projectedPoints[5], projectedPoints[6], projectedPoints[7]);
+
+    if (aMin < bMax &&
+        aMax > bMin)
+        return true;
+
+    return false;
+}
+
+// returns true if the rects are colliding
+bool SATRects(Rect* rectA, Rect* rectB)
+{
+    float slope;
+    Vector2 point1;
+    Vector2 point2;
+
+    for (int i = 0; i < 8; i++) {
+        Rect* currentRect;
+        if (i < 4) {
+            currentRect = rectA;
+        }
+        else {
+            currentRect = rectB;
+        }
+        /*
+        i  x y
+        0: 1 1
+        1: 1 0
+        2: 0 0
+        3: 0 1
+        */
+
+        point1.x = currentRect->globalCenter.x + (i % 4 < 2 ? 1 : -1) * (currentRect->globalScale.x / 2);
+        point1.y = currentRect->globalCenter.y + ((i % 4 == 0 || i % 4 == 3) ? 1 : -1) * (currentRect->globalScale.y / 2);
+
+        point2.x = currentRect->globalCenter.x + ((i + 1) % 4 < 2 ? 1 : -1) * (currentRect->globalScale.x / 2);
+        point2.y = currentRect->globalCenter.y + (((i + 1) % 4 == 0 || (i + 1) % 4 == 3) ? 1 : -1) * (currentRect->globalScale.y / 2);
+
+        point1 = RotatePoint(point1, currentRect->globalCenter, currentRect->angle);
+        point2 = RotatePoint(point2, currentRect->globalCenter, currentRect->angle);
+
+        debugPrintf("slope point 1 (%f,%f)\n", point1.x, point1.y);
+        debugPrintf("slope point 2 (%f,%f)\n", point2.x, point2.y);
+
+
+        //If Ys are equal (horizontal) then use vertical line (opposite)
+        if (point2.y == point1.y) {
+            debugPrint("vertical line");
+            if (!SATWithSlope(rectA, rectB, 0, true)) {
+                debugPrint("SAT done, result: not collide");
+                return false;
+            }
+        }
+        //If Xs are equal (Vertical) then use horizontal line (opposite)
+        else if (point2.x == point1.x) {
+            debugPrint("horizontal line");
+            if (!SATWithSlope(rectA, rectB, 0, false)) {
+                debugPrint("SAT done, result: not collide");
+                return false;
+            }
+        }
+        // otherwise use reciprocal slope
+        else {
+            float slope = (point2.y - point1.y) / (point2.x - point1.x);
+            debugPrintf("slope: %f\n", slope);
+            if (!SATWithSlope(rectA, rectB, slope, false)) {
+                debugPrint("SAT done, result: not collide");
+                return false;
+            }
+        }
+        debugPrint("collide");
+    }
+    debugPrint("SAT done, result: collide");
+    return true;
+}
+
+
+
+Vector2 NearestCell(Vector2 input)
+{
+    Vector2 out;
+    out.x = floor(input.x / CELL_SIZE_X) * CELL_SIZE_X;
+    out.y = ceil(input.y / CELL_SIZE_Y) * CELL_SIZE_Y;
+    return out;
+}
+
+int FindCellFromPosition(Vector2 position)
+{
+    for (int i = 0; i < cells.count; i++)
+    {
+        Cell* currentCell = (Cell*)ListGetIndex(&cells, i);
+        if (currentCell->topLeft.x == position.x && currentCell->topLeft.y == position.y)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+bool DoesCellContainRect(Cell* cell, Rect* rect)
+{
+    for (int i = 0; i < cell->rectsWithin.count; i++)
+    {
+        Rect* currentRect = ListGetIndex(&cell->rectsWithin, i);
+        if (currentRect == rect)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void FreeCells() {
+    while (cells.count > 0) {
+        Cell* cell = PopList(&cells);
+        while (cell->rectsWithin.count > 0) {
+            PopList(&cell->rectsWithin);
+        }
+        free(cell);
+    }
+}
+
+void ColliderStep()
+{
+    debugPrint("collider step");
+    FreeCells();
+
+
+    for (int i = 0; i < allColliders.count; i++)
+    {
+        // convert rect data to world
+
+        Rect* currentRect = (Rect*)ListGetIndex(&allColliders, i);
+
+        currentRect->globalCenter.x = (currentRect->localCenter.x) * GetObjectDataByName(currentRect->link, "scale")->data.XY.x * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.x + GetObjectDataByName(currentRect->link, "position")->data.XY.x;
+        currentRect->globalCenter.y = (currentRect->localCenter.y) * GetObjectDataByName(currentRect->link, "scale")->data.XY.y * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.y + GetObjectDataByName(currentRect->link, "position")->data.XY.y;
+
+        currentRect->globalScale.x = currentRect->localScale.x * GetObjectDataByName(currentRect->link, "scale")->data.XY.x * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.x;
+        currentRect->globalScale.y = currentRect->localScale.y * GetObjectDataByName(currentRect->link, "scale")->data.XY.y * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.y;
+
+        currentRect->angle = GetObjectDataByName(currentRect->link, "angle")->data.f;
+
+        // Create cells
+
+        Vector2 point;
+        Vector2 pivot;
+
+        pivot.x = currentRect->globalCenter.x;
+        pivot.y = currentRect->globalCenter.y;
+
+        debugPrintf("rect center: %f,%f\n", currentRect->globalCenter.x, currentRect->globalCenter.y);
+
+        Vector2 topLeft;
+        Vector2 bottomRight;
+
+        for (int x = 0; x < 4; x++)
+        {
+            point.x = currentRect->globalCenter.x + (x % 2 == 0 ? 1 : -1) * (currentRect->globalScale.x / 2);
+            point.y = currentRect->globalCenter.y + (x < 2 ? 1 : -1) * (currentRect->globalScale.y / 2);
+
+            debugPrintf("point after rot: (%f,%f)\n", RotatePoint(point, pivot, currentRect->angle).x, RotatePoint(point, pivot, currentRect->angle).y);
+
+            Vector2 cellPos = NearestCell(RotatePoint(point, pivot, currentRect->angle));
+
+            if (x == 0 || cellPos.x < topLeft.x) {
+                topLeft.x = cellPos.x;
+            }
+            if (x == 0 || cellPos.y > topLeft.y) {
+                topLeft.y = cellPos.y;
+            }
+            if (x == 0 || cellPos.x > bottomRight.x) {
+                bottomRight.x = cellPos.x;
+            }
+            if (x == 0 || cellPos.y < bottomRight.y) {
+                bottomRight.y = cellPos.y;
+            }
+        }
+        debugPrintf("topLeft: (%f,%f)\n", topLeft.x, topLeft.y);
+        debugPrintf("bottomRight: (%f,%f)\n", bottomRight.x, bottomRight.y);
+
+        for (int x = topLeft.x; x <= bottomRight.x; x += CELL_SIZE_X)
+        {
+            for (int y = bottomRight.y; y <= topLeft.y; y += CELL_SIZE_Y)
+            {
+                Vector2 cellPos;
+                cellPos.x = x;
+                cellPos.y = y;
+
+                if (FindCellFromPosition(cellPos) == -1)
+                {
+                    debugPrintf("new cell: (%f,%f)\n", cellPos.x, cellPos.y);
+                    Cell* newCell = NewCell(cellPos.x, cellPos.y);
+                    PushList(&cells, newCell);
+                    PushList(&newCell->rectsWithin, currentRect);
+                }
+                else
+                {
+                    debugPrintf("cell exists!!!: (%f,%f)\n", cellPos.x, cellPos.y);
+                    Cell* cell = (Cell*)ListGetIndex(&cells, FindCellFromPosition(cellPos));
+                    if (!DoesCellContainRect(cell, currentRect)) {
+                        PushList(&cell->rectsWithin, currentRect);
+                    }
+                }
+            }
         }
     }
 
-    return rectsInMesh;
+
+    void JumpToFunction(ScriptData * scriptData, char* functionName);
+
+    for (int cellIndex = 0; cellIndex < cells.count; cellIndex++) {
+        Cell* cell = ListGetIndex(&cells, cellIndex);
+        for (int indexA = 0; indexA < cell->rectsWithin.count; indexA++) {
+            for (int indexB = indexA + 1; indexB < cell->rectsWithin.count; indexB++) {
+                Rect* rectA = ListGetIndex(&cell->rectsWithin, indexA);
+                Rect* rectB = ListGetIndex(&cell->rectsWithin, indexB);
+                if (rectA->link == rectB->link)
+                    continue;
+                if (SATRects(rectA, rectB)) {
+                    for (int s = 0; s < rectA->link->scriptCount; s++) {
+                        JumpToFunction(rectA->link->scriptData[s], "Collision");
+                    }
+                    for (int s = 0; s < rectB->link->scriptCount; s++) {
+                        JumpToFunction(rectB->link->scriptData[s], "Collision");
+                    }
+                }
+            }
+        }
+    }
+
+    FreeCells();
 }
 
-void RecalculateObjectColliders(EngineObject *object)
+void RecalculateObjectColliders(EngineObject* object)
 {
-    if (object->colliderCount > 0)
+    while (object->colliderRects.count > 0)
     {
-        for (int i = 0; i < object->colliderCount; i++)
-        {
-            DeleteRect(object->colliderBoxes[i], colliderRects);
-        }
-        free(object->colliderBoxes);
-        object->colliderCount = 0;
+        free(PopList(&object->colliderRects));
     }
 
     if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)
     {
-        object->colliderBoxes = (uint16_t *)malloc(sizeof(uint16_t));
-        object->colliderCount = 1;
+        uint16_t* rectID = malloc(sizeof(uint16_t));
+        *rectID = allColliders.count;
+        PushList(&object->colliderRects, rectID);
 
-        object->colliderBoxes[0] = NewRect(
-            -SPRITE_WIDTH / 2,
-            SPRITE_HEIGHT / 2,
-            SPRITE_WIDTH,
-            SPRITE_HEIGHT,
-            &colliderRects,
-            &rectCount);
-
-        GetRectByID(0, colliderRects)->link = object;
+        PushList(&allColliders,
+            NewRect(-SPRITE_WIDTH / 2,
+                SPRITE_HEIGHT / 2,
+                SPRITE_WIDTH,
+                SPRITE_HEIGHT,
+                object));
     }
     else
     {
-        uint8_t rectsInMesh = SpriteToMesh(&sprites[GetObjectDataByName(object, "sprite")->data.i]);
-
-        uint16_t *mesh = (uint16_t *)malloc(sizeof(uint16_t) * rectsInMesh);
-        for (int i = 0; i < rectsInMesh; i++)
-        {
-            mesh[i] = rectCount - rectsInMesh + i;
-            GetRectByID(rectCount - rectsInMesh + i, colliderRects)->link = object;
-        }
-
-        object->colliderBoxes = mesh;
-        object->colliderCount = rectsInMesh;
+        AddMeshToObject(object);
     }
 }
 
-void AddColliderToObject(EngineObject *object, uint16_t meshTypeSet, bool calculateColliders, float bounceSet)
+void AddColliderToObject(EngineObject* object, uint16_t meshTypeSet, bool calculateColliders, float bounceSet)
 {
     object->packages[0] = true;
 
-    EngineVar *center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR, true);
+    EngineVar* center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR, true);
     center->data.XY.x = 0;
     center->data.XY.y = 0;
     AddDataToObject(object, center);
 
-    EngineVar *size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR, true);
+    EngineVar* size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR, true);
     size->data.XY.x = 1;
     size->data.XY.y = 1;
     AddDataToObject(object, size);
 
-    EngineVar *meshType = VarConstructor("meshType", strlen("meshType"), TYPE_INT, true);
+    EngineVar* meshType = VarConstructor("meshType", strlen("meshType"), TYPE_INT, true);
     meshType->data.i = meshTypeSet;
     AddDataToObject(object, meshType);
 
-    EngineVar *collisionType = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT, true);
+    EngineVar* collisionType = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT, true);
     collisionType->data.i = DYNAMIC;
     AddDataToObject(object, collisionType);
 
-    EngineVar *mass = VarConstructor("mass", strlen("mass"), TYPE_INT, true);
+    EngineVar* mass = VarConstructor("mass", strlen("mass"), TYPE_INT, true);
     mass->data.i = 1;
     AddDataToObject(object, mass);
 
-    EngineVar *sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT, true);
+    EngineVar* sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT, true);
     sprite->data.i = GetObjectDataByName(object, "sprite")->data.i;
     AddDataToObject(object, sprite);
 
-    EngineVar *bounce = VarConstructor("bounce", strlen("bounce"), TYPE_FLOAT, true);
+    EngineVar* bounce = VarConstructor("bounce", strlen("bounce"), TYPE_FLOAT, true);
     bounce->data.f = bounceSet;
     AddDataToObject(object, bounce);
 
     if (calculateColliders)
         RecalculateObjectColliders(object);
 }
-
-void AverageCellSize()
-{
-    cellSize.x = 0;
-    cellSize.y = 0;
-    Rect *currentRect = colliderRects;
-    while (currentRect != NULL)
-    {
-        debugPrintf("added rect (%f,%f)\n", RectToWorld(currentRect).scale.x, RectToWorld(currentRect).scale.y);
-        cellSize.x += RectToWorld(currentRect).scale.x;
-        cellSize.y += RectToWorld(currentRect).scale.y;
-        currentRect = currentRect->previous;
-    }
-    cellSize.x /= rectCount;
-    cellSize.y /= rectCount;
-
-    debugPrintf("cell size averaged: (%f,%f)\n", cellSize.x, cellSize.y);
-}
-
-Vector2 NearestCell(int x, int y)
-{
-    Vector2 out;
-    out.x = floor(x / cellSize.x) * cellSize.x;
-    out.y = ceil(y / cellSize.y) * cellSize.y;
-    return out;
-}
-
-void CreateCells()
-{
-    Rect *currentRect = colliderRects;
-    while (currentRect != NULL)
-    {
-
-        Rect worldRect = RectToWorld(currentRect);
-
-        Vector2 leftTopCell = NearestCell(worldRect.topLeft.x, worldRect.topLeft.y);
-        Vector2 rightTopCell = NearestCell(worldRect.topLeft.x + worldRect.scale.x, worldRect.topLeft.y);
-        Vector2 leftBottomCell = NearestCell(worldRect.topLeft.x, worldRect.topLeft.y - worldRect.scale.y);
-        Vector2 rightBottomCell = NearestCell(worldRect.topLeft.x + worldRect.scale.x, worldRect.topLeft.y - worldRect.scale.y);
-
-        for (float x = leftBottomCell.x; x <= rightTopCell.x; x += cellSize.x)
-        {
-            for (float y = leftBottomCell.y; y <= rightTopCell.y; y += cellSize.y)
-            {
-                debugPrintf("rect point(%f,%f)\n", x, y);
-
-                if (GetCellByPosition(x, y, cells) == NULL)
-                {
-                    NewCell(x, y, &cells);
-                }
-
-                NewRectReferer(currentRect, GetCellByPosition(x, y, cells));
-                debugPrint("added rect to cell");
-            }
-        }
-
-        currentRect = currentRect->previous;
-    }
-    debugPrint("cells created");
-}
-
-bool AABB(Rect *a, Rect *b)
-{
-    Rect worldA = RectToWorld(a);
-    Rect worldB = RectToWorld(b);
-
-    if (worldA.topLeft.x < worldB.topLeft.x + worldB.scale.x &&
-        worldA.topLeft.x + worldA.scale.x > worldB.topLeft.x &&
-        worldA.topLeft.y > worldB.topLeft.y - worldB.scale.y &&
-        worldA.topLeft.y - worldA.scale.y < worldB.topLeft.y)
-        return true;
-    return false;
-}
-
-void ResolveCollision(Rect *a, Rect *b)
-{
-    float aForce = 0;
-    float bForce = 0;
-
-    float massA = (float)GetObjectDataByName(a->link, "mass")->data.i;
-    float massB = (float)GetObjectDataByName(b->link, "mass")->data.i;
-
-    int typeA = GetObjectDataByName(a->link, "colliderType")->data.i;
-    int typeB = GetObjectDataByName(b->link, "colliderType")->data.i;
-
-    if (typeA == STATIC)
-    {
-        aForce = 0;
-    }
-    else if (typeA == DYNAMIC)
-    {
-        if (typeB == STATIC)
-            aForce = 1;
-        else
-            aForce = massB / (massA + massB);
-    }
-
-    if (typeB == STATIC)
-    {
-        bForce = 0;
-    }
-    else if (typeB == DYNAMIC)
-    {
-        if (typeA == STATIC)
-            bForce = 1;
-        else
-            bForce = massA / (massA + massB);
-    }
-
-    debugPrintf("aForce: %f\n", aForce);
-    debugPrintf("bForce: %f\n", bForce);
-
-    if (aForce == 0 && bForce == 0)
-    {
-        return;
-    }
-
-    /*Vector2 COMA;
-    Vector2 count;
-    for (int i = 0; i < a->link->colliderCount; i++)
-    {
-        Rect worldRect = RectToWorld(GetRectByID(a->link->colliderBoxes[i], colliderRects));
-        COMA.x += (worldRect.topLeft.x + worldRect.scale.x / 2) * worldRect.scale.x;
-        count.x += worldRect.scale.x;
-
-        COMA.y += (worldRect.topLeft.y + worldRect.scale.y / 2) * worldRect.scale.y;
-        count.y += worldRect.scale.y;
-    }*/
-
-    Rect worldA = RectToWorld(a);
-    debugPrintf("a pos: (%f,%f)\n", worldA.topLeft.x, worldA.topLeft.y);
-
-    Rect worldB = RectToWorld(b);
-    debugPrintf("b pos: (%f,%f)\n", worldB.topLeft.x, worldB.topLeft.y);
-
-    int direction = 0;
-    int costs[4];
-
-    costs[0] = abs((worldB.topLeft.y + worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
-    costs[2] = abs((worldB.topLeft.y - worldB.scale.y - worldA.scale.y / 2) - (worldA.topLeft.y - worldA.scale.y / 2));
-
-    debugPrint("calculated y costs");
-
-    costs[1] = abs((worldB.topLeft.x + worldB.scale.x + worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
-    costs[3] = abs((worldB.topLeft.x - worldA.scale.x / 2) - (worldA.topLeft.x + worldA.scale.x / 2));
-
-    debugPrint("calculated x costs");
-
-    int lowestCost = -1;
-    for (int i = 0; i < 4; i++)
-    {
-        debugPrintf("check dir %d: %d, lowest: %d\n", i, costs[i], lowestCost);
-        if (lowestCost == -1 || costs[i] < lowestCost)
-        {
-            direction = i;
-            lowestCost = costs[i];
-        }
-    }
-
-    debugPrintf("Direction: %d\n", direction);
-
-    EngineVar *aPos = GetObjectDataByName(a->link, "position");
-    EngineVar *bPos = GetObjectDataByName(b->link, "position");
-
-    switch (direction)
-    {
-    case 0:
-        debugPrintf("0: a-%f, b-%f\n", (float)costs[0] * aForce, -(float)costs[0] * bForce);
-        aPos->data.XY.y += (float)costs[0] * aForce;
-        bPos->data.XY.y -= (float)costs[0] * bForce;
-
-        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
-        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
-        break;
-    case 1:
-        debugPrintf("1: a-%f, b-%f\n", (float)costs[1] * aForce, -(float)costs[1] * bForce);
-        aPos->data.XY.x += (float)costs[1] * aForce;
-        bPos->data.XY.x -= (float)costs[1] * bForce;
-
-        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
-        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
-        break;
-    case 2:
-        debugPrintf("2: a-%f, b-%f\n", -(float)costs[2] * aForce, (float)costs[2] * bForce);
-        aPos->data.XY.y -= (float)costs[2] * aForce;
-        bPos->data.XY.y += (float)costs[2] * bForce;
-
-        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
-        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
-        break;
-    case 3:
-        debugPrintf("3: a-%f, b-%f\n", -(float)costs[3] * aForce, (float)costs[3] * bForce);
-        aPos->data.XY.x -= (float)costs[3] * aForce;
-        bPos->data.XY.x += (float)costs[3] * bForce;
-
-        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
-        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
-        break;
-    }
-
-    debugPrint("resolved");
-}
-
-bool CheckCell(Cell *cell)
-{
-    if (cell->rectCount <= 1)
-    {
-        return false;
-    }
-    bool isCollision = false;
-    for (int a = 0; a < cell->rectCount; a++)
-    {
-        for (int b = a; b < cell->rectCount; b++)
-        {
-            debugPrintf("a: %d, b: %d\n", a, b);
-            if (a == b)
-            {
-                continue;
-            }
-
-            Rect *rectA = GetRectRefererInCell(a, cell)->ref;
-            Rect *rectB = GetRectRefererInCell(b, cell)->ref;
-
-            bool isCollide = AABB(rectA, rectB);
-            if (isCollide)
-            {
-                debugPrintf("hit: %d and %d\n", rectA->ID, rectB->ID);
-                ResolveCollision(rectA, rectB);
-                isCollision = true;
-            }
-        }
-    }
-
-    debugPrint("cell checked");
-    return isCollision;
-}
-
-void ColliderStep()
-{
-
-    debugPrintf("rect count: %d\n", rectCount);
-    if (rectCount == 0)
-    {
-        return;
-    }
-    AverageCellSize();
-
-    for (int x = 0; x < 5; x++)
-    {
-        bool didCollide = false;
-        debugPrintf("COLLISION ITERATION %d\n", x);
-        CreateCells();
-
-        for (int i = 0; i < cellCount; i++)
-        {
-            debugPrintf("get cell: %d\n", i);
-            Cell *cell = GetCellByIndex(i, cells);
-            if (CheckCell(cell))
-            {
-                didCollide = true;
-            }
-
-            ClearRectReferersInCell(cell);
-        }
-        ClearAllCells(&cells);
-
-        if (!didCollide)
-        {
-            break;
-        }
-    }
-
-    cells = NULL;
-}
-
 #endif

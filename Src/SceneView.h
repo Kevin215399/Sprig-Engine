@@ -298,17 +298,17 @@ void RenderScene(int offsetX, int offsetY)
                            sceneScale * scale.y,
                            (int)GetObjectDataByName(currentScene->objects[i], "angle")->data.f);
 
-        for (int x = 0; x < currentScene->objects[i]->colliderCount; x++)
+        for (int x = 0; x < currentScene->objects[i]->colliderRects.count; x++)
         {
 
-            Rect *rect = GetRectByID(currentScene->objects[i]->colliderBoxes[x], colliderRects);
-
+            Rect *rect = ListGetIndex(&currentScene->objects[i]->colliderRects, x);
+            //objectScale * cs * (topLeft + colliderCenter) + object pos
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->topLeft.x + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * -(rect->topLeft.y + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
-                sceneScale * scale.x * rect->scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x,
-                sceneScale * scale.y * rect->scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y);
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->localCenter.x - rect->localScale.x / 2 + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * -(rect->localCenter.y + rect->localScale.y / 2 + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
+                sceneScale * scale.x * rect->localScale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x,
+                sceneScale * scale.y * rect->localScale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y);
         }
     }
 
@@ -348,10 +348,15 @@ void DecompileScene()
 
 void RecompileScene()
 {
-    ClearAllRects(&colliderRects, &rectCount);
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
+        // clear all colliders from object
+        while (currentScene->objects[i]->colliderRects.count > 0)
+        {
+            free(PopList(&currentScene->objects[i]->colliderRects));
+        }
+
         for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
         {
 
@@ -1284,11 +1289,11 @@ void ManageSceneUI()
                             {
                                 if (output->currentType == TYPE_FLOAT)
                                 {
-                                    inputLink->link->data.XY.x = (int)output->data.f;
+                                    inputLink->link->data.XY.x = output->data.f;
                                 }
                                 if (output->currentType == TYPE_INT)
                                 {
-                                    inputLink->link->data.XY.x = output->data.i;
+                                    inputLink->link->data.XY.x = (float)output->data.i;
                                 }
                             }
                             free(output);
@@ -1305,11 +1310,11 @@ void ManageSceneUI()
                             {
                                 if (output->currentType == TYPE_FLOAT)
                                 {
-                                    inputLink->link->data.XY.y = (int)output->data.f;
+                                    inputLink->link->data.XY.y = output->data.f;
                                 }
                                 if (output->currentType == TYPE_INT)
                                 {
-                                    inputLink->link->data.XY.y = output->data.i;
+                                    inputLink->link->data.XY.y = (float)output->data.i;
                                 }
                             }
                             free(output);
@@ -1897,7 +1902,7 @@ void SceneMenu()
 #define RENDER_SCALE 3
 #define RENDER_ANGLE 4
 
-#define MULTI_STEP_PROGRAM 1
+#define MULTI_STEP_PROGRAM 0
 
 uint8_t cameraScale = 0;
 int cameraX = 0;
@@ -2055,9 +2060,9 @@ uint32_t RunProgram()
         {
             GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x;
             GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y;
-            /*printf("added velocity to position, %f,%d\n",
+            debugPrintf("added velocity to position, %f,%d\n",
                    GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x,
-                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y);*/
+                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y);
             float multiplier = ((float)(100 - (abs(GetObjectDataByName(currentScene->objects[i], "drag")->data.i) % 101))) / 100;
 
             GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x *= multiplier;

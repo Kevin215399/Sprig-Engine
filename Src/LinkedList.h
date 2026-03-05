@@ -201,6 +201,7 @@ void CpyList(GeneralList *to, GeneralList *from, size_t contentSize)
 
         PushList(to, cpy);
     }
+    to->count+=from->count;
 }
 
 #endif

@@ -23,7 +23,6 @@
 #define TYPE_VECTOR 5
 #define TYPE_OBJ 6
 #define TYPE_SCRIPT 7
-#define TYPE_VAR 8
 
 #define SPRITE_WIDTH 16
 #define SPRITE_HEIGHT 16
@@ -195,8 +194,8 @@ typedef struct EngineObject
     // This stores only the data required to render
     VariableUnion renderData[5];
 
-    uint8_t colliderCount;
-    uint16_t *colliderBoxes;
+
+    GeneralList colliderRects;
 
     bool packages[2];
 
@@ -478,9 +477,11 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
+
     output->objectDataCount = 0;
     output->objectDataTail = NULL;
-    output->colliderBoxes = NULL;
+
+    InitializeList(&output->colliderRects);
 
     memset(output->packages, 0, sizeof(output->packages));
 
@@ -508,7 +509,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 
     print("set data");
 
-    output->colliderCount = 0;
+    
 
     return output;
 }

@@ -51,6 +51,9 @@ uint16_t PoolVar(char *varName)
     strncpy(varPool[index].name, varName, 16);
     varPool[index].name[15] = '\0';
 
+    varPool[index].serialized = false;
+    InitializeList(&varPool[index].listData);
+
     debugPrintf("Pooled var to index: %d\n", index);
 
     WriteBoolToByte(&varPoolFree[index / 8], true, index % 8);

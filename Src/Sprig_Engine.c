@@ -48,6 +48,8 @@ int main()
     InitializeButtons();
     InitializeKeyboard();
 
+    SetupCollisionPackage();
+
     CreateNullStructs();
 
     gpio_init(SD_CS);
