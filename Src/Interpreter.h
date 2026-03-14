@@ -72,6 +72,11 @@ const char* CATEGORY_ERRORS[] = {
 
 #define UNARY_SUBTRACT 255
 
+typedef struct {
+    uint16_t line;
+    ScriptData* script;
+} InstructionPointer;
+
 typedef struct
 {
     uint8_t dataType;
@@ -159,8 +164,19 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
 };
 
+//returns an instruction struct as a pointer
+InstructionPointer* NewInstruction(uint16_t line, ScriptData* script) {
+    InstructionPointer* output = malloc(sizeof(InstructionPointer));
+    output->line = line;
+    output->script = script;
+    return output;
+}
 
+GeneralList instructionStack;
 
+void InitializeInterpreter() {
+    InitializeList(&instructionStack);
+}
 
 void InitializeLights()
 {
@@ -617,14 +633,13 @@ void GreatestCommonType(Atom* atom1, Atom* atom2)
 
 void PushLine(ScriptData* data, uint16_t line)
 {
-    uint16_t* mallocedLine = malloc(sizeof(uint16_t));
-    *mallocedLine = line;
-    PushList(&data->instructionStack, mallocedLine);
+    InstructionPointer* instruction = NewInstruction(line, data);
+    PushList(&instructionStack, instruction);
 }
 
 void JumpToFunction(ScriptData* scriptData, char* functionName)
 {
-    debugPrint("jumping...");
+    debugPrintf("jumping... %s\n", functionName);
     for (int i = 0; i < scriptData->functionCount; i++)
     {
         debugPrintf("function: %s\n", scriptData->functions[i]->name);
@@ -2169,7 +2184,6 @@ uint32_t SetScriptData(EngineScript* script, ScriptData* output, uint8_t scopeLe
 
     output->currentScope = 0;
 
-    InitializeList(&output->instructionStack);
     return 0;
 }
 
@@ -2270,23 +2284,8 @@ void AssignToPath(char *path, ScriptData *scriptData, EngineVar *assignValue)
 
 }*/
 
-uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
+uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData, uint16_t currentLine)
 {
-    if (scriptData->instructionStack.count == 0)
-    {
-        return 0;
-    }
-
-    for (int i = 0; i < scriptData->instructionStack.count; i++)
-    {
-        debugPrintf("Script line: %d\n", *(uint16_t*)ListGetIndex(&scriptData->instructionStack, i));
-    }
-
-    uint16_t* poppedLine = (uint16_t*)PopList(&scriptData->instructionStack);
-
-    uint16_t currentLine = *(poppedLine);
-
-    free(poppedLine);
 
     if (currentLine >= scriptData->lineCount)
     {
@@ -2838,6 +2837,21 @@ void ResetScriptData(ScriptData* scriptData)
         }
     }
     scriptData->currentScope = 0;
+}
+
+uint32_t ExecuteInstructionStack() {
+    debugPrintf("instructions to do: %d\n", instructionStack.count);
+    while (instructionStack.count > 0) {
+        InstructionPointer* poppedLine = (InstructionPointer*)PopList(&instructionStack);
+        uint32_t error = ExecuteLine(poppedLine->script->script, poppedLine->script, poppedLine->line);
+        if (error != 0) {
+            return error;
+        }
+        free(poppedLine);
+
+        debugPrintf("instructions to do: %d\n", instructionStack.count);
+    }
+    return 0;
 }
 
 #endif

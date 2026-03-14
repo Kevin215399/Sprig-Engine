@@ -257,7 +257,7 @@ char *SerializeObject(EngineObject *object)
 
     char *output = malloc(strlen(object->name) + 7 + (object->objectDataCount * VAR_SERIALIZE_LENGTH) + (object->scriptCount * 4) + 1);
 
-    sprintf(output, "%s\n%d`%d`%c`%c", object->name, object->scriptCount, object->objectDataCount, (object->packages[0]) ? 't' : 'f', 'f');
+    sprintf(output, "%s\n%d`%d`%c`%c", object->name, object->scriptCount, object->objectDataCount, (object->packages[0]) ? 't' : 'f', (object->packages[1]) ? 't' : 'f');
 
     printf("obj %s\n", output);
 
@@ -389,6 +389,15 @@ EngineObject *DeserializeObject(char *serializedObject)
     else
     {
         objectOut->packages[0] = false;
+    }
+    if (physicsAdded == 't')
+    {
+        objectOut->packages[1] = true;
+        // RecalculateObjectColliders(objectOut);
+    }
+    else
+    {
+        objectOut->packages[1] = false;
     }
 
     for (int i = 0; i < scriptCount; i++)

@@ -23,6 +23,9 @@ typedef struct Rect
 
     float angle;
     EngineObject* link;
+
+    bool didCollide;
+    bool couldExit;
 } Rect;
 
 typedef struct Cell
@@ -59,6 +62,8 @@ Rect* NewRect(float centerX, float centerY, float scaleX, float scaleY, EngineOb
     output->globalCenter.y = 0;
     output->globalScale.x = 0;
     output->globalScale.y = 0;
+
+    output->didCollide = false;
 
 
     output->link = link;
@@ -165,6 +170,8 @@ float Max4(float a, float b, float c, float d) {
     return max(max(a, b), max(c, d));
 }
 
+
+
 // rotates a point around a point in degrees
 Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
 {
@@ -241,9 +248,9 @@ bool SATRects(Rect* rectA, Rect* rectB)
     Vector2 point1;
     Vector2 point2;
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 4; i++) {
         Rect* currentRect;
-        if (i < 4) {
+        if (i < 2) {
             currentRect = rectA;
         }
         else {
@@ -257,11 +264,11 @@ bool SATRects(Rect* rectA, Rect* rectB)
         3: 0 1
         */
 
-        point1.x = currentRect->globalCenter.x + (i % 4 < 2 ? 1 : -1) * (currentRect->globalScale.x / 2);
-        point1.y = currentRect->globalCenter.y + ((i % 4 == 0 || i % 4 == 3) ? 1 : -1) * (currentRect->globalScale.y / 2);
+        point1.x = currentRect->globalCenter.x + (i % 2 == 0 ? 1 : -1) * (currentRect->globalScale.x / 2);
+        point1.y = currentRect->globalCenter.y + (currentRect->globalScale.y / 2);
 
-        point2.x = currentRect->globalCenter.x + ((i + 1) % 4 < 2 ? 1 : -1) * (currentRect->globalScale.x / 2);
-        point2.y = currentRect->globalCenter.y + (((i + 1) % 4 == 0 || (i + 1) % 4 == 3) ? 1 : -1) * (currentRect->globalScale.y / 2);
+        point2.x = currentRect->globalCenter.x + 1 * (currentRect->globalScale.x / 2);
+        point2.y = currentRect->globalCenter.y + (i % 2 == 1 ? 1 : -1) * (currentRect->globalScale.y / 2);
 
         point1 = RotatePoint(point1, currentRect->globalCenter, currentRect->angle);
         point2 = RotatePoint(point2, currentRect->globalCenter, currentRect->angle);
@@ -349,15 +356,31 @@ void FreeCells() {
 
 void ColliderStep()
 {
+    void JumpToFunction(ScriptData * scriptData, char* functionName);
+
+
     debugPrint("collider step");
     FreeCells();
 
 
     for (int i = 0; i < allColliders.count; i++)
     {
-        // convert rect data to world
 
         Rect* currentRect = (Rect*)ListGetIndex(&allColliders, i);
+
+        //check if collision exitted, run function
+
+        if (!currentRect->didCollide && currentRect->couldExit) {
+            debugPrintf("exit collision");
+            currentRect->couldExit = false;
+            for (int s = 0; s < currentRect->link->scriptCount; s++) {
+                JumpToFunction(currentRect->link->scriptData[s], "CollideExit");
+            }
+        }
+
+        currentRect->didCollide = false;
+
+        // convert rect data to world
 
         currentRect->globalCenter.x = (currentRect->localCenter.x) * GetObjectDataByName(currentRect->link, "scale")->data.XY.x * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.x + GetObjectDataByName(currentRect->link, "position")->data.XY.x;
         currentRect->globalCenter.y = (currentRect->localCenter.y) * GetObjectDataByName(currentRect->link, "scale")->data.XY.y * GetObjectDataByName(currentRect->link, "colliderSize")->data.XY.y + GetObjectDataByName(currentRect->link, "position")->data.XY.y;
@@ -433,7 +456,7 @@ void ColliderStep()
     }
 
 
-    void JumpToFunction(ScriptData * scriptData, char* functionName);
+
 
     for (int cellIndex = 0; cellIndex < cells.count; cellIndex++) {
         Cell* cell = ListGetIndex(&cells, cellIndex);
@@ -441,20 +464,78 @@ void ColliderStep()
             for (int indexB = indexA + 1; indexB < cell->rectsWithin.count; indexB++) {
                 Rect* rectA = ListGetIndex(&cell->rectsWithin, indexA);
                 Rect* rectB = ListGetIndex(&cell->rectsWithin, indexB);
+                if (rectA->link == NULL) {
+                    debugPrint("RECT A NOT LINKED");
+                    while (1)sleep_ms(100);
+                } else {
+                    debugPrintf("rect a name: %s\n", rectA->link->name);
+                }
+                if (rectB->link == NULL) {
+                    debugPrint("RECT B NOT LINKED");
+                    while (1)sleep_ms(100);
+                } else {
+                    debugPrintf("rect b name: %s\n", rectB->link->name);
+                }
                 if (rectA->link == rectB->link)
                     continue;
+
                 if (SATRects(rectA, rectB)) {
+
+
+                    // Rect A Enter
+                    if (!rectA->didCollide) {
+                        for (int s = 0; s < rectA->link->scriptCount; s++) {
+                            JumpToFunction(rectA->link->scriptData[s], "CollideEnter");
+                        }
+                    }
+                    // Rect A stay
+                    rectA->didCollide = true;
                     for (int s = 0; s < rectA->link->scriptCount; s++) {
-                        JumpToFunction(rectA->link->scriptData[s], "Collision");
+                        JumpToFunction(rectA->link->scriptData[s], "CollideStay");
                     }
+
+
+                    // Rect B Enter
+                    if (!rectB->didCollide) {
+                        for (int s = 0; s < rectB->link->scriptCount; s++) {
+                            JumpToFunction(rectB->link->scriptData[s], "CollideEnter");
+                        }
+                    }
+                    // Rect B stay
+                    rectB->didCollide = true;
                     for (int s = 0; s < rectB->link->scriptCount; s++) {
-                        JumpToFunction(rectB->link->scriptData[s], "Collision");
+                        JumpToFunction(rectB->link->scriptData[s], "CollideStay");
                     }
+
+                    rectA->couldExit = true;
+                    rectB->couldExit = true;
+
+                    rectA->link->didCollide = true;
+                    rectB->link->didCollide = true;
+                }
+                else {
+                    // Rect A exit
+                    if (rectA->couldExit) {
+                        debugPrintf("exit collision");
+                        for (int s = 0; s < rectA->link->scriptCount; s++) {
+                            JumpToFunction(rectA->link->scriptData[s], "CollideExit");
+                        }
+                        rectA->couldExit = false;
+                    }
+                    // Rect B exit
+                    if (rectB->couldExit) {
+                        debugPrintf("exit collision");
+                        for (int s = 0; s < rectB->link->scriptCount; s++) {
+                            JumpToFunction(rectB->link->scriptData[s], "CollideExit");
+                        }
+                        rectB->couldExit = false;
+                    }
+
                 }
             }
         }
     }
-
+    debugPrint("fin collision step");
     FreeCells();
 }
 

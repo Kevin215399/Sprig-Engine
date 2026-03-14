@@ -68,6 +68,8 @@ int main()
 
     spi_set_baudrate(SPI_PORT, 32 * 1000 * 1000);
 
+    InitializeInterpreter();
+
     Clear();
 
     // SuperCoolLogo();
@@ -100,7 +102,7 @@ int main()
 
     editorView = DEBUG_VIEW;
     UI_ClearDebug();
-
+    
     /*sleep_ms(4000);
     EngineVar *out = VarConstructor("", 0, 0, false);
 

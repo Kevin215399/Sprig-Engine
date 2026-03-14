@@ -685,29 +685,28 @@ char *HandleShortcuts()
                 strcpy(output, SC_IO_SHORTCUTS[selected]);
                 break;
             }
-            while(GetButton() == 0);
+            sleep_ms(100);
         }
 
-        int buttonPress = GetButton();
-        if (buttonPress != 0)
+        if (GetButton() != 0)
         {
             refresh = true;
-            if (buttonPress == BUTTON_D && shortcutPage < ceil(count / 5))
+            if (GetButton() == BUTTON_D && shortcutPage < ceil(count / 5))
             {
                 shortcutPage++;
                 selected = shortcutPage * 5;
             }
-            if (buttonPress == BUTTON_A && shortcutPage > 0)
+            if (GetButton() == BUTTON_A && shortcutPage > 0)
             {
                 shortcutPage--;
                 selected = shortcutPage * 5;
             }
-            if (buttonPress == BUTTON_W && selected > shortcutPage * 5)
+            if (GetButton() == BUTTON_W && selected > shortcutPage * 5)
             {
                 print("w");
                 selected--;
             }
-            if (buttonPress == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
+            if (GetButton() == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
             {
                 print("s");
                 selected++;
@@ -715,13 +714,13 @@ char *HandleShortcuts()
 
             if (shortcutCategory == -1)
             {
-                if (buttonPress == BUTTON_J)
+                if (GetButton() == BUTTON_J)
                 {
                     shortcutCategory = selected;
                     selected = 0;
                     shortcutPage = 0;
                 }
-                if (buttonPress == BUTTON_L)
+                if (GetButton() == BUTTON_L)
                 {
                     free(output);
                     return NULL;
@@ -729,11 +728,11 @@ char *HandleShortcuts()
             }
             else
             {
-                if (buttonPress == BUTTON_J)
+                if (GetButton() == BUTTON_J)
                 {
                     return output;
                 }
-                if (buttonPress == BUTTON_L)
+                if (GetButton() == BUTTON_L)
                 {
                     shortcutCategory = -1;
                     selected = 0;

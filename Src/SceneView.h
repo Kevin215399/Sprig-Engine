@@ -22,6 +22,7 @@
 #include "Interpreter.h"
 
 #include "ColliderPackage.h"
+#include "PhysicsPackage.h"
 
 #include "GUI.h"
 
@@ -66,18 +67,18 @@ UIButton buttons[MODULE_BUTTONS + 50];
 
 UIPanel panels[4];
 
-UIButton *currentButton = NULL;
+UIButton* currentButton = NULL;
 bool sceneRefreshUI = true;
 
-EngineScene *currentScene;
+EngineScene* currentScene;
 
 uint8_t currentObject = 0;
 
 uint32_t errors[10];
 uint8_t errorCount;
 
-char *packageNames[] = {
-    "Collision"};
+char* packageNames[] = {
+    "Collision" };
 #define PACKAGE_COUNT 1
 
 #define NORMAL_FIELD 0
@@ -87,7 +88,7 @@ char *packageNames[] = {
 typedef struct
 {
     int buttonNumber;
-    EngineVar *link;
+    EngineVar* link;
     uint8_t specialMode;
 } InputFieldLink;
 
@@ -177,7 +178,7 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, in
     debugPrintf("drawSprite: pos: (%d,%d) scale: (%f,%f) = %d\n", x, y, scaleX, scaleY, sprite);
     if (sprite < 0)
     {
-        const uint16_t (*icon)[16];
+        const uint16_t(*icon)[16];
 
         switch (sprite)
         {
@@ -268,51 +269,52 @@ void RenderScene(int offsetX, int offsetY)
         }
     }
 
-    EngineObject *camera = NULL;
+    EngineObject* camera = NULL;
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
         Vector2 scale;
+        EngineObject* object = currentScene->objects[i];
 
-        if (GetObjectDataByName(currentScene->objects[i], "scale")->currentType == TYPE_INT)
+        if (GetObjectDataByName(object, "scale")->currentType == TYPE_INT)
         {
-            scale.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
-            scale.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
+            scale.x = GetObjectDataByName(object, "scale")->data.i;
+            scale.y = GetObjectDataByName(object, "scale")->data.i;
         }
         else
         {
-            scale.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.x;
-            scale.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.y;
+            scale.x = GetObjectDataByName(object, "scale")->data.XY.x;
+            scale.y = GetObjectDataByName(object, "scale")->data.XY.y;
         }
 
-        if (strcmp(currentScene->objects[i]->name, "Camera") == 0)
+        if (strcmp(object->name, "Camera") == 0)
         {
-            camera = currentScene->objects[i];
+            camera = object;
         }
 
-        DrawSpriteCentered(GetObjectDataByName(currentScene->objects[i], "sprite")->data.i,
+        DrawSpriteCentered(GetObjectDataByName(object, "sprite")->data.i,
 
-                           80 + offsetX + sceneScale * GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x,
-                           64 + offsetY + sceneScale * -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y,
-                           sceneScale * scale.x,
-                           sceneScale * scale.y,
-                           (int)GetObjectDataByName(currentScene->objects[i], "angle")->data.f);
+            80 + offsetX + sceneScale * GetObjectDataByName(object, "position")->data.XY.x,
+            64 + offsetY + sceneScale * -GetObjectDataByName(object, "position")->data.XY.y,
+            sceneScale * scale.x,
+            sceneScale * scale.y,
+            (int)GetObjectDataByName(object, "angle")->data.f);
 
-        for (int x = 0; x < currentScene->objects[i]->colliderRects.count; x++)
+        for (int x = 0; x < object->colliderRects.count; x++)
         {
 
-            Rect *rect = ListGetIndex(&currentScene->objects[i]->colliderRects, x);
+            Rect* rect = ListGetIndex(&object->colliderRects, x);
             //objectScale * cs * (topLeft + colliderCenter) + object pos
             DrawRectOutline(
                 GREEN,
-                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x * (rect->localCenter.x - rect->localScale.x / 2 + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.x) + GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x),
-                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y * -(rect->localCenter.y + rect->localScale.y / 2 + GetObjectDataByName(currentScene->objects[i], "colliderCenter")->data.XY.y) + -GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y),
-                sceneScale * scale.x * rect->localScale.x * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.x,
-                sceneScale * scale.y * rect->localScale.y * GetObjectDataByName(currentScene->objects[i], "colliderSize")->data.XY.y);
+                80 + offsetX + sceneScale * (scale.x * GetObjectDataByName(object, "colliderSize")->data.XY.x * (rect->localCenter.x - rect->localScale.x / 2 + GetObjectDataByName(object, "colliderCenter")->data.XY.x) + GetObjectDataByName(object, "position")->data.XY.x),
+                64 + offsetY + sceneScale * (scale.y * GetObjectDataByName(object, "colliderSize")->data.XY.y * -(rect->localCenter.y + rect->localScale.y / 2 + GetObjectDataByName(object, "colliderCenter")->data.XY.y) + -GetObjectDataByName(object, "position")->data.XY.y),
+                sceneScale * scale.x * rect->localScale.x * GetObjectDataByName(object, "colliderSize")->data.XY.x,
+                sceneScale * scale.y * rect->localScale.y * GetObjectDataByName(object, "colliderSize")->data.XY.y);
         }
     }
 
-    EngineVar *cameraPosition = GetObjectDataByName(camera, "position");
+    EngineVar* cameraPosition = GetObjectDataByName(camera, "position");
 
     int width = 160 * sceneScale / GetObjectDataByName(camera, "scale")->data.i;
     int height = 128 * sceneScale / GetObjectDataByName(camera, "scale")->data.i;
@@ -351,19 +353,20 @@ void RecompileScene()
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
+        EngineObject* object = currentScene->objects[i];
         // clear all colliders from object
-        while (currentScene->objects[i]->colliderRects.count > 0)
+        while (object->colliderRects.count > 0)
         {
-            free(PopList(&currentScene->objects[i]->colliderRects));
+            free(PopList(&object->colliderRects));
         }
 
-        for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
+        for (int s = 0; s < object->scriptCount; s++)
         {
 
-            currentScene->objects[i]->scriptData[s] = ScriptDataConstructor(&scripts[currentScene->objects[i]->scriptIndexes[s]]);
-            currentScene->objects[i]->scriptData[s]->linkedObject = currentScene->objects[i];
-            currentScene->objects[i]->scriptData[s]->objectIndex = i;
-            currentScene->objects[i]->scriptData[s]->scriptIndex = currentScene->objects[i]->scriptIndexes[s];
+            object->scriptData[s] = ScriptDataConstructor(&scripts[object->scriptIndexes[s]]);
+            object->scriptData[s]->linkedObject = object;
+            object->scriptData[s]->objectIndex = i;
+            object->scriptData[s]->scriptIndex = object->scriptIndexes[s];
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -371,19 +374,19 @@ void RecompileScene()
 
             printf("obj: %d, scr: %d\n", i, s);
             uint32_t errorNum = SetScriptData(
-                &scripts[currentScene->objects[i]->scriptData[s]->script->ID],
-                currentScene->objects[i]->scriptData[s],
+                &scripts[object->scriptData[s]->script->ID],
+                object->scriptData[s],
                 0);
 
             printf("data set reutn %d\n", errorNum);
 
             printf("scene name: %s\n", currentScene->name);
-            printf("obj name: %s\n", currentScene->objects[i]->name);
-            printf("var count: %d\n", currentScene->objects[i]->scriptData[s]->variableCount);
+            printf("obj name: %s\n", object->name);
+            printf("var count: %d\n", object->scriptData[s]->variableCount);
 
-            for (int t = 0; t < currentScene->objects[i]->scriptData[s]->variableCount; t++)
+            for (int t = 0; t < object->scriptData[s]->variableCount; t++)
             {
-                EngineVar *var = (EngineVar *)ListGetIndex(&currentScene->objects[i]->scriptData[s]->variables, t);
+                EngineVar* var = (EngineVar*)ListGetIndex(&object->scriptData[s]->variables, t);
                 printf("set scr variable out: %s\n", var->name);
 
                 if (var->currentType == TYPE_FLOAT)
@@ -404,10 +407,10 @@ void RecompileScene()
         }
         print("object's scripts set");
 
-        if (currentScene->objects[i]->packages[0])
+        if (object->packages[0])
         {
             print("is collider");
-            RecalculateObjectColliders(currentScene->objects[i]);
+            RecalculateObjectColliders(object);
         }
         else
         {
@@ -457,7 +460,7 @@ void HideAllButtons()
     }
 }
 
-void RefocusButton(UIButton *focusTo, bool redraw)
+void RefocusButton(UIButton* focusTo, bool redraw)
 {
     for (int i = 0; i < sizeof(buttons) / sizeof(UIButton); i++)
     {
@@ -560,7 +563,7 @@ int SelectScriptToAdd()
     }
 }
 
-void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *variableCount, EngineVar **linkVars, uint8_t *buttonIndex, InputFieldLink *variableLinks)
+void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* variableCount, EngineVar** linkVars, uint8_t* buttonIndex, InputFieldLink* variableLinks)
 {
     int height = 13;
     panels[MODULE_PANELS].visible = true;
@@ -645,12 +648,12 @@ void DrawModulePage(char *moduleName, uint8_t totalVariableCount, uint8_t *varia
     }
 }
 
-char *NewObject()
+char* NewObject()
 {
     bool refresh = true;
     bool modifyName = false;
     uint8_t option = 0;
-    char *name = (char *)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
+    char* name = (char*)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
     for (int i = 0; i <= MAX_NAME_LENGTH; i++)
     {
         name[i] = '\0';
@@ -764,7 +767,7 @@ char *NewObject()
                     if (option == 1)
                     {
 
-                        char *output = malloc(caretPosition + 1);
+                        char* output = malloc(caretPosition + 1);
                         strcpy(output, name);
                         free(name);
                         return output;
@@ -871,7 +874,7 @@ void ManageSceneUI()
     uint8_t caretPosition = 0;
     bool refreshKeyboard = false;
 
-    char *modifyVariable = (char *)malloc(16);
+    char* modifyVariable = (char*)malloc(16);
 
     for (int i = 0; i < 16; i++)
     {
@@ -886,7 +889,7 @@ void ManageSceneUI()
 
     // Prototype functions
     bool EqualType(EngineVar * var1, EngineVar * var2, uint8_t type);
-    float ShuntYard(char *equation, uint16_t equationLength, EngineVar *output, ScriptData *scriptData);
+    float ShuntYard(char* equation, uint16_t equationLength, EngineVar * output, ScriptData * scriptData);
     bool EqualType(EngineVar * var1, EngineVar * var2, uint8_t type);
 
     uint8_t modulePage = 0;
@@ -922,8 +925,8 @@ void ManageSceneUI()
 
             for (int i = 0; i < currentScene->objectCount; i++)
             {
-                UIButton *top = NULL;
-                UIButton *bottom = NULL;
+                UIButton* top = NULL;
+                UIButton* bottom = NULL;
 
                 if (i > 0)
                 {
@@ -1016,13 +1019,13 @@ void ManageSceneUI()
 
             if (modulePage == 0)
             {
-                EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
+                EngineVar** drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
                 DrawModulePage("Base", BASE_VARS, &variableCount, drawVarList, &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else if (doCollider && modulePage == 1)
             {
-                EngineVar **drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
+                EngineVar** drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
                 DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[BASE_VARS], &buttonIndex, variableLinks);
                 free(drawVarList);
             }
@@ -1032,12 +1035,12 @@ void ManageSceneUI()
                 printf("count: %d\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
                 uint8_t scriptVariables = (currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
 
-                EngineVar **passVars = (EngineVar **)malloc(sizeof(EngineVar *) * scriptVariables);
+                EngineVar** passVars = (EngineVar**)malloc(sizeof(EngineVar*) * scriptVariables);
 
                 for (int i = 0; i < scriptVariables; i++)
                 {
 
-                    EngineVar *var = (EngineVar *)ListGetIndex(&currentScene->objects[currentObject]->scriptData[scriptIndex]->variables, i);
+                    EngineVar* var = (EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[scriptIndex]->variables, i);
 
                     passVars[i] = var;
 
@@ -1053,11 +1056,11 @@ void ManageSceneUI()
                     }
                 }
                 DrawModulePage(scripts[currentScene->objects[currentObject]->scriptIndexes[scriptIndex]].name,
-                               scriptVariables,
-                               &variableCount,
-                               passVars,
-                               &buttonIndex,
-                               variableLinks);
+                    scriptVariables,
+                    &variableCount,
+                    passVars,
+                    &buttonIndex,
+                    variableLinks);
                 free(passVars);
             }
 
@@ -1122,13 +1125,13 @@ void ManageSceneUI()
 
             FlushBuffer();
 
-            char *fileName = malloc(strlen(FILE_IDENTIFIER) + strlen(currentProjectName) + strlen(currentScene->name) + 4);
+            char* fileName = malloc(strlen(FILE_IDENTIFIER) + strlen(currentProjectName) + strlen(currentScene->name) + 4);
             sprintf(fileName, "%s`%s`%s",
-                    FILE_IDENTIFIER,
-                    currentProjectName,
-                    currentScene->name);
+                FILE_IDENTIFIER,
+                currentProjectName,
+                currentScene->name);
 
-            File *scene = GetFile(fileName);
+            File* scene = GetFile(fileName);
 
             if (scene->startBlock == 0)
             {
@@ -1144,7 +1147,7 @@ void ManageSceneUI()
             scene->startBlock -= 1;
             for (int obj = 0; obj < currentScene->objectCount; obj++)
             {
-                char *serializedObject = SerializeObject(currentScene->objects[obj]);
+                char* serializedObject = SerializeObject(currentScene->objects[obj]);
                 print("obj serialized");
                 WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
                 scene->startBlock -= 2;
@@ -1276,12 +1279,12 @@ void ManageSceneUI()
                     }
                     if (GetButton() == BUTTON_L)
                     {
-                        InputFieldLink *inputLink = &variableLinks[variableBeingModified];
+                        InputFieldLink* inputLink = &variableLinks[variableBeingModified];
 
                         if (inputLink->specialMode == VECTOR_X_FIELD)
                         {
-                            EngineVar *output = malloc(sizeof(EngineVar));
-                            ScriptData *emptyScripData = malloc(sizeof(ScriptData));
+                            EngineVar* output = malloc(sizeof(EngineVar));
+                            ScriptData* emptyScripData = malloc(sizeof(ScriptData));
                             emptyScripData->variableCount = 0;
                             uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
@@ -1301,8 +1304,8 @@ void ManageSceneUI()
                         }
                         else if (inputLink->specialMode == VECTOR_Y_FIELD)
                         {
-                            EngineVar *output = malloc(sizeof(EngineVar));
-                            ScriptData *emptyScripData = malloc(sizeof(ScriptData));
+                            EngineVar* output = malloc(sizeof(EngineVar));
+                            ScriptData* emptyScripData = malloc(sizeof(ScriptData));
                             emptyScripData->variableCount = 0;
                             uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
@@ -1336,8 +1339,8 @@ void ManageSceneUI()
                             else
                             {
 
-                                EngineVar *output = malloc(sizeof(EngineVar));
-                                ScriptData *emptyScripData = malloc(sizeof(ScriptData));
+                                EngineVar* output = malloc(sizeof(EngineVar));
+                                ScriptData* emptyScripData = malloc(sizeof(ScriptData));
                                 emptyScripData->variableCount = 0;
                                 uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
@@ -1448,7 +1451,7 @@ void ManageSceneUI()
 
                         for (int t = 0; t < currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variableCount; t++)
                         {
-                            printf("set scr variable out: %s\n", ((EngineVar *)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
+                            printf("set scr variable out: %s\n", ((EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
                         }
 
                         if (errorNum != 0)
@@ -1527,7 +1530,7 @@ void ManageSceneUI()
 
             if (buttons[ADD_THING_BUTTON].isPressed)
             {
-                char *name = NewObject();
+                char* name = NewObject();
                 print("returned");
                 if (name != NULL)
                 {
@@ -1556,12 +1559,12 @@ void EditScene(int sceneIndex)
     ManageSceneUI();
 }
 
-char *CreateNewScene()
+char* CreateNewScene()
 {
     bool refresh = true;
     bool modifyName = false;
     uint8_t option = 0;
-    char *name = (char *)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
+    char* name = (char*)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
     for (int i = 0; i <= MAX_NAME_LENGTH; i++)
     {
         name[i] = '\0';
@@ -1847,7 +1850,7 @@ void SceneMenu()
             {
                 if (option == 0)
                 {
-                    char *sceneName = CreateNewScene();
+                    char* sceneName = CreateNewScene();
 
                     if (sceneName != NULL)
                     {
@@ -1925,32 +1928,34 @@ void GameRenderThread()
             SmartClear();
             for (int i = 0; i < currentScene->objectCount; i++)
             {
-                if (currentScene->objects[i]->renderData[RENDER_SPRITE].i < 0)
+                EngineObject* object = currentScene->objects[i];
+
+                if (object->renderData[RENDER_SPRITE].i < 0)
                 {
                     continue;
                 }
                 Vector2 scale;
-                if (currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i == TYPE_INT)
+                if (object->renderData[RENDER_SCALE_TYPE].i == TYPE_INT)
                 {
-                    scale.x = currentScene->objects[i]->renderData[RENDER_SCALE].i;
-                    scale.y = currentScene->objects[i]->renderData[RENDER_SCALE].i;
+                    scale.x = object->renderData[RENDER_SCALE].i;
+                    scale.y = object->renderData[RENDER_SCALE].i;
                 }
                 else
                 {
-                    scale.x = currentScene->objects[i]->renderData[RENDER_SCALE].XY.x;
-                    scale.y = currentScene->objects[i]->renderData[RENDER_SCALE].XY.y;
+                    scale.x = object->renderData[RENDER_SCALE].XY.x;
+                    scale.y = object->renderData[RENDER_SCALE].XY.y;
                 }
 
                 // printf("Scale: (%f,%f)\n", scale.x, scale.y);
-                // printf("Position: (%f,%f)\n", GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x, GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y);
-                // printf("Sprite: %d\n", GetObjectDataByName(currentScene->objects[i], "sprite")->data.i);
+                // printf("Position: (%f,%f)\n", GetObjectDataByName(object, "position")->data.XY.x, GetObjectDataByName(object, "position")->data.XY.y);
+                // printf("Sprite: %d\n", GetObjectDataByName(object, "sprite")->data.i);
                 DrawSpriteCentered(
-                    currentScene->objects[i]->renderData[RENDER_SPRITE].i,
-                    80 + cameraScale * currentScene->objects[i]->renderData[RENDER_POSITION].XY.x - cameraX,
-                    64 + cameraScale * -currentScene->objects[i]->renderData[RENDER_POSITION].XY.y - cameraY,
+                    object->renderData[RENDER_SPRITE].i,
+                    80 + cameraScale * object->renderData[RENDER_POSITION].XY.x - cameraX,
+                    64 + cameraScale * -object->renderData[RENDER_POSITION].XY.y - cameraY,
                     cameraScale * scale.x,
                     cameraScale * scale.y,
-                    (int)currentScene->objects[i]->renderData[RENDER_ANGLE].f);
+                    (int)object->renderData[RENDER_ANGLE].f);
             }
             SmartShow();
 
@@ -1968,9 +1973,9 @@ void GameRenderThread()
 
 uint32_t RunProgram()
 {
-    bool UI_PrintToScreen(char *message, bool isError);
+    bool UI_PrintToScreen(char* message, bool isError);
 
-    EngineObject *camera = NULL;
+    EngineObject* camera = NULL;
 
     unsigned long exitHoldTime = millis();
 
@@ -1995,7 +2000,7 @@ uint32_t RunProgram()
 
             printf("backup: obj:%d, scr:%d\n", obj, scr);
             printf("scrdata lines: %d\n", currentScene->objects[obj]->scriptData[scr]->lineCount);
-            ScriptData *scrData = currentScene->objects[obj]->scriptData[scr];
+            ScriptData* scrData = currentScene->objects[obj]->scriptData[scr];
             print("got scr data");
             if (scrData == NULL)
             {
@@ -2013,7 +2018,7 @@ uint32_t RunProgram()
             scrData->backupVarCount = scrData->variableCount;
             for (int var = 0; var < scrData->variableCount; var++)
             {
-                EngineVar *varPointer = (EngineVar *)ListGetIndex(&scrData->variables, var);
+                EngineVar* varPointer = (EngineVar*)ListGetIndex(&scrData->variables, var);
                 printf("backup: %d\n", var);
                 strcpy(scrData->backupData[var].name, varPointer->name);
                 scrData->backupData[var].currentType = varPointer->currentType;
@@ -2058,16 +2063,33 @@ uint32_t RunProgram()
 
         for (int i = 0; i < currentScene->objectCount; i++)
         {
-            GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x;
-            GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y += GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y;
-            debugPrintf("added velocity to position, %f,%d\n",
-                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x,
-                   GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y);
-            float multiplier = ((float)(100 - (abs(GetObjectDataByName(currentScene->objects[i], "drag")->data.i) % 101))) / 100;
 
-            GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.x *= multiplier;
-            GetObjectDataByName(currentScene->objects[i], "velocity")->data.XY.y *= multiplier;
+            EngineObject* object = currentScene->objects[i];
+
+            debugPrint("phys step");
+
+            PhysicsStep(object);
+            object->didCollide = false;
+
+            GetObjectDataByName(object, "position")->data.XY.x += GetObjectDataByName(object, "velocity")->data.XY.x;
+            GetObjectDataByName(object, "position")->data.XY.y += GetObjectDataByName(object, "velocity")->data.XY.y;
+            debugPrintf("added velocity to position, %f,%d\n",
+                GetObjectDataByName(object, "velocity")->data.XY.x,
+                GetObjectDataByName(object, "velocity")->data.XY.y);
+            float multiplier = ((float)(100 - (abs(GetObjectDataByName(object, "drag")->data.i) % 101))) / 100;
+
+            GetObjectDataByName(object, "velocity")->data.XY.x *= multiplier;
+            GetObjectDataByName(object, "velocity")->data.XY.y *= multiplier;
             // print("modified velocity");
+
+
+            uint8_t scrCount = object->scriptCount;
+
+            for (int scr = 0; scr < scrCount; scr++)
+            {
+                char funcName[32] = "main";
+                JumpToFunction(object->scriptData[scr], funcName);
+            }
         }
 
         // print("showed");
@@ -2075,38 +2097,7 @@ uint32_t RunProgram()
 
         // print("/////////////////////////////////////////////////////////////////////EXECUTE SCRIPTS");
 
-        for (int obj = 0; obj < currentScene->objectCount; obj++)
-        {
-            EngineObject *testObj = currentScene->objects[obj];
-
-            if (testObj == NULL)
-            {
-                print("is null");
-            }
-            uint8_t testCount = currentScene->objects[obj]->scriptCount;
-
-            for (int scr = 0; scr < testCount; scr++)
-            {
-                char funcName[32] = "main";
-                JumpToFunction(currentScene->objects[obj]->scriptData[scr], funcName);
-
-                while (currentScene->objects[obj]->scriptData[scr]->instructionStack.count > 0)
-                {
-                    uint32_t errorNum = ExecuteLine(currentScene->objects[obj]->scriptData[scr]->script, currentScene->objects[obj]->scriptData[scr]);
-                    uint16_t error = UnpackErrorMessage(errorNum);
-                    if (errorNum != 0)
-                    {
-                        UI_PrintToScreen(stringPool[error], true);
-                        sleep_ms(3000);
-                        FreeString(&error);
-                        return errorNum;
-                    }
-                    FreeString(&error);
-                }
-
-                ResetScriptData(currentScene->objects[obj]->scriptData[scr]);
-            }
-        }
+        ExecuteInstructionStack();
 
         // print("/////////////////////////////////////////////////////////////////// DO COLLISION");
 
@@ -2125,26 +2116,28 @@ uint32_t RunProgram()
 
             for (int i = 0; i < currentScene->objectCount; i++)
             {
-                currentScene->objects[i]->renderData[RENDER_POSITION].XY.x = GetObjectDataByName(currentScene->objects[i], "position")->data.XY.x;
-                currentScene->objects[i]->renderData[RENDER_POSITION].XY.y = GetObjectDataByName(currentScene->objects[i], "position")->data.XY.y;
+                EngineObject* object = currentScene->objects[i];
 
-                currentScene->objects[i]->renderData[RENDER_SPRITE].i = GetObjectDataByName(currentScene->objects[i], "sprite")->data.i;
+                object->renderData[RENDER_POSITION].XY.x = GetObjectDataByName(object, "position")->data.XY.x;
+                object->renderData[RENDER_POSITION].XY.y = GetObjectDataByName(object, "position")->data.XY.y;
 
-                if (GetObjectDataByName(currentScene->objects[i], "scale")->currentType == TYPE_INT)
+                object->renderData[RENDER_SPRITE].i = GetObjectDataByName(object, "sprite")->data.i;
+
+                if (GetObjectDataByName(object, "scale")->currentType == TYPE_INT)
                 {
-                    currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i = TYPE_INT;
+                    object->renderData[RENDER_SCALE_TYPE].i = TYPE_INT;
 
-                    currentScene->objects[i]->renderData[RENDER_SCALE].i = GetObjectDataByName(currentScene->objects[i], "scale")->data.i;
+                    object->renderData[RENDER_SCALE].i = GetObjectDataByName(object, "scale")->data.i;
                 }
                 else
                 {
-                    currentScene->objects[i]->renderData[RENDER_SCALE_TYPE].i = TYPE_VECTOR;
+                    object->renderData[RENDER_SCALE_TYPE].i = TYPE_VECTOR;
 
-                    currentScene->objects[i]->renderData[RENDER_SCALE].XY.x = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.x;
-                    currentScene->objects[i]->renderData[RENDER_SCALE].XY.y = GetObjectDataByName(currentScene->objects[i], "scale")->data.XY.y;
+                    object->renderData[RENDER_SCALE].XY.x = GetObjectDataByName(object, "scale")->data.XY.x;
+                    object->renderData[RENDER_SCALE].XY.y = GetObjectDataByName(object, "scale")->data.XY.y;
                 }
 
-                currentScene->objects[i]->renderData[RENDER_ANGLE].f = GetObjectDataByName(currentScene->objects[i], "angle")->data.f;
+                object->renderData[RENDER_ANGLE].f = GetObjectDataByName(object, "angle")->data.f;
             }
 
             multicore_fifo_push_blocking(START_RENDER);
@@ -2180,13 +2173,13 @@ uint32_t RunProgram()
     {
         for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
         {
-
-            ScriptData *scrData = currentScene->objects[obj]->scriptData[scr];
+            ResetScriptData(currentScene->objects[obj]->scriptData[scr]);
+            ScriptData* scrData = currentScene->objects[obj]->scriptData[scr];
 
             scrData->variableCount = scrData->backupVarCount;
             for (int var = 0; var < scrData->variableCount; var++)
             {
-                EngineVar *varPointer = (EngineVar *)ListGetIndex(&scrData->variables, var);
+                EngineVar* varPointer = (EngineVar*)ListGetIndex(&scrData->variables, var);
                 strcpy(varPointer->name, scrData->backupData[var].name);
                 varPointer->currentType = scrData->backupData[var].currentType;
 
