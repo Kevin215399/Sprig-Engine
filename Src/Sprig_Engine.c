@@ -52,6 +52,8 @@ int main()
 
     CreateNullStructs();
 
+    InitCollisionLock();
+
     gpio_init(SD_CS);
     gpio_set_dir(SD_CS, GPIO_OUT);
     gpio_put(SD_CS, 1);

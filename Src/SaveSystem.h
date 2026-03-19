@@ -24,7 +24,7 @@ typedef struct
     uint8_t length;
 } charArray;
 
-uint16_t SerializeVar(EngineVar *variable);
+uint16_t SerializeVar(EngineVar *variable, bool SerializeVar);
 
 void SoftReset()
 {
@@ -255,17 +255,17 @@ char *SerializeObject(EngineObject *object)
 {
 #define VAR_SERIALIZE_LENGTH 64
 
-    char *output = malloc(strlen(object->name) + 7 + (object->objectDataCount * VAR_SERIALIZE_LENGTH) + (object->scriptCount * 4) + 1);
+    char *output = malloc(strlen(object->name) + 7 + (object->objectData.count * VAR_SERIALIZE_LENGTH) + (object->scriptCount * 4) + 1);
 
-    sprintf(output, "%s\n%d`%d`%c`%c", object->name, object->scriptCount, object->objectDataCount, (object->packages[0]) ? 't' : 'f', (object->packages[1]) ? 't' : 'f');
+    sprintf(output, "%s\n%d`%d`%c`%c", object->name, object->scriptCount, object->objectData.count, (object->packages[0]) ? 't' : 'f', (object->packages[1]) ? 't' : 'f');
 
     printf("obj %s\n", output);
 
     int index = strlen(output);
-    for (int i = 0; i < object->objectDataCount; i++)
+    for (int i = 0; i < object->objectData.count; i++)
     {
         EngineVar *objectData = GetObjectDataByIndex(object, i);
-        uint16_t value = SerializeVar(objectData);
+        uint16_t value = SerializeVar(objectData, false);
 
         sprintf(output + index, "`%s\n`%d`%c`%s\n",
                 objectData->name,
@@ -352,8 +352,7 @@ EngineObject *DeserializeObject(char *serializedObject)
 
     objectOut->scriptCount = scriptCount;
 
-    objectOut->objectDataCount = 0;
-    objectOut->objectDataTail = NULL;
+    InitializeList(&objectOut->objectData);
 
     InitializeList(&objectOut->colliderRects);
 

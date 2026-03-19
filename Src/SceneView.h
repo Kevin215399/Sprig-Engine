@@ -27,6 +27,7 @@
 #include "GUI.h"
 
 #include "pico/multicore.h"
+#include "pico/sync.h"
 
 #define CAMERA_SPRITE -1
 
@@ -203,7 +204,7 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, in
         {
             for (int y = 0; y < 16; y++)
             {
-                // printf("Color: %d\n", sprites[sprite].sprite[x][y]);
+                // debugPrintf("Color: %d\n", sprites[sprite].sprite[x][y]);
                 if (icon[y][x] == TRANSPARENT)
                 {
                     continue;
@@ -226,7 +227,7 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, in
             {
                 continue;
             }
-            printf("(%d,%d) %d\n", ix, iy, sprites[sprite].sprite[ix][iy]);
+            debugPrintf("(%d,%d) %d\n", ix, iy, sprites[sprite].sprite[ix][iy]);
 
             int xPos = (ix)*cos(angle * (3.1415 / 180)) - (iy)*sin(angle * (3.1415 / 180));
             int yPos = (ix)*sin(angle * (3.1415 / 180)) + (iy)*cos(angle * (3.1415 / 180));
@@ -336,13 +337,59 @@ void RenderScene(int offsetX, int offsetY)
 
 #pragma endregion
 
+bool Modal(char* text, bool confirmButton) {
+    int left = 160 * 1 / 8;
+    int right = 160 * 7 / 8;
+    int top = 128 * 1 / 5;
+    int bottom = 128 * 4 / 5;
+
+    Rectangle(RGBTo16(255, 255, 255), left, top, right - left, bottom - top);
+    Rectangle(RGBTo16(100, 100, 100), left + 1, top + 1, right - left - 2, bottom - top - 2);
+
+    WriteWord(text, strlen(text), left + 5, top + 5, 1, WHITE, TRANSPARENT);
+
+    bool position = false;
+    bool refresh = true;
+
+    sleep_ms(160);
+    while (1) {
+        if (refresh) {
+            Rectangle(position ? WHITE : BLUE, left + 5, bottom - 25, 40, 15);
+            Rectangle(BLACK, left + 5 + 1, bottom - 25 + 1, 40 - 2, 15 - 2);
+            WriteWord("Cancel", strlen("Cancel"), left + 5 + 3, bottom - 25 + 4, 1, WHITE, TRANSPARENT);
+
+            Rectangle(position ? BLUE : WHITE, left + 5 + 45, bottom - 25, 47, 15);
+            Rectangle(BLACK, left + 5 + 1 + 45, bottom - 25 + 1, 47 - 2, 15 - 2);
+            WriteWord("Confirm", strlen("Confirm"), left + 5 + 45 + 3, bottom - 25 + 4, 1, WHITE, TRANSPARENT);
+
+            refresh = false;
+        }
+
+        if (GetButton() == BUTTON_D && !position) {
+            position = true;
+            refresh = true;
+        }
+        if (GetButton() == BUTTON_A && position) {
+            position = false;
+            refresh = true;
+        }
+
+        if (GetButton() == BUTTON_J) {
+            return position;
+        }
+        if (GetButton() == BUTTON_L) {
+            return false;
+        }
+    }
+}
+
 void DecompileScene()
 {
     for (int i = 0; i < currentScene->objectCount; i++)
     {
         for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
         {
-            printf("obj: %d, scr: %d\n", i, s);
+            debugPrintf("obj: %d, scr: %d\n", i, s);
             FreeScriptData(currentScene->objects[i]->scriptData[s], false);
         }
     }
@@ -372,26 +419,26 @@ void RecompileScene()
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
             uint16_t UnpackErrorMessage(uint32_t error);
 
-            printf("obj: %d, scr: %d\n", i, s);
+            debugPrintf("obj: %d, scr: %d\n", i, s);
             uint32_t errorNum = SetScriptData(
                 &scripts[object->scriptData[s]->script->ID],
                 object->scriptData[s],
                 0);
 
-            printf("data set reutn %d\n", errorNum);
+            debugPrintf("data set reutn %d\n", errorNum);
 
-            printf("scene name: %s\n", currentScene->name);
-            printf("obj name: %s\n", object->name);
-            printf("var count: %d\n", object->scriptData[s]->variableCount);
+            debugPrintf("scene name: %s\n", currentScene->name);
+            debugPrintf("obj name: %s\n", object->name);
+            debugPrintf("var count: %d\n", object->scriptData[s]->variableCount);
 
             for (int t = 0; t < object->scriptData[s]->variableCount; t++)
             {
                 EngineVar* var = (EngineVar*)ListGetIndex(&object->scriptData[s]->variables, t);
-                printf("set scr variable out: %s\n", var->name);
+                debugPrintf("set scr variable out: %s\n", var->name);
 
                 if (var->currentType == TYPE_FLOAT)
                 {
-                    printf("is float: %f\n", var->data.f);
+                    debugPrintf("is float: %f\n", var->data.f);
                 }
             }
 
@@ -401,20 +448,20 @@ void RecompileScene()
             }
 
             uint16_t error = UnpackErrorMessage(errorNum);
-            printf("set script error: %s\n", stringPool[error]);
+            debugPrintf("set script error: %s\n", stringPool[error]);
             FreeString(&error);
-            print("freed error");
+            debugPrint("freed error");
         }
-        print("object's scripts set");
+        debugPrint("object's scripts set");
 
         if (object->packages[0])
         {
-            print("is collider");
+            debugPrint("is collider");
             RecalculateObjectColliders(object);
         }
         else
         {
-            print("no collider");
+            debugPrint("no collider");
         }
     }
 }
@@ -586,12 +633,12 @@ void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* varia
 
     for (int x = 0; x < totalVariableCount; x++)
     {
-        printf("Var button: %d\n", x);
-        printf("var link: %s\n", linkVars[x]->name);
+        debugPrintf("Var button: %d\n", x);
+        debugPrintf("var link: %s\n", linkVars[x]->name);
 
         variableLinks[*variableCount].link = linkVars[x];
 
-        printf("var: %s\n", linkVars[x]->name);
+        debugPrintf("var: %s\n", linkVars[x]->name);
 
         WriteWord(
             (linkVars[x]->name),
@@ -613,7 +660,7 @@ void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* varia
             SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart) / 2 - 5, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
             buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
             char buffer[32];
-            sprintf(buffer, "%f", linkVars[x]->data.XY.x);
+            sprintf(buffer, "%.3f", linkVars[x]->data.XY.x);
             AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
             DrawButton(&buttons[(*buttonIndex)++]);
             (*variableCount)++;
@@ -626,7 +673,7 @@ void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* varia
 
             SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), (145 - buttonStart), 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
             buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
-            sprintf(buffer, "%f", linkVars[x]->data.XY.y);
+            sprintf(buffer, "%.3f", linkVars[x]->data.XY.y);
             AddTextToButton(&buttons[*buttonIndex], buffer, WHITE, 1);
             DrawButton(&buttons[(*buttonIndex)++]);
             (*variableCount)++;
@@ -639,7 +686,7 @@ void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* varia
 
             SetButton(&buttons[*buttonIndex], buttonStart, height + 15 * (x + 1), 145 - buttonStart, 12, 3, BLACK, RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, NULL, NULL);
             buttons[*buttonIndex].textAnchor = LEFT_ANCHOR;
-            uint16_t data = SerializeVar(variableLinks[*variableCount].link);
+            uint16_t data = SerializeVar(variableLinks[*variableCount].link, true);
             AddTextToButton(&buttons[*buttonIndex], stringPool[data], WHITE, 1);
             FreeString(&data);
             DrawButton(&buttons[(*buttonIndex)++]);
@@ -894,6 +941,8 @@ void ManageSceneUI()
 
     uint8_t modulePage = 0;
 
+    uint8_t objectPackageCount = 1;
+
     while (1)
     {
         if (!showKeyboard)
@@ -996,12 +1045,12 @@ void ManageSceneUI()
             int height = 13;
             uint8_t buttonIndex = MODULE_BUTTONS;
             variableCount = 0;
-            printf("Script count: %d\n", currentScene->objects[currentObject]->scriptCount);
+            debugPrintf("Script count: %d\n", currentScene->objects[currentObject]->scriptCount);
 
             // Serialize var prototype
-            uint16_t SerializeVar(EngineVar * variable);
+            uint16_t SerializeVar(EngineVar * variable, bool limitDecimals);
 
-            uint8_t objectPackageCount = 1;
+            objectPackageCount = 1;
             bool doCollider = false;
             bool doPhysics = false;
 
@@ -1032,7 +1081,7 @@ void ManageSceneUI()
             else
             {
                 uint8_t scriptIndex = modulePage - objectPackageCount;
-                printf("count: %d\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
+                debugPrintf("count: %d\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
                 uint8_t scriptVariables = (currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
 
                 EngineVar** passVars = (EngineVar**)malloc(sizeof(EngineVar*) * scriptVariables);
@@ -1044,15 +1093,15 @@ void ManageSceneUI()
 
                     passVars[i] = var;
 
-                    printf("passing data: %s\n", passVars[i]->name);
+                    debugPrintf("passing data: %s\n", passVars[i]->name);
 
                     if (passVars[i]->currentType == TYPE_FLOAT)
                     {
-                        printf("is float: %f\n", var->data.f);
+                        debugPrintf("is float: %f\n", var->data.f);
                     }
                     else
                     {
-                        print("isn't float");
+                        debugPrint("isn't float");
                     }
                 }
                 DrawModulePage(scripts[currentScene->objects[currentObject]->scriptIndexes[scriptIndex]].name,
@@ -1138,7 +1187,7 @@ void ManageSceneUI()
                 scene = CreateFile(fileName, strlen(fileName), MAX_OBJECTS * 2 + 2);
             }
 
-            print("starting object save");
+            debugPrint("starting object save");
 
             int startBlock = scene->startBlock;
             char buffer[4];
@@ -1148,7 +1197,7 @@ void ManageSceneUI()
             for (int obj = 0; obj < currentScene->objectCount; obj++)
             {
                 char* serializedObject = SerializeObject(currentScene->objects[obj]);
-                print("obj serialized");
+                debugPrint("obj serialized");
                 WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
                 scene->startBlock -= 2;
                 free(serializedObject);
@@ -1159,7 +1208,7 @@ void ManageSceneUI()
 
             DisengageSD();
 
-            print("saved scene to project");
+            debugPrint("saved scene to project");
 
             SaveProject(program);
 
@@ -1451,7 +1500,7 @@ void ManageSceneUI()
 
                         for (int t = 0; t < currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variableCount; t++)
                         {
-                            printf("set scr variable out: %s\n", ((EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
+                            debugPrintf("set scr variable out: %s\n", ((EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
                         }
 
                         if (errorNum != 0)
@@ -1460,7 +1509,7 @@ void ManageSceneUI()
                         }
 
                         uint16_t error = UnpackErrorMessage(errorNum);
-                        printf("set script error: %s\n", stringPool[error]);
+                        debugPrintf("set script error: %s\n", stringPool[error]);
                         FreeString(&error);
 
                         currentScene->objects[currentObject]->scriptCount++;
@@ -1468,6 +1517,42 @@ void ManageSceneUI()
                     refresh = true;
                     sleep_ms(160);
                 }
+
+                if (buttons[SCRIPT_DELETE_BUTTON].isPressed) {
+                    char buffer[strlen("Are you sure you\nwant to delete\n") + 20];
+
+                    EngineObject* object = currentScene->objects[currentObject];
+
+                    if (modulePage == 0) {
+                        strcpy(buffer, "Base can not be deleted");
+                        Modal(buffer, false);
+                    }
+                    else if (modulePage == 1 && object->packages[0]) {
+                        strcpy(buffer, "Are you sure you\nwant to delete\nCollider");
+                        if (Modal(buffer, true)) {
+                            while (object->colliderRects.count > 0)
+                            {
+                                int* ID = (int*)PopList(&object->colliderRects);
+                                DeleteRectFromAll(*ID);
+                                free(ID);
+                            }
+                            object->packages[0] = false;
+                        }
+                    }
+                    else {
+                        sprintf("Are you sure you\nwant to delete\n%s", scripts[object->scriptIndexes[modulePage - objectPackageCount]].name);
+                        if (Modal(buffer, true)) {
+                            FreeScriptData(object->scriptData[modulePage - objectPackageCount], true);
+                            object->scriptCount--;
+                        }
+                    }
+
+                    refresh = true;
+                    sleep_ms(160);
+                }
+
+
+
 
                 uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1;
                 if (currentScene->objects[currentObject]->packages[0])
@@ -1497,6 +1582,7 @@ void ManageSceneUI()
                 }
             }
         }
+
 
         // Manage settings
         if (currentMode == 3 && buttons[RENDER_MODE_BUTTON].isPressed)
@@ -1531,17 +1617,17 @@ void ManageSceneUI()
             if (buttons[ADD_THING_BUTTON].isPressed)
             {
                 char* name = NewObject();
-                print("returned");
+                debugPrint("returned");
                 if (name != NULL)
                 {
-                    print("adding obj");
+                    debugPrint("adding obj");
                     currentScene->objects[currentScene->objectCount] = ObjectConstructor(currentScene->objectCount, name, strlen(name));
                     currentScene->objectCount++;
                     free(name);
                 }
                 else
                 {
-                    print("is null");
+                    debugPrint("is null");
                 }
                 sleep_ms(120);
                 refresh = true;
@@ -1549,6 +1635,7 @@ void ManageSceneUI()
         }
     }
 }
+
 
 void EditScene(int sceneIndex)
 {
@@ -1873,7 +1960,7 @@ void SceneMenu()
                 {
                     int index = SelectScene();
                     sceneIndex = index;
-                    printf("sceneNumber: %d\n", index);
+                    debugPrintf("sceneNumber: %d\n", index);
                     if (index != -1)
                     {
                         EditScene(index);
@@ -1894,10 +1981,7 @@ void SceneMenu()
 ///////////////////////// Run program
 #pragma region
 
-#define START_RENDER 1
-#define RENDERER_READY 2
-#define EXIT_RENDERER 3
-#define CHECK_FLAG 4
+
 
 #define RENDER_POSITION 0
 #define RENDER_SPRITE 1
@@ -1911,20 +1995,55 @@ uint8_t cameraScale = 0;
 int cameraX = 0;
 int cameraY = 0;
 
+typedef struct CoreState {
+    bool busy;
+    bool partitioning;
+    bool collisionPartitioned;
+
+    bool flagCalled;
+    bool startRendering;
+    bool checkInit;
+    bool offloadCollision;
+
+    bool exit;
+} CoreState;
+
+CoreState core0State;
+CoreState core1State;
+
+critical_section_t  collisionSection;
+
+void InitCollisionLock() {
+    critical_section_init(&collisionSection);
+}
+
 void GameRenderThread()
 {
-    multicore_fifo_push_blocking(CHECK_FLAG);
+    core0State.checkInit = true;
 
-    multicore_fifo_push_blocking(RENDERER_READY);
+
 
     while (1)
     {
-        uint32_t flag = multicore_fifo_pop_blocking();
-        if (flag == EXIT_RENDERER)
+        sleep_ms(1);
+        debugPrintf("............ Core 1 loop");
+        core1State.busy = false;
+
+        if (core1State.exit)
             break;
 
-        if (START_RENDER)
+        if (!core1State.flagCalled)
+            continue;
+
+        core1State.flagCalled = false;
+        core1State.busy = true;
+
+        debugPrint("........... Core 1 recieved flag ");
+
+        if (core1State.startRendering)
         {
+
+            debugPrint("............ Core 1 start render...");
             SmartClear();
             for (int i = 0; i < currentScene->objectCount; i++)
             {
@@ -1946,9 +2065,9 @@ void GameRenderThread()
                     scale.y = object->renderData[RENDER_SCALE].XY.y;
                 }
 
-                // printf("Scale: (%f,%f)\n", scale.x, scale.y);
-                // printf("Position: (%f,%f)\n", GetObjectDataByName(object, "position")->data.XY.x, GetObjectDataByName(object, "position")->data.XY.y);
-                // printf("Sprite: %d\n", GetObjectDataByName(object, "sprite")->data.i);
+                // debugPrintf("Scale: (%f,%f)\n", scale.x, scale.y);
+                // debugPrintf("Position: (%f,%f)\n", GetObjectDataByName(object, "position")->data.XY.x, GetObjectDataByName(object, "position")->data.XY.y);
+                // debugPrintf("Sprite: %d\n", GetObjectDataByName(object, "sprite")->data.i);
                 DrawSpriteCentered(
                     object->renderData[RENDER_SPRITE].i,
                     80 + cameraScale * object->renderData[RENDER_POSITION].XY.x - cameraX,
@@ -1959,13 +2078,45 @@ void GameRenderThread()
             }
             SmartShow();
 
-            debugPrintf("........ CORE 1 FINISHED RENDER");
+            debugPrint("........ CORE 1 FINISHED RENDER");
 
-            multicore_fifo_push_blocking(RENDERER_READY);
+
+
+
+            critical_section_enter_blocking(&collisionSection);
+            core1State.startRendering = false;
+
+            // lock the other core to prevent race conditions
+
+            if (!core0State.collisionPartitioned && !core0State.partitioning) {
+
+
+                debugPrint("........ CORE 1 TAKING OVER COLLISION PARTITIONMENT");
+                core1State.partitioning = true;
+                //allow other core to continue after setting flag
+                debugPrint("........ CORE 1 releasing other core");
+                critical_section_exit(&collisionSection);
+
+                PartitionColliders();
+                core1State.collisionPartitioned = true;
+            }
+            else {
+                debugPrint("........ CORE 1 releasing other core");
+                critical_section_exit(&collisionSection);
+            }
+
+        }
+        if (core1State.offloadCollision) {
+
+            debugPrint("............ Core 1 executing offloaded collisions");
+            ColliderStep(COLLIDER_SECOND);
+            core1State.offloadCollision = false;
         }
     }
 
-    print("......... CORE 1 EXITED");
+    debugPrint("......... CORE 1 EXITED");
+
+
 
     while (1)
         sleep_ms(1000); // infinite loop
@@ -1973,6 +2124,8 @@ void GameRenderThread()
 
 uint32_t RunProgram()
 {
+    debugPrint("run prog");
+
     bool UI_PrintToScreen(char* message, bool isError);
 
     EngineObject* camera = NULL;
@@ -1993,62 +2146,81 @@ uint32_t RunProgram()
         return CreateError(SCENE_ERROR, NO_CAMERA_DEFINED, 0);
     }
 
+    debugPrint("got cam");
+
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
         for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
         {
 
-            printf("backup: obj:%d, scr:%d\n", obj, scr);
-            printf("scrdata lines: %d\n", currentScene->objects[obj]->scriptData[scr]->lineCount);
+            debugPrintf("backup: obj:%d, scr:%d\n", obj, scr);
+            debugPrintf("scrdata lines: %d\n", currentScene->objects[obj]->scriptData[scr]->lineCount);
             ScriptData* scrData = currentScene->objects[obj]->scriptData[scr];
-            print("got scr data");
+            debugPrint("got scr data");
             if (scrData == NULL)
             {
-                print("null scr data");
+                debugPrint("null scr data");
             }
             if (scrData->backupData != NULL)
             {
-                print("free backup data");
+                debugPrint("free backup data");
                 free(scrData->backupData);
             }
-            print("freed");
+            debugPrint("freed");
             if (scrData->variableCount > 0)
                 scrData->backupData = malloc(sizeof(EngineVar) * scrData->variableCount);
-            print("malloced");
+            debugPrint("malloced");
             scrData->backupVarCount = scrData->variableCount;
             for (int var = 0; var < scrData->variableCount; var++)
             {
                 EngineVar* varPointer = (EngineVar*)ListGetIndex(&scrData->variables, var);
-                printf("backup: %d\n", var);
+                debugPrintf("backup: %d\n", var);
                 strcpy(scrData->backupData[var].name, varPointer->name);
                 scrData->backupData[var].currentType = varPointer->currentType;
 
                 scrData->backupData[var].data = varPointer->data;
             }
-            print("backed up!");
+            debugPrint("backed up!");
         }
-        printf("object %d fin\n", obj);
+        debugPrintf("object %d fin\n", obj);
     }
-    print("fin");
+    debugPrint("fin");
 
     Clear();
     SmartClear();
     SmartShowAll();
 
+
+
     multicore_reset_core1();
+
+
+    debugPrint("reset core");
+
+    memset(&core0State, 0, sizeof(CoreState));
+    memset(&core1State, 0, sizeof(CoreState));
+
+    debugPrint("reset data");
+
     multicore_launch_core1(GameRenderThread);
 
-    uint32_t flag = multicore_fifo_pop_blocking();
-    if (flag == CHECK_FLAG)
+    debugPrint("launch core");
+    sleep_ms(50);
+    if (core0State.checkInit)
     {
-        print("............ Core 0 got confirmation!");
+        debugPrint("............ Core 0 got confirmation!");
     }
     else
     {
-        print("............ Core 0 incorrect confirmation");
-        multicore_fifo_push_blocking(EXIT_RENDERER);
+        debugPrint("............ Core 0 incorrect confirmation");
+
+        core1State.flagCalled = true;
+
         return CreateError(RENDERER, COULD_NOT_START_CORE_1, 0);
     }
+
+
+    core0State.busy = true;
 
     while (1)
     {
@@ -2059,7 +2231,7 @@ uint32_t RunProgram()
         cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
         cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
 
-        // print("///////////////////////////////////////////////////////////////////// APPLY OBJECT PHYSICS");
+        // debugPrint("///////////////////////////////////////////////////////////////////// APPLY OBJECT PHYSICS");
 
         for (int i = 0; i < currentScene->objectCount; i++)
         {
@@ -2080,7 +2252,7 @@ uint32_t RunProgram()
 
             GetObjectDataByName(object, "velocity")->data.XY.x *= multiplier;
             GetObjectDataByName(object, "velocity")->data.XY.y *= multiplier;
-            // print("modified velocity");
+            // debugPrint("modified velocity");
 
 
             uint8_t scrCount = object->scriptCount;
@@ -2092,28 +2264,71 @@ uint32_t RunProgram()
             }
         }
 
-        // print("showed");
-        // printf("count: %d\n", currentScene->objectCount);
 
-        // print("/////////////////////////////////////////////////////////////////////EXECUTE SCRIPTS");
+
+        // debugPrint("showed");
+        // debugPrintf("count: %d\n", currentScene->objectCount);
+
+        // debugPrint("/////////////////////////////////////////////////////////////////////EXECUTE SCRIPTS");
 
         ExecuteInstructionStack();
 
-        // print("/////////////////////////////////////////////////////////////////// DO COLLISION");
+        critical_section_enter_blocking(&collisionSection);
 
-        ColliderStep();
+        //lock the other core during critical section
 
-        // print("/////////////////////////////////////////////////////////////////////DRAW SPRITES");
+        if (core1State.partitioning || core1State.collisionPartitioned) {
+            critical_section_exit(&collisionSection);
+            debugPrint("............ Core 0 waiting partition to finish");
+            while (!core1State.collisionPartitioned) sleep_ms(1);
+            debugPrint("............ Core 0 saw collision partitioned");
+        }
+        else {
+            core0State.partitioning = true;
+            critical_section_exit(&collisionSection);
+            debugPrint("............ Core 0 partitioning colliders");
+            PartitionColliders();
+            core0State.collisionPartitioned = true;
+        }
 
-        if (multicore_fifo_rvalid() || MULTI_STEP_PROGRAM == 0)
-        {
+        // debugPrint("/////////////////////////////////////////////////////////////////// DO COLLISION");
 
-            int flag = multicore_fifo_pop_blocking();
-            while (flag != RENDERER_READY)
-            {
-                flag = multicore_fifo_pop_blocking();
+
+        if (!core1State.busy) {
+            debugPrint("............ Core 0 offloading collisions");
+
+            core1State.offloadCollision = true;
+            core1State.flagCalled = true;
+
+            ColliderStep(COLLIDER_FIRST);
+
+
+
+            while (core1State.busy) {
+                sleep_ms(1);
+                debugPrint("............ Core 0 finished collisions, awaiting core 1");
             }
+            debugPrint("............ Core 0 got core 1 finished");
 
+        }
+        else {
+            debugPrint("............ Core 0 doing all collision");
+            ColliderStep(COLLIDER_ALL);
+        }
+        core0State.collisionPartitioned = false;
+        core0State.partitioning = false;
+        core1State.collisionPartitioned = false;
+        core1State.partitioning = false;
+
+        FreeCells();
+
+        // debugPrint("/////////////////////////////////////////////////////////////////////DRAW SPRITES");
+
+        if (!core1State.busy || MULTI_STEP_PROGRAM == 0)
+        {
+            debugPrint("................. Core 0 waiting for core ready");
+            while (core1State.busy) sleep_ms(1);
+            debugPrint("................. Core 0 saving critical object data");
             for (int i = 0; i < currentScene->objectCount; i++)
             {
                 EngineObject* object = currentScene->objects[i];
@@ -2139,27 +2354,28 @@ uint32_t RunProgram()
 
                 object->renderData[RENDER_ANGLE].f = GetObjectDataByName(object, "angle")->data.f;
             }
+            debugPrint("............ Core 0 starting renderer");
 
-            multicore_fifo_push_blocking(START_RENDER);
+            core1State.startRendering = true;
+            core1State.flagCalled = true;
+
         }
         else
         {
-            debugPrintf(".... MULTI STEPPING PROGRAM");
+            debugPrint(".... MULTI STEPPING PROGRAM");
         }
 
-        // print("/////////////////////////////////////////////////////////////////////// EXIT");
+        // debugPrint("/////////////////////////////////////////////////////////////////////// EXIT");
 
         if (gpio_get(BUTTON_S) == 0 && gpio_get(BUTTON_K) == 0)
         {
-            print("exiting");
             if (millis() - exitHoldTime > 2000)
             {
-                int flag = multicore_fifo_pop_blocking();
-                while (flag != RENDERER_READY)
-                {
-                    flag = multicore_fifo_pop_blocking();
-                }
-                multicore_fifo_push_blocking(EXIT_RENDERER);
+                debugPrint("exiting");
+                core1State.flagCalled = false;
+                core1State.exit = true;
+
+                while (core1State.busy)sleep_ms(1);
                 break;
             }
         }
@@ -2168,6 +2384,7 @@ uint32_t RunProgram()
             exitHoldTime = millis();
         }
     }
+
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {

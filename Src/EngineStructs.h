@@ -185,13 +185,15 @@ typedef struct EngineObject
     char name[MAX_NAME_LENGTH];
 
     uint8_t scriptCount;
+    
 
     ScriptData* scriptData[MAX_SCRIPTS_PER_OBJECT];
     uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
 
     // Each object has position, sprite, and scale
-    VarNode* objectDataTail;
-    uint8_t objectDataCount;
+    GeneralList objectData;
+    //VarNode* objectDataTail;
+   // uint8_t objectDataCount;
 
     // This stores only the data required to render
     VariableUnion renderData[5];
@@ -353,6 +355,7 @@ EngineSprite* SpriteConstructor(uint8_t ID, uint16_t sprite[SPRITE_WIDTH][SPRITE
     }
     return output;
 }
+
 ScriptData* ScriptDataConstructor(EngineScript* script)
 {
     ScriptData* output = (ScriptData*)malloc(sizeof(ScriptData));
@@ -379,83 +382,35 @@ ScriptData* ScriptDataConstructor(EngineScript* script)
 
 void AddDataToObject(EngineObject* object, EngineVar* data)
 {
-    if (object->objectDataTail == NULL)
-    {
-        object->objectDataTail = malloc(sizeof(VarNode));
-        object->objectDataTail->link = data;
-        object->objectDataTail->next = NULL;
-        object->objectDataTail->previous = NULL;
-        object->objectDataTail->index = object->objectDataCount;
-        object->objectDataCount++;
-        return;
-    }
-
+    PushList(&object->objectData, data);
     VarNode* newNode = malloc(sizeof(VarNode));
-
-    object->objectDataTail->next = newNode;
-    newNode->previous = object->objectDataTail;
-
-    newNode->next = NULL;
-    newNode->link = data;
-    newNode->index = object->objectDataCount;
-
-    object->objectDataTail = newNode;
-    object->objectDataCount++;
 }
 
 void ClearDataFromObject(EngineObject* object)
 {
-    printf("clear obj %s\n", object->name);
-    VarNode* currentData = object->objectDataTail;
-    while (currentData->previous != NULL)
-    {
-        currentData = currentData->previous;
-        if (currentData->next->link != NULL)
-        {
-            printf("clearing %s\n", currentData->next->link->name);
-            free(currentData->next->link);
-        }
-        free(currentData->next);
+    while (object->objectData.count > 0) {
+        free(PopList(&object->objectData));
     }
-    if (currentData != NULL)
-    {
-        free(currentData->link);
-        free(currentData);
-    }
-    currentData = NULL;
-    object->objectDataCount = 0;
 }
 
 EngineVar* GetObjectDataByName(EngineObject* obj, char* name)
 {
-    VarNode* current = obj->objectDataTail;
-    while (current != NULL)
-    {
-        if (strcmp(current->link->name, name) == 0)
-        {
-            return current->link;
-        }
-        current = current->previous;
+    GeneralListNode* current = obj->objectData.firstElement;
+    while (current != NULL && strcmp(((EngineVar*)(current->content))->name, name) != 0) {
+        current = current->next;
     }
-    return NULL;
+    if (current == NULL)
+        return NULL;
+    return (EngineVar*)current->content;
 }
 EngineVar* GetObjectDataByIndex(EngineObject* obj, uint8_t index)
 {
-    VarNode* current = obj->objectDataTail;
-    while (current != NULL)
-    {
-        if (current->index == index)
-        {
-            return current->link;
-        }
-        current = current->previous;
-    }
-    return NULL;
+    return (EngineVar*)ListGetIndex(&obj->objectData, index);
 }
 EngineVar** ObjectDataToList(EngineObject* object)
 {
-    EngineVar** list = (EngineVar**)malloc(sizeof(EngineVar*) * object->objectDataCount);
-    for (int i = 0; i < object->objectDataCount; i++)
+    EngineVar** list = (EngineVar**)malloc(sizeof(EngineVar*) * object->objectData.count);
+    for (int i = 0; i < object->objectData.count; i++)
     {
         list[i] = GetObjectDataByIndex(object, i);
     }
@@ -482,8 +437,7 @@ EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
     output->scriptCount = 0;
 
-    output->objectDataCount = 0;
-    output->objectDataTail = NULL;
+    InitializeList(&output->objectData);
 
     InitializeList(&output->colliderRects);
 

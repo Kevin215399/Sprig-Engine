@@ -48,7 +48,7 @@ const uint16_t colorTable[PALLETE_HEIGHT * PALLETE_WIDTH] = {
     65535, 50687, 37982, 27390, 18909, 10493, 6237, 4125, 4121, 2066, 2061, 8, 4, 2, 0,
     65535, 54781, 44123, 35577, 29144, 24823, 20566, 18454, 16403, 12302, 8201, 4102, 2051, 1, 0,
     65535, 58875, 50264, 45813, 39379, 37105, 34896, 32783, 28685, 20489, 14342, 8196, 4098, 2049, 0,
-    65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0};
+    65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0 };
 
 float maxF(float a, float b)
 {
@@ -97,7 +97,7 @@ bool UI_ClearDebug()
     return true;
 }
 
-bool UI_PrintToScreen(char *message, bool isError)
+bool UI_PrintToScreen(char* message, bool isError)
 {
     if (editorView != DEBUG_VIEW)
         return false;
@@ -201,22 +201,22 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
 {
     if (fillColor == replaceColor)
         return;
-    GeneralList openNodes = {0};
-    Vector2 *startPos = malloc(sizeof(Vector2));
+    GeneralList openNodes = { 0 };
+    Vector2* startPos = malloc(sizeof(Vector2));
     startPos->x = (float)startX;
     startPos->y = (float)startY;
     PushList(&openNodes, startPos);
     sprites[spriteID].sprite[startX][startY] = fillColor;
     while (openNodes.count > 0)
     {
-        Vector2 *node = (Vector2 *)PopList(&openNodes);
+        Vector2* node = (Vector2*)PopList(&openNodes);
 
         if (node == NULL)
             continue;
 
         if (node->y < SPRITE_HEIGHT - 1 && sprites[spriteID].sprite[(int)node->x][(int)node->y + 1] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x;
             newPos->y = node->y + 1;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -224,7 +224,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->y > 0 && sprites[spriteID].sprite[(int)node->x][(int)node->y - 1] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x;
             newPos->y = node->y - 1;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -232,7 +232,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->x < SPRITE_WIDTH - 1 && sprites[spriteID].sprite[(int)node->x + 1][(int)node->y] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x + 1;
             newPos->y = node->y;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -240,7 +240,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->x > 0 && sprites[spriteID].sprite[(int)node->x - 1][(int)node->y] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x - 1;
             newPos->y = node->y;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -549,7 +549,7 @@ void SpriteMode()
 #define SHORTCUT_SCREEN 7
 
 #define SHORTCUT_CATEGORY_COUNT 8
-char *SC_CATEGORY_NAMES[] = {
+char* SC_CATEGORY_NAMES[] = {
     "Conditions",
     "Types",
     "Math",
@@ -557,44 +557,44 @@ char *SC_CATEGORY_NAMES[] = {
     "Collider",
     "Physics",
     "IO",
-    "Display"};
+    "Display" };
 
 #define SC_CONDITION_COUNT 4
-char *SC_CONDITION_SHORTCUTS[] = {
+char* SC_CONDITION_SHORTCUTS[] = {
     "if () {",
     "} else {",
     "while () {",
-    "break"};
+    "break" };
 
 #define SC_TYPES_COUNT 6
-char *SC_TYPE_SHORTCUTS[] = {
+char* SC_TYPE_SHORTCUTS[] = {
     "void",
     "bool",
     "int",
     "float",
     "string",
-    "Vector(,)"};
+    "Vector(,)" };
 
 #define SC_MATH_COUNT 5
-char *SC_MATH_SHORTCUTS[] = {
+char* SC_MATH_SHORTCUTS[] = {
     "PI",
     "pow",
     "sin",
     "cos",
-    "deltaTime"};
+    "deltaTime" };
 
 #define SC_OBJECT_COUNT 12
-char *SC_OBJECT_SHORTCUTS[] = {
-    "setPosition()",
-    "setScale()",
-    "setSprite()",
-    "setVelocity()",
-    "setAngle()",
+char* SC_OBJECT_SHORTCUTS[] = {
+    "setPosition();",
+    "setScale();",
+    "setSprite();",
+    "setVelocity();",
+    "setAngle();",
 
-    "addPosition()",
-    "addScale()",
-    "addVelocity()",
-    "addAngle()",
+    "addPosition();",
+    "addScale();",
+    "addVelocity();",
+    "addAngle();",
 
     "getPosition()",
     "getScale()",
@@ -604,21 +604,28 @@ char *SC_OBJECT_SHORTCUTS[] = {
 
 // collider here
 
+#define SC_COLLISION_COUNT 3
+char* SC_COLLISION_SHORTCUTS[] = {
+    "void CollideEnter(){}",
+    "void CollideStay(){}",
+    "void CollideExit(){}",
+};
+
 // physic here
 
 #define SC_IO_COUNT 3
-char *SC_IO_SHORTCUTS[] = {
+char* SC_IO_SHORTCUTS[] = {
     "input(\"\")",
 
     "leftLED()",
-    "rightLED()"};
+    "rightLED()" };
 
 #pragma endregion
 
 int shortcutCategory = -1;
 uint8_t shortcutPage = 0;
 
-void PrintListOnKeyboard(char **list, uint8_t count, uint8_t currentPage, uint8_t selected)
+void PrintListOnKeyboard(char** list, uint8_t count, uint8_t currentPage, uint8_t selected)
 {
     for (int i = 5 * currentPage; i < min(count, 5 * currentPage + 5); i++)
     {
@@ -634,11 +641,11 @@ void PrintListOnKeyboard(char **list, uint8_t count, uint8_t currentPage, uint8_
     }
 }
 
-char *HandleShortcuts()
+char* HandleShortcuts()
 {
     bool refresh = true;
     uint8_t selected = 0;
-    char *output = malloc(32);
+    char* output = malloc(32);
     shortcutPage = 0;
     while (1)
     {
@@ -677,6 +684,12 @@ char *HandleShortcuts()
                 PrintListOnKeyboard(SC_OBJECT_SHORTCUTS, SC_OBJECT_COUNT, shortcutPage, selected);
                 count = SC_OBJECT_COUNT;
                 strcpy(output, SC_OBJECT_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_COLLIDER:
+                PrintListOnKeyboard(SC_COLLISION_SHORTCUTS, SC_COLLISION_COUNT, shortcutPage, selected);
+                count = SC_COLLISION_COUNT;
+                strcpy(output, SC_COLLISION_SHORTCUTS[selected]);
                 break;
 
             case SHORTCUT_IO:
@@ -742,7 +755,7 @@ char *HandleShortcuts()
         }
     }
 }
-void RecalculateCaret(int *caretX, int *caretY, int *caretPos)
+void RecalculateCaret(int* caretX, int* caretY, int* caretPos)
 {
     (*caretX) = 0;
     (*caretY) = 0;
@@ -1063,11 +1076,11 @@ void EditScript(uint8_t scriptIndex)
 
                         FlushBuffer();
 
-                        char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
+                        char* saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
 
                         sprintf(saveName, "%s`%s`ENGINESCRIPT", scripts[scriptIndex].name, program->name);
 
-                        File *file = GetFile(saveName);
+                        File* file = GetFile(saveName);
 
                         if (file->startBlock == 0)
                         {
@@ -1159,7 +1172,7 @@ void EditScript(uint8_t scriptIndex)
                 {
                     if (currentCharacter == HAMBURGER_SYB)
                     {
-                        char *shortcut = HandleShortcuts();
+                        char* shortcut = HandleShortcuts();
                         if (shortcut != NULL)
                         {
                             for (int i = strlen(currentScriptText) + strlen(shortcut); i > caretPosition; i--)
@@ -1348,12 +1361,12 @@ int SelectScript()
         }
     }
 }
-charArray *CreateScriptMenu()
+charArray* CreateScriptMenu()
 {
     bool refresh = true;
     bool modifyName = false;
     uint8_t option = 0;
-    char *name = (char *)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
+    char* name = (char*)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
     for (int i = 0; i <= MAX_NAME_LENGTH; i++)
     {
         name[i] = '\0';
@@ -1478,7 +1491,7 @@ charArray *CreateScriptMenu()
                         }
                         else
                         {
-                            charArray *array = malloc(sizeof(charArray));
+                            charArray* array = malloc(sizeof(charArray));
                             array->array = name;
                             array->length = caretPosition;
                             return array;
@@ -1493,7 +1506,7 @@ charArray *CreateScriptMenu()
                 if (GetButton() == BUTTON_L)
                 {
                     free(name);
-                    charArray *array = malloc(sizeof(charArray));
+                    charArray* array = malloc(sizeof(charArray));
                     array->array = NULL;
                     array->length = 0;
                     return array;
@@ -1561,7 +1574,7 @@ void ScriptMenu()
             {
                 if (option == 0)
                 {
-                    charArray *scriptName = CreateScriptMenu();
+                    charArray* scriptName = CreateScriptMenu();
 
                     if (scriptName->length != 0)
                     {

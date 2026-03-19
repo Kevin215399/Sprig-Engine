@@ -14,6 +14,7 @@
 
 #include "DebugPrint.h"
 
+
 typedef struct Rect
 {
     Vector2 localCenter;
@@ -26,6 +27,8 @@ typedef struct Rect
 
     bool didCollide;
     bool couldExit;
+
+    int ID;
 } Rect;
 
 typedef struct Cell
@@ -37,9 +40,14 @@ typedef struct Cell
 GeneralList allColliders;
 GeneralList cells;
 
+int setRectID = 0;
+
 
 #define CELL_SIZE_X 8
 #define CELL_SIZE_Y 8
+
+/////////////////////////////////////Helper functions
+#pragma region
 
 //////////////////////////////// HELPER FUNCTIONS
 
@@ -48,7 +56,40 @@ float TruncateFloat(float value, int digits)
     return floor(value * pow(10, digits)) / pow(10, digits);
 }
 
+float ProjectPoint(Vector2 point, float slope) {
+    return slope * point.x - point.y;
+}
+
+float Min4(float a, float b, float c, float d) {
+    return min(min(a, b), min(c, d));
+}
+
+float Max4(float a, float b, float c, float d) {
+    return max(max(a, b), max(c, d));
+}
+
+// rotates a point around a point in degrees
+Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
+{
+    Vector2 output;
+
+    angle *= (3.1415 / 180);
+
+    output.x = pivot.x + (point.x - pivot.x) * cos(angle) - (point.y - pivot.y) * sin(angle);
+    output.y = pivot.y + (point.x - pivot.x) * sin(angle) + (point.y - pivot.y) * cos(angle);
+
+    return output;
+}
+
+Vector2 PreciseProjectPoint(Vector2 point, float slope, Vector2 lineOffset) {
+    Vector2 output;
+    output.x = (-slope * lineOffset.x + lineOffset.y - slope * point.x - point.y) / (-2 * slope);
+    output.y = slope * (output.x - lineOffset.x) + lineOffset.y;
+    return output;
+}
+
 //////////////////////////////// CONSTRUCTORS / SETUP
+
 
 Rect* NewRect(float centerX, float centerY, float scaleX, float scaleY, EngineObject* link)
 {
@@ -67,7 +108,35 @@ Rect* NewRect(float centerX, float centerY, float scaleX, float scaleY, EngineOb
 
 
     output->link = link;
+
+    debugPrintf("created rect index: %d\n", setRectID);
+    output->ID = setRectID++;
+    
+
     return output;
+}
+
+Rect* FindRectFromAll(int ID) {
+    GeneralListNode* current = allColliders.firstElement;
+    while (current != NULL && ((Rect*)(current->content))->ID != ID) {
+        current = current->next;
+    }
+    if (current == NULL)
+        return NULL;
+    return (Rect*)current->content;
+}
+
+void DeleteRectFromAll(int ID) {
+    GeneralListNode* current = allColliders.firstElement;
+    int elementIndex = 0;
+    while (current != NULL && ((Rect*)(current->content))->ID != ID) {
+        current = current->next;
+        elementIndex++;
+    }
+    if (current == NULL)
+        return;
+    debugPrint("found rect, deleting");
+    free(DeleteListElement(&allColliders,elementIndex));
 }
 
 Cell* NewCell(float topLeftx, float topLefty)
@@ -78,6 +147,11 @@ Cell* NewCell(float topLeftx, float topLefty)
     InitializeList(&output->rectsWithin);
     return output;
 }
+
+#pragma endregion
+
+////////////////////////////////////Collision setup
+#pragma region
 
 void SetupCollisionPackage()
 {
@@ -148,42 +222,91 @@ void AddMeshToObject(EngineObject* object)
                 }
             }
 
-            uint16_t* rectID = malloc(sizeof(uint16_t));
-            *rectID = allColliders.count;
+            Rect* rect = NewRect((float)x - (float)SPRITE_WIDTH / 2 + (float)width / 2, -(float)y + (float)SPRITE_HEIGHT / 2 - (float)height / 2, width, height, object);
+            PushList(&allColliders, rect);
+
+            int* rectID = malloc(sizeof(int));
+            *rectID = rect->ID;
             PushList(&object->colliderRects, rectID);
 
-            PushList(&allColliders, NewRect((float)x - (float)SPRITE_WIDTH / 2 + (float)width / 2, -(float)y + (float)SPRITE_HEIGHT / 2 - (float)height / 2, width, height, object));
 
             debugPrintf("rect count: %d\n", allColliders.count);
         }
     }
 }
 
-float ProjectPoint(Vector2 point, float slope) {
-    return slope * point.x - point.y;
-}
-
-float Min4(float a, float b, float c, float d) {
-    return min(min(a, b), min(c, d));
-}
-float Max4(float a, float b, float c, float d) {
-    return max(max(a, b), max(c, d));
-}
-
-
-
-// rotates a point around a point in degrees
-Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
+void RecalculateObjectColliders(EngineObject* object)
 {
-    Vector2 output;
+    while (object->colliderRects.count > 0)
+    {
+        int *ID = (int*)PopList(&object->colliderRects);
+        DeleteRectFromAll(*ID);
+        free(ID);
+    }
 
-    angle *= (3.1415 / 180);
+    if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)
+    {
+        Rect* rect = NewRect(-SPRITE_WIDTH / 2,
+            SPRITE_HEIGHT / 2,
+            SPRITE_WIDTH,
+            SPRITE_HEIGHT,
+            object);
 
-    output.x = pivot.x + (point.x - pivot.x) * cos(angle) - (point.y - pivot.y) * sin(angle);
-    output.y = pivot.y + (point.x - pivot.x) * sin(angle) + (point.y - pivot.y) * cos(angle);
+        PushList(&allColliders,
+            rect);
 
-    return output;
+        int* IDpointer = malloc(sizeof(int));
+        *IDpointer = rect->ID;
+        PushList(&object->colliderRects, IDpointer);
+    }
+    else
+    {
+        AddMeshToObject(object);
+    }
 }
+
+void AddColliderToObject(EngineObject* object, uint16_t meshTypeSet, bool calculateColliders, float bounceSet)
+{
+    object->packages[0] = true;
+
+    EngineVar* center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR, true);
+    center->data.XY.x = 0;
+    center->data.XY.y = 0;
+    AddDataToObject(object, center);
+
+    EngineVar* size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR, true);
+    size->data.XY.x = 1;
+    size->data.XY.y = 1;
+    AddDataToObject(object, size);
+
+    EngineVar* meshType = VarConstructor("meshType", strlen("meshType"), TYPE_INT, true);
+    meshType->data.i = meshTypeSet;
+    AddDataToObject(object, meshType);
+
+    EngineVar* collisionType = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT, true);
+    collisionType->data.i = DYNAMIC;
+    AddDataToObject(object, collisionType);
+
+    EngineVar* mass = VarConstructor("mass", strlen("mass"), TYPE_INT, true);
+    mass->data.i = 1;
+    AddDataToObject(object, mass);
+
+    EngineVar* sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT, true);
+    sprite->data.i = GetObjectDataByName(object, "sprite")->data.i;
+    AddDataToObject(object, sprite);
+
+    EngineVar* bounce = VarConstructor("bounce", strlen("bounce"), TYPE_FLOAT, true);
+    bounce->data.f = bounceSet;
+    AddDataToObject(object, bounce);
+
+    if (calculateColliders)
+        RecalculateObjectColliders(object);
+}
+
+#pragma endregion
+
+/////////////////////////////////// SAT Collision
+#pragma region
 
 //Returns true if they are overlapping
 bool SATWithSlope(Rect* rectA, Rect* rectB, float slope, bool isVertical) {
@@ -308,7 +431,10 @@ bool SATRects(Rect* rectA, Rect* rectB)
     return true;
 }
 
+#pragma endregion
 
+/////////////////////////////////// Space partitioning
+#pragma region
 
 Vector2 NearestCell(Vector2 input)
 {
@@ -354,12 +480,222 @@ void FreeCells() {
     }
 }
 
-void ColliderStep()
+#pragma endregion
+
+////////////////////////////////// Collision Stepper and resolution
+#pragma region
+
+void JumpToFunction(ScriptData* scriptData, char* functionName);
+
+void ResolveCollision(Rect* a, Rect* b)
 {
-    void JumpToFunction(ScriptData * scriptData, char* functionName);
+    float aForce = 0;
+    float bForce = 0;
+
+    float massA = (float)GetObjectDataByName(a->link, "mass")->data.i;
+    float massB = (float)GetObjectDataByName(b->link, "mass")->data.i;
+
+    int typeA = GetObjectDataByName(a->link, "colliderType")->data.i;
+    int typeB = GetObjectDataByName(b->link, "colliderType")->data.i;
+
+    if (typeA == STATIC)
+    {
+        aForce = 0;
+    }
+    else if (typeA == DYNAMIC)
+    {
+        if (typeB == STATIC)
+            aForce = 1;
+        else
+            aForce = massB / (massA + massB);
+    }
+
+    if (typeB == STATIC)
+    {
+        bForce = 0;
+    }
+    else if (typeB == DYNAMIC)
+    {
+        if (typeA == STATIC)
+            bForce = 1;
+        else
+            bForce = massA / (massA + massB);
+    }
+
+    debugPrintf("aForce: %f\n", aForce);
+    debugPrintf("bForce: %f\n", bForce);
+
+    if (aForce == 0 && bForce == 0)
+    {
+        return;
+    }
+
+    Vector2 aPosition = GetObjectDataByName(a->link, "position")->data.XY;
+    Vector2 bPosition = GetObjectDataByName(b->link, "position")->data.XY;
+
+    debugPrintf("a pos: (%f,%f)\n", aPosition.x, aPosition.y);
+
+    debugPrintf("b pos: (%f,%f)\n", bPosition.x, bPosition.y);
+
+    int direction = 0;
+    int costs[4];
+
+    /*
+    0: top of A to bottom of B
+    1: right of A to left of B
+    2: bottom of A to top of B
+    3: left of A to right of B
+    */
+    Vector2 aDirection;
+    Vector2 bDirection;
+
+    // The perpendicular slope of rectA gives the movement vector
+    Vector2 tempPoint;
+    tempPoint.x = a->globalCenter.x - a->globalScale.x / 2;
+    tempPoint.y = a->globalCenter.y;
+    Vector2 aLeftPoint = RotatePoint(tempPoint, a->globalCenter, a->angle);
+    tempPoint.x = a->globalCenter.x + a->globalScale.x / 2;
+    Vector2 aRightPoint = RotatePoint(tempPoint, a->globalCenter, a->angle);
+
+    aLeftPoint.y = -aLeftPoint.y;
+    aRightPoint.y = -aRightPoint.y;
 
 
-    debugPrint("collider step");
+    bool isAVertical = false;
+    float slopeA = 0;
+    if (aRightPoint.x == aLeftPoint.x) {
+        isAVertical = true;
+    }
+    else {
+        slopeA = (aRightPoint.y - aLeftPoint.y) / (aRightPoint.x - aLeftPoint.x);
+    }
+
+    debugPrintf(" slope a = %f\n", slopeA);
+
+    tempPoint.x = b->globalCenter.x - b->globalScale.x / 2;
+    tempPoint.y = b->globalCenter.y;
+    Vector2 bLeftPoint = RotatePoint(tempPoint, b->globalCenter, b->angle);
+    tempPoint.x = b->globalCenter.x + b->globalScale.x / 2;
+    Vector2 bRightPoint = RotatePoint(tempPoint, b->globalCenter, b->angle);
+
+    bLeftPoint.y = -bLeftPoint.y;
+    bRightPoint.y = -bRightPoint.y;
+
+    debugPrintf("b points: (%f, %f) -> (%f, %f)\n", bLeftPoint.x, bLeftPoint.y, bRightPoint.x, bRightPoint.y);
+
+    bool isBVertical = false;
+    float slopeB = 0;
+    if (bRightPoint.x == bLeftPoint.x) {
+        isBVertical = true;
+    }
+    else {
+        slopeB = (bRightPoint.y - bLeftPoint.y) / (bRightPoint.x - bLeftPoint.x);
+    }
+    debugPrintf(" slope b = %f\n", slopeB);
+
+    float combinedSlope = 0;
+    bool isHorizontal = false;
+    if (isAVertical && isBVertical) {
+        debugPrint("both vertical");
+        isHorizontal = true;
+        combinedSlope = 0;
+    }
+    else {
+        debugPrint("avging slopes");
+        combinedSlope = (slopeA + slopeB) / 2;
+    }
+    debugPrintf("combined slope = %f\n", combinedSlope);
+    float aMultiplier = 1;
+    float bMultiplier = 1;
+    if (isHorizontal) {
+        debugPrint("horizontal movement");
+
+        aMultiplier = a->globalCenter.x < b->globalCenter.x ? -1 : 1;
+        bMultiplier = b->globalCenter.x < a->globalCenter.x ? -1 : 1;
+    }
+    else if (combinedSlope == 0) {
+        debugPrint("vertical movement");
+
+        aMultiplier = a->globalCenter.y < b->globalCenter.y ? -1 : 1;
+        bMultiplier = b->globalCenter.y < a->globalCenter.y ? -1 : 1;
+    }
+    else {
+        debugPrintf("movement along y = %fx\n", -1 / combinedSlope);
+
+        float aProjected = ProjectPoint(a->globalCenter, -1 / combinedSlope);
+        float bProjected = ProjectPoint(b->globalCenter, -1 / combinedSlope);
+
+        debugPrintf("projected relations: a:%f, b:%f\n", aProjected, bProjected);
+    }
+
+    /*costs[0] = abs((b->globalCenter.y - b->globalScale.y / 2) - (a->globalCenter.y + a->globalScale.y / 2));
+    costs[2] = abs((b->globalCenter.y + b->globalScale.y / 2) - (a->globalCenter.y - a->globalScale.y / 2));
+
+    debugPrint("calculated y costs");
+
+    costs[1] = abs((b->globalCenter.x - b->globalScale.x / 2) - (a->globalCenter.x + a->globalScale.x / 2));
+    costs[3] = abs((b->globalCenter.x + b->globalScale.x / 2) - (a->globalCenter.x - a->globalScale.x / 2));
+
+    debugPrint("calculated x costs");*/
+
+    /*int lowestCost = -1;
+    for (int i = 0; i < 4; i++)
+    {
+        debugPrintf("check dir %d: %d, lowest: %d\n", i, costs[i], lowestCost);
+        if (lowestCost == -1 || costs[i] < lowestCost)
+        {
+            direction = i;
+            lowestCost = costs[i];
+        }
+    }
+
+    debugPrintf("Direction: %d\n", direction);
+
+    EngineVar* aPos = GetObjectDataByName(a->link, "position");
+    EngineVar* bPos = GetObjectDataByName(b->link, "position");
+
+    switch (direction)
+    {
+    case 0:
+        debugPrintf("0: a-%f, b-%f\n", (float)costs[0] * aForce, -(float)costs[0] * bForce);
+        aPos->data.XY.y += (float)costs[0] * aForce;
+        bPos->data.XY.y -= (float)costs[0] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
+        break;
+    case 1:
+        debugPrintf("1: a-%f, b-%f\n", (float)costs[1] * aForce, -(float)costs[1] * bForce);
+        aPos->data.XY.x += (float)costs[1] * aForce;
+        bPos->data.XY.x -= (float)costs[1] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
+        break;
+    case 2:
+        debugPrintf("2: a-%f, b-%f\n", -(float)costs[2] * aForce, (float)costs[2] * bForce);
+        aPos->data.XY.y -= (float)costs[2] * aForce;
+        bPos->data.XY.y += (float)costs[2] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.y = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.y = 0;
+        break;
+    case 3:
+        debugPrintf("3: a-%f, b-%f\n", -(float)costs[3] * aForce, (float)costs[3] * bForce);
+        aPos->data.XY.x -= (float)costs[3] * aForce;
+        bPos->data.XY.x += (float)costs[3] * bForce;
+
+        GetObjectDataByName(a->link, "velocity")->data.XY.x = 0;
+        GetObjectDataByName(b->link, "velocity")->data.XY.x = 0;
+        break;
+    }
+
+    debugPrint("resolved");*/
+}
+
+void PartitionColliders() {
+    debugPrint("partition colliders");
+
     FreeCells();
 
 
@@ -454,11 +790,35 @@ void ColliderStep()
             }
         }
     }
+}
+
+#define COLLIDER_ALL 0
+#define COLLIDER_FIRST 1
+#define COLLIDER_SECOND 2
+
+void ColliderStep(uint8_t mode)
+{
 
 
 
+    debugPrint("collider step");
 
-    for (int cellIndex = 0; cellIndex < cells.count; cellIndex++) {
+
+    uint16_t start = 0;
+    uint16_t end = 0;
+    if (mode == COLLIDER_ALL) {
+        end = cells.count;
+    }
+    if (mode == COLLIDER_FIRST) {
+        end = ceil(cells.count / 2);
+    }
+    if (mode == COLLIDER_SECOND) {
+        end = cells.count;
+        start = ceil(cells.count / 2);
+    }
+
+
+    for (int cellIndex = start; cellIndex < end; cellIndex++) {
         Cell* cell = ListGetIndex(&cells, cellIndex);
         for (int indexA = 0; indexA < cell->rectsWithin.count; indexA++) {
             for (int indexB = indexA + 1; indexB < cell->rectsWithin.count; indexB++) {
@@ -467,13 +827,15 @@ void ColliderStep()
                 if (rectA->link == NULL) {
                     debugPrint("RECT A NOT LINKED");
                     while (1)sleep_ms(100);
-                } else {
+                }
+                else {
                     debugPrintf("rect a name: %s\n", rectA->link->name);
                 }
                 if (rectB->link == NULL) {
                     debugPrint("RECT B NOT LINKED");
                     while (1)sleep_ms(100);
-                } else {
+                }
+                else {
                     debugPrintf("rect b name: %s\n", rectB->link->name);
                 }
                 if (rectA->link == rectB->link)
@@ -512,6 +874,12 @@ void ColliderStep()
 
                     rectA->link->didCollide = true;
                     rectB->link->didCollide = true;
+
+                    //Function defined in physics package
+
+
+                    void ResolveCollision(Rect * a, Rect * b);
+                    ResolveCollision(rectA, rectB);
                 }
                 else {
                     // Rect A exit
@@ -536,70 +904,10 @@ void ColliderStep()
         }
     }
     debugPrint("fin collision step");
-    FreeCells();
+
 }
 
-void RecalculateObjectColliders(EngineObject* object)
-{
-    while (object->colliderRects.count > 0)
-    {
-        free(PopList(&object->colliderRects));
-    }
 
-    if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)
-    {
-        uint16_t* rectID = malloc(sizeof(uint16_t));
-        *rectID = allColliders.count;
-        PushList(&object->colliderRects, rectID);
+#pragma endregion
 
-        PushList(&allColliders,
-            NewRect(-SPRITE_WIDTH / 2,
-                SPRITE_HEIGHT / 2,
-                SPRITE_WIDTH,
-                SPRITE_HEIGHT,
-                object));
-    }
-    else
-    {
-        AddMeshToObject(object);
-    }
-}
-
-void AddColliderToObject(EngineObject* object, uint16_t meshTypeSet, bool calculateColliders, float bounceSet)
-{
-    object->packages[0] = true;
-
-    EngineVar* center = VarConstructor("colliderCenter", strlen("colliderCenter"), TYPE_VECTOR, true);
-    center->data.XY.x = 0;
-    center->data.XY.y = 0;
-    AddDataToObject(object, center);
-
-    EngineVar* size = VarConstructor("colliderSize", strlen("colliderSize"), TYPE_VECTOR, true);
-    size->data.XY.x = 1;
-    size->data.XY.y = 1;
-    AddDataToObject(object, size);
-
-    EngineVar* meshType = VarConstructor("meshType", strlen("meshType"), TYPE_INT, true);
-    meshType->data.i = meshTypeSet;
-    AddDataToObject(object, meshType);
-
-    EngineVar* collisionType = VarConstructor("colliderType", strlen("colliderType"), TYPE_INT, true);
-    collisionType->data.i = DYNAMIC;
-    AddDataToObject(object, collisionType);
-
-    EngineVar* mass = VarConstructor("mass", strlen("mass"), TYPE_INT, true);
-    mass->data.i = 1;
-    AddDataToObject(object, mass);
-
-    EngineVar* sprite = VarConstructor("meshSprite", strlen("meshSprite"), TYPE_INT, true);
-    sprite->data.i = GetObjectDataByName(object, "sprite")->data.i;
-    AddDataToObject(object, sprite);
-
-    EngineVar* bounce = VarConstructor("bounce", strlen("bounce"), TYPE_FLOAT, true);
-    bounce->data.f = bounceSet;
-    AddDataToObject(object, bounce);
-
-    if (calculateColliders)
-        RecalculateObjectColliders(object);
-}
 #endif
