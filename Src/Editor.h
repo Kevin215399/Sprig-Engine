@@ -22,14 +22,16 @@
 
 #include "GUI_Icons.h"
 
+#include "DebugPrint.h"
+
+
 #define PALLETE_WIDTH 12
 #define PALLETE_HEIGHT 15
 
 #define PLAY_VIEW 1
-#define DEBUG_VIEW 2
-#define SCRIPT_VIEW 3
-#define SPRITE_VIEW 4
-#define SCENE_VIEW 5
+#define SCRIPT_VIEW 2
+#define SPRITE_VIEW 3
+#define SCENE_VIEW 4
 
 uint8_t editorView = 0;
 uint8_t debugLine = 0;
@@ -48,7 +50,10 @@ const uint16_t colorTable[PALLETE_HEIGHT * PALLETE_WIDTH] = {
     65535, 50687, 37982, 27390, 18909, 10493, 6237, 4125, 4121, 2066, 2061, 8, 4, 2, 0,
     65535, 54781, 44123, 35577, 29144, 24823, 20566, 18454, 16403, 12302, 8201, 4102, 2051, 1, 0,
     65535, 58875, 50264, 45813, 39379, 37105, 34896, 32783, 28685, 20489, 14342, 8196, 4098, 2049, 0,
-    65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0};
+    65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0 };
+
+//////////////////////////////// HELPER FUNCTIONS ////////////////////////////
+#pragma region
 
 float maxF(float a, float b)
 {
@@ -56,6 +61,7 @@ float maxF(float a, float b)
         return b;
     return a;
 }
+
 float minF(float a, float b)
 {
     if (a > b)
@@ -86,45 +92,12 @@ uint16_t ColorMultiply(uint16_t color, float value, float saturation)
     return RGBTo16(r, g, b);
 }
 
-///////////////////////////////////////////////////////////////////////// INTERPRETER CALLS ///////////////////////////////////////////
+#pragma endregion
 
-bool UI_ClearDebug()
-{
-    if (editorView != DEBUG_VIEW)
-        return false;
-    Clear();
-    debugLine = 0;
-    return true;
-}
-
-bool UI_PrintToScreen(char *message, bool isError)
-{
-    if (editorView != DEBUG_VIEW)
-        return false;
-
-    uint16_t color = 0;
-    uint16_t backgroundColor = 0;
-    if (isError)
-    {
-        color = RGBTo16(255, 100, 100);
-        backgroundColor = RGBTo16(60, 40, 0);
-    }
-    else
-    {
-        color = RGBTo16(255, 255, 255);
-    }
-
-    if (debugLine >= 10)
-    {
-        UI_ClearDebug();
-    }
-
-    debugLine += WriteWord(message, strlen(message), 5, 5 + debugLine * 10, 1, color, backgroundColor);
-
-    return true;
-}
 
 //////////////////////////////////////////////////////////////////////// SPRITE EDITOR /////////////////////////////////////////////////////////////////
+#pragma region
+
 uint8_t SelectSprite()
 {
     uint8_t option = 0;
@@ -201,22 +174,22 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
 {
     if (fillColor == replaceColor)
         return;
-    GeneralList openNodes = {0};
-    Vector2 *startPos = malloc(sizeof(Vector2));
+    GeneralList openNodes = { 0 };
+    Vector2* startPos = malloc(sizeof(Vector2));
     startPos->x = (float)startX;
     startPos->y = (float)startY;
     PushList(&openNodes, startPos);
     sprites[spriteID].sprite[startX][startY] = fillColor;
     while (openNodes.count > 0)
     {
-        Vector2 *node = (Vector2 *)PopList(&openNodes);
+        Vector2* node = (Vector2*)PopList(&openNodes);
 
         if (node == NULL)
             continue;
 
         if (node->y < SPRITE_HEIGHT - 1 && sprites[spriteID].sprite[(int)node->x][(int)node->y + 1] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x;
             newPos->y = node->y + 1;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -224,7 +197,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->y > 0 && sprites[spriteID].sprite[(int)node->x][(int)node->y - 1] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x;
             newPos->y = node->y - 1;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -232,7 +205,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->x < SPRITE_WIDTH - 1 && sprites[spriteID].sprite[(int)node->x + 1][(int)node->y] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x + 1;
             newPos->y = node->y;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -240,7 +213,7 @@ void SpriteFill(uint8_t spriteID, uint16_t fillColor, uint16_t replaceColor, uin
         }
         if (node->x > 0 && sprites[spriteID].sprite[(int)node->x - 1][(int)node->y] == replaceColor)
         {
-            Vector2 *newPos = malloc(sizeof(Vector2));
+            Vector2* newPos = malloc(sizeof(Vector2));
             newPos->x = node->x - 1;
             newPos->y = node->y;
             sprites[spriteID].sprite[(int)newPos->x][(int)newPos->y] = fillColor;
@@ -462,7 +435,7 @@ void EditSprite(uint8_t spriteIndex)
 
         if (GetButton() == BUTTON_L)
         {
-            print("Save Project");
+            debugPrint("Save Project");
             SaveProject(program);
             SmartClearAll();
             Clear();
@@ -534,7 +507,10 @@ void SpriteMode()
     }
 }
 
+#pragma endregion
+
 //////////////////////////////////////////////////////////////////////// SCRIPT EDITOR /////////////////////////////////////////////////////////////////
+#pragma region
 
 // shortcuts
 #pragma region
@@ -549,7 +525,7 @@ void SpriteMode()
 #define SHORTCUT_SCREEN 7
 
 #define SHORTCUT_CATEGORY_COUNT 8
-char *SC_CATEGORY_NAMES[] = {
+char* SC_CATEGORY_NAMES[] = {
     "Conditions",
     "Types",
     "Math",
@@ -557,44 +533,44 @@ char *SC_CATEGORY_NAMES[] = {
     "Collider",
     "Physics",
     "IO",
-    "Display"};
+    "Display" };
 
 #define SC_CONDITION_COUNT 4
-char *SC_CONDITION_SHORTCUTS[] = {
+char* SC_CONDITION_SHORTCUTS[] = {
     "if () {",
     "} else {",
     "while () {",
-    "break"};
+    "break" };
 
 #define SC_TYPES_COUNT 6
-char *SC_TYPE_SHORTCUTS[] = {
+char* SC_TYPE_SHORTCUTS[] = {
     "void",
     "bool",
     "int",
     "float",
     "string",
-    "Vector(,)"};
+    "Vector(,)" };
 
 #define SC_MATH_COUNT 5
-char *SC_MATH_SHORTCUTS[] = {
+char* SC_MATH_SHORTCUTS[] = {
     "PI",
     "pow",
     "sin",
     "cos",
-    "deltaTime"};
+    "deltaTime" };
 
 #define SC_OBJECT_COUNT 12
-char *SC_OBJECT_SHORTCUTS[] = {
-    "setPosition()",
-    "setScale()",
-    "setSprite()",
-    "setVelocity()",
-    "setAngle()",
+char* SC_OBJECT_SHORTCUTS[] = {
+    "setPosition();",
+    "setScale();",
+    "setSprite();",
+    "setVelocity();",
+    "setAngle();",
 
-    "addPosition()",
-    "addScale()",
-    "addVelocity()",
-    "addAngle()",
+    "addPosition();",
+    "addScale();",
+    "addVelocity();",
+    "addAngle();",
 
     "getPosition()",
     "getScale()",
@@ -604,21 +580,28 @@ char *SC_OBJECT_SHORTCUTS[] = {
 
 // collider here
 
+#define SC_COLLISION_COUNT 3
+char* SC_COLLISION_SHORTCUTS[] = {
+    "void CollideEnter(){}",
+    "void CollideStay(){}",
+    "void CollideExit(){}",
+};
+
 // physic here
 
 #define SC_IO_COUNT 3
-char *SC_IO_SHORTCUTS[] = {
+char* SC_IO_SHORTCUTS[] = {
     "input(\"\")",
 
     "leftLED()",
-    "rightLED()"};
+    "rightLED()" };
 
 #pragma endregion
 
 int shortcutCategory = -1;
 uint8_t shortcutPage = 0;
 
-void PrintListOnKeyboard(char **list, uint8_t count, uint8_t currentPage, uint8_t selected)
+void PrintListOnKeyboard(char** list, uint8_t count, uint8_t currentPage, uint8_t selected)
 {
     for (int i = 5 * currentPage; i < min(count, 5 * currentPage + 5); i++)
     {
@@ -634,11 +617,11 @@ void PrintListOnKeyboard(char **list, uint8_t count, uint8_t currentPage, uint8_
     }
 }
 
-char *HandleShortcuts()
+char* HandleShortcuts()
 {
     bool refresh = true;
     uint8_t selected = 0;
-    char *output = malloc(32);
+    char* output = malloc(32);
     shortcutPage = 0;
     while (1)
     {
@@ -679,49 +662,54 @@ char *HandleShortcuts()
                 strcpy(output, SC_OBJECT_SHORTCUTS[selected]);
                 break;
 
+            case SHORTCUT_COLLIDER:
+                PrintListOnKeyboard(SC_COLLISION_SHORTCUTS, SC_COLLISION_COUNT, shortcutPage, selected);
+                count = SC_COLLISION_COUNT;
+                strcpy(output, SC_COLLISION_SHORTCUTS[selected]);
+                break;
+
             case SHORTCUT_IO:
                 PrintListOnKeyboard(SC_IO_SHORTCUTS, SC_IO_COUNT, shortcutPage, selected);
                 count = SC_IO_COUNT;
                 strcpy(output, SC_IO_SHORTCUTS[selected]);
                 break;
             }
-            while(GetButton() == 0);
+            sleep_ms(100);
         }
 
-        int buttonPress = GetButton();
-        if (buttonPress != 0)
+        if (GetButton() != 0)
         {
             refresh = true;
-            if (buttonPress == BUTTON_D && shortcutPage < ceil(count / 5))
+            if (GetButton() == BUTTON_D && shortcutPage < ceil(count / 5))
             {
                 shortcutPage++;
                 selected = shortcutPage * 5;
             }
-            if (buttonPress == BUTTON_A && shortcutPage > 0)
+            if (GetButton() == BUTTON_A && shortcutPage > 0)
             {
                 shortcutPage--;
                 selected = shortcutPage * 5;
             }
-            if (buttonPress == BUTTON_W && selected > shortcutPage * 5)
+            if (GetButton() == BUTTON_W && selected > shortcutPage * 5)
             {
-                print("w");
+                debugPrint("w");
                 selected--;
             }
-            if (buttonPress == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
+            if (GetButton() == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
             {
-                print("s");
+                debugPrint("s");
                 selected++;
             }
 
             if (shortcutCategory == -1)
             {
-                if (buttonPress == BUTTON_J)
+                if (GetButton() == BUTTON_J)
                 {
                     shortcutCategory = selected;
                     selected = 0;
                     shortcutPage = 0;
                 }
-                if (buttonPress == BUTTON_L)
+                if (GetButton() == BUTTON_L)
                 {
                     free(output);
                     return NULL;
@@ -729,11 +717,11 @@ char *HandleShortcuts()
             }
             else
             {
-                if (buttonPress == BUTTON_J)
+                if (GetButton() == BUTTON_J)
                 {
                     return output;
                 }
-                if (buttonPress == BUTTON_L)
+                if (GetButton() == BUTTON_L)
                 {
                     shortcutCategory = -1;
                     selected = 0;
@@ -743,7 +731,8 @@ char *HandleShortcuts()
         }
     }
 }
-void RecalculateCaret(int *caretX, int *caretY, int *caretPos)
+
+void RecalculateCaret(int* caretX, int* caretY, int* caretPos)
 {
     (*caretX) = 0;
     (*caretY) = 0;
@@ -757,6 +746,7 @@ void RecalculateCaret(int *caretX, int *caretY, int *caretPos)
         }
     }
 }
+
 void EditScript(uint8_t scriptIndex)
 {
     bool refresh = true;
@@ -1060,15 +1050,15 @@ void EditScript(uint8_t scriptIndex)
                     }
                     else
                     {
-                        print("saving file");
+                        debugPrint("saving file");
 
                         FlushBuffer();
 
-                        char *saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
+                        char* saveName = malloc(MAX_NAME_LENGTH + 1 + strlen(program->name) + strlen("`ENGINESCRIPT") + 1);
 
                         sprintf(saveName, "%s`%s`ENGINESCRIPT", scripts[scriptIndex].name, program->name);
 
-                        File *file = GetFile(saveName);
+                        File* file = GetFile(saveName);
 
                         if (file->startBlock == 0)
                         {
@@ -1087,7 +1077,7 @@ void EditScript(uint8_t scriptIndex)
                         free(saveName);
                         DisengageSD();
 
-                        print("Save complete");
+                        debugPrint("Save complete");
 
                         SaveProject(program);
                         keyboard[0] = '@';
@@ -1160,7 +1150,7 @@ void EditScript(uint8_t scriptIndex)
                 {
                     if (currentCharacter == HAMBURGER_SYB)
                     {
-                        char *shortcut = HandleShortcuts();
+                        char* shortcut = HandleShortcuts();
                         if (shortcut != NULL)
                         {
                             for (int i = strlen(currentScriptText) + strlen(shortcut); i > caretPosition; i--)
@@ -1266,6 +1256,7 @@ void EditScript(uint8_t scriptIndex)
         }
     }
 }
+
 int SelectScript()
 {
     bool refresh = true;
@@ -1349,12 +1340,13 @@ int SelectScript()
         }
     }
 }
-charArray *CreateScriptMenu()
+
+charArray* CreateScriptMenu()
 {
     bool refresh = true;
     bool modifyName = false;
     uint8_t option = 0;
-    char *name = (char *)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
+    char* name = (char*)malloc((MAX_NAME_LENGTH + 1) * sizeof(char));
     for (int i = 0; i <= MAX_NAME_LENGTH; i++)
     {
         name[i] = '\0';
@@ -1479,7 +1471,7 @@ charArray *CreateScriptMenu()
                         }
                         else
                         {
-                            charArray *array = malloc(sizeof(charArray));
+                            charArray* array = malloc(sizeof(charArray));
                             array->array = name;
                             array->length = caretPosition;
                             return array;
@@ -1494,7 +1486,7 @@ charArray *CreateScriptMenu()
                 if (GetButton() == BUTTON_L)
                 {
                     free(name);
-                    charArray *array = malloc(sizeof(charArray));
+                    charArray* array = malloc(sizeof(charArray));
                     array->array = NULL;
                     array->length = 0;
                     return array;
@@ -1562,7 +1554,7 @@ void ScriptMenu()
             {
                 if (option == 0)
                 {
-                    charArray *scriptName = CreateScriptMenu();
+                    charArray* scriptName = CreateScriptMenu();
 
                     if (scriptName->length != 0)
                     {
@@ -1591,7 +1583,10 @@ void ScriptMenu()
     }
 }
 
+#pragma endregion
+
 ///////////////////////////////////////////////////////////////////////// MAIN SCREEN //////////////////////////////////////////////////////////////////
+#pragma region
 
 void EditorMainScreen()
 {
@@ -1660,5 +1655,7 @@ void EditorMainScreen()
         }
     }
 }
+
+#pragma endregion
 
 #endif

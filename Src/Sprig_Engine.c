@@ -26,6 +26,10 @@ File *program;
 
 #include "LinkedList.h"
 
+#include "DebugPrint.h"
+
+#include "DebugConsole.h"
+
 void RenderTest()
 {
     for (int x = 0; x < 360; x += 1)
@@ -52,6 +56,8 @@ int main()
 
     CreateNullStructs();
 
+    InitCollisionLock();
+
     gpio_init(SD_CS);
     gpio_set_dir(SD_CS, GPIO_OUT);
     gpio_put(SD_CS, 1);
@@ -67,6 +73,8 @@ int main()
     DisengageSD();
 
     spi_set_baudrate(SPI_PORT, 32 * 1000 * 1000);
+
+    InitializeInterpreter();
 
     Clear();
 
@@ -98,9 +106,8 @@ int main()
     // sleep_ms(1000);
     // FireworkShow();
 
-    editorView = DEBUG_VIEW;
-    UI_ClearDebug();
-
+    ClearConsole();
+    
     /*sleep_ms(4000);
     EngineVar *out = VarConstructor("", 0, 0, false);
 
@@ -256,5 +263,7 @@ else
         }
     }
 
-    print("end of program");
+    debugPrint("end of program");
+
+    return 0;
 }

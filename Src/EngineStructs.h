@@ -5,9 +5,11 @@
 #include "pico/stdlib.h"
 #include <string.h>
 #include "LinkedList.h"
+#include "DebugPrint.h"
 
 #define COLLIDER_VARS 6
-#define BASE_VARS 5
+#define BASE_VARS 6
+#define PHYSICS_VARS 2
 
 #define MAX_SCRIPTS_PER_OBJECT 10
 #define MAX_NAME_LENGTH 16
@@ -33,7 +35,7 @@
 #define MAX_OBJECTS 40
 #define VARS_PER_SCRIPT 80
 
-bool CharCmpr(char *str1, char *str2)
+bool CharCmpr(char* str1, char* str2)
 {
     int index = 0;
     while (str1[index] != '\0' && str2[index] != '\0')
@@ -74,7 +76,7 @@ typedef struct
     uint8_t objIndex;
     uint8_t scriptIndex;
 
-    struct EngineVar *varPointer;
+    struct EngineVar* varPointer;
 } VariableUnion;
 
 // A struct that defines an engine variable. Can be added to objects
@@ -91,13 +93,13 @@ typedef struct EngineVar
 
 typedef struct
 {
-    char *parameterName;
+    char* parameterName;
     uint8_t parameterType;
 } EngineParameter;
 
 typedef struct
 {
-    char *name;
+    char* name;
     EngineParameter parameters[MAX_PARAMETERS];
     uint8_t parameterIndex;
 
@@ -110,7 +112,7 @@ typedef struct
 {
     uint8_t ID;
     char name[MAX_NAME_LENGTH];
-    char *content;
+    char* content;
 } EngineScript;
 
 // A struct that defines an engine sprite. Can be added to objects
@@ -136,44 +138,45 @@ struct EngineObject;
 // A struct that keeps script data. Can be added to objects
 typedef struct ScriptData
 {
-    EngineScript *script;
+    EngineScript* script;
 
     uint16_t currentLine;
 
-    char **lines;
-    int *lineIndexes;
+    char** lines;
+    int* lineIndexes;
     uint16_t lineCount;
 
     GeneralList variables;
 
     // EngineVar *data;
-    uint8_t variableCount;
+    //uint8_t variableCount;
 
-    EngineVar *backupData;
+    EngineVar* backupData;
     uint8_t backupVarCount;
 
-    EngineFunction *functions[40];
+    EngineFunction* functions[40];
     uint8_t functionCount;
 
-    BracketPair *brackets;
+    BracketPair* brackets;
     uint8_t bracketPairs;
 
-    GeneralList instructionStack;
     uint16_t currentScope;
 
-    struct EngineObject *linkedObject;
+    struct EngineObject* linkedObject;
 
     int objectIndex;
     int scriptIndex;
+
+
 
 } ScriptData;
 
 typedef struct VarNode
 {
-    struct VarNode *next;
-    struct VarNode *previous;
+    struct VarNode* next;
+    struct VarNode* previous;
     uint8_t index;
-    EngineVar *link;
+    EngineVar* link;
 } VarNode;
 
 // A struct that defines an engine object. holds scripts, a sprite, name, and data
@@ -182,14 +185,17 @@ typedef struct EngineObject
     uint8_t ID;
     char name[MAX_NAME_LENGTH];
 
-    uint8_t scriptCount;
+    //uint8_t scriptCount;
 
-    ScriptData *scriptData[MAX_SCRIPTS_PER_OBJECT];
-    uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
+    GeneralList scriptData;
+
+    //ScriptData* scriptData[MAX_SCRIPTS_PER_OBJECT];
+    //uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
 
     // Each object has position, sprite, and scale
-    VarNode *objectDataTail;
-    uint8_t objectDataCount;
+    GeneralList objectData;
+    //VarNode* objectDataTail;
+   // uint8_t objectDataCount;
 
     // This stores only the data required to render
     VariableUnion renderData[5];
@@ -199,12 +205,14 @@ typedef struct EngineObject
 
     bool packages[2];
 
+    bool didCollide;
+
 } EngineObject;
 
 typedef struct
 {
     char name[MAX_NAME_LENGTH];
-    EngineObject **objects;
+    EngineObject** objects;
     uint8_t objectCount;
 } EngineScene;
 
@@ -212,11 +220,11 @@ uint8_t sceneIndex;
 
 /////////////////////////////// DATA //////////////////////////////////////
 
-EngineScript *NULL_SCRIPT;
-EngineSprite *NULL_SPRITE;
-EngineObject *NULL_OBJECT;
-EngineVar *NULL_VAR;
-ScriptData *NULL_SCRIPT_DATA;
+EngineScript* NULL_SCRIPT;
+EngineSprite* NULL_SPRITE;
+EngineObject* NULL_OBJECT;
+EngineVar* NULL_VAR;
+ScriptData* NULL_SCRIPT_DATA;
 
 // Old Linked list handler
 /*LinkedList *scripts;
@@ -293,9 +301,9 @@ uint8_t sceneCount;
 
 /////////////////////////////// HELPER FUNCTIONS /////////////////////////////////
 
-EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType, bool serialized)
+EngineVar* VarConstructor(char* name, uint8_t nameLength, uint8_t dataType, bool serialized)
 {
-    EngineVar *output = (EngineVar *)malloc(sizeof(EngineVar));
+    EngineVar* output = (EngineVar*)malloc(sizeof(EngineVar));
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
     {
         if (i < nameLength)
@@ -313,9 +321,9 @@ EngineVar *VarConstructor(char *name, uint8_t nameLength, uint8_t dataType, bool
     return output;
 }
 
-EngineScript *ScriptConstructor(uint8_t ID, char *name, char *content)
+EngineScript* ScriptConstructor(char* name, char* content)
 {
-    EngineScript *output = (EngineScript *)malloc(sizeof(EngineScript));
+    EngineScript* output = (EngineScript*)malloc(sizeof(EngineScript));
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
     {
         if (i < strlen(name))
@@ -327,20 +335,21 @@ EngineScript *ScriptConstructor(uint8_t ID, char *name, char *content)
             output->name[i] = '\0';
         }
     }
-    output->content = (char *)malloc((strlen(content) + 1) * sizeof(char));
+    output->content = (char*)malloc((strlen(content) + 1) * sizeof(char));
     for (int i = 0; i < strlen(content); i++)
     {
         // printf("Script: %c\n",content[i]);
         output->content[i] = content[i];
     }
     output->content[strlen(content)] = '\0';
-    output->ID = ID;
+    debugPrintf("current scriptCount %d\n", scriptCount);
+    output->ID = scriptCount;
     return output;
 }
 
-EngineSprite *SpriteConstructor(uint8_t ID, uint16_t sprite[SPRITE_WIDTH][SPRITE_HEIGHT])
+EngineSprite* SpriteConstructor(uint8_t ID, uint16_t sprite[SPRITE_WIDTH][SPRITE_HEIGHT])
 {
-    EngineSprite *output = (EngineSprite *)malloc(sizeof(EngineSprite));
+    EngineSprite* output = (EngineSprite*)malloc(sizeof(EngineSprite));
     output->ID = ID;
 
     for (int i = 0; i < SPRITE_HEIGHT * SPRITE_WIDTH; i++)
@@ -349,118 +358,84 @@ EngineSprite *SpriteConstructor(uint8_t ID, uint16_t sprite[SPRITE_WIDTH][SPRITE
     }
     return output;
 }
-ScriptData *ScriptDataConstructor(EngineScript *script)
+
+ScriptData* ScriptDataConstructor(EngineScript* script)
 {
-    ScriptData *output = (ScriptData *)malloc(sizeof(ScriptData));
+    debugPrint("creating scr data...");
+    ScriptData* output = (ScriptData*)malloc(sizeof(ScriptData));
+    debugPrint("malloced");
 
     InitializeList(&output->variables);
+
+    debugPrint("init list");
+
     output->backupData = NULL;
 
     output->script = script;
 
     // output->data = variables;
-    output->variableCount = 0;
     output->backupVarCount = 0;
     output->functionCount = 0;
     output->bracketPairs = 0;
     output->currentLine = 0;
+    output->currentScope = 0;
+
 
     output->scriptIndex = -1;
     output->objectIndex = -1;
 
     output->linkedObject = NULL;
 
+    output->lineIndexes = NULL;
+    output->brackets = NULL;
+    output->lines = NULL;
+
+
+    debugPrint("set");
+
     return output;
 }
 
-void AddDataToObject(EngineObject *object, EngineVar *data)
+void AddDataToObject(EngineObject* object, EngineVar* data)
 {
-    if (object->objectDataTail == NULL)
-    {
-        object->objectDataTail = malloc(sizeof(VarNode));
-        object->objectDataTail->link = data;
-        object->objectDataTail->next = NULL;
-        object->objectDataTail->previous = NULL;
-        object->objectDataTail->index = object->objectDataCount;
-        object->objectDataCount++;
-        return;
-    }
-
-    VarNode *newNode = malloc(sizeof(VarNode));
-
-    object->objectDataTail->next = newNode;
-    newNode->previous = object->objectDataTail;
-
-    newNode->next = NULL;
-    newNode->link = data;
-    newNode->index = object->objectDataCount;
-
-    object->objectDataTail = newNode;
-    object->objectDataCount++;
+    PushList(&object->objectData, data);
+    VarNode* newNode = malloc(sizeof(VarNode));
 }
 
-void ClearDataFromObject(EngineObject *object)
+void ClearDataFromObject(EngineObject* object)
 {
-    printf("clear obj %s\n", object->name);
-    VarNode *currentData = object->objectDataTail;
-    while (currentData->previous != NULL)
-    {
-        currentData = currentData->previous;
-        if (currentData->next->link != NULL)
-        {
-            printf("clearing %s\n", currentData->next->link->name);
-            free(currentData->next->link);
-        }
-        free(currentData->next);
+    while (object->objectData.count > 0) {
+        free(PopList(&object->objectData));
     }
-    if (currentData != NULL)
-    {
-        free(currentData->link);
-        free(currentData);
-    }
-    currentData = NULL;
-    object->objectDataCount = 0;
 }
 
-EngineVar *GetObjectDataByName(EngineObject *obj, char *name)
+EngineVar* GetObjectDataByName(EngineObject* obj, char* name)
 {
-    VarNode *current = obj->objectDataTail;
-    while (current != NULL)
-    {
-        if (strcmp(current->link->name, name) == 0)
-        {
-            return current->link;
-        }
-        current = current->previous;
+    GeneralListNode* current = obj->objectData.firstElement;
+    while (current != NULL && strcmp(((EngineVar*)(current->content))->name, name) != 0) {
+        current = current->next;
     }
-    return NULL;
+    if (current == NULL)
+        return NULL;
+    return (EngineVar*)current->content;
 }
-EngineVar *GetObjectDataByIndex(EngineObject *obj, uint8_t index)
+EngineVar* GetObjectDataByIndex(EngineObject* obj, uint8_t index)
 {
-    VarNode *current = obj->objectDataTail;
-    while (current != NULL)
-    {
-        if (current->index == index)
-        {
-            return current->link;
-        }
-        current = current->previous;
-    }
-    return NULL;
+    return (EngineVar*)ListGetIndex(&obj->objectData, index);
 }
-EngineVar **ObjectDataToList(EngineObject *object)
+EngineVar** ObjectDataToList(EngineObject* object)
 {
-    EngineVar **list = (EngineVar **)malloc(sizeof(EngineVar *) * object->objectDataCount);
-    for (int i = 0; i < object->objectDataCount; i++)
+    EngineVar** list = (EngineVar**)malloc(sizeof(EngineVar*) * object->objectData.count);
+    for (int i = 0; i < object->objectData.count; i++)
     {
         list[i] = GetObjectDataByIndex(object, i);
     }
     return list;
 }
 
-EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
+EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
 {
-    EngineObject *output = (EngineObject *)malloc(sizeof(EngineObject));
+    EngineObject* output = (EngineObject*)malloc(sizeof(EngineObject));
     output->ID = ID;
 
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
@@ -476,10 +451,11 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     }
 
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
-    output->scriptCount = 0;
+   // output->scriptCount = 0;
 
-    output->objectDataCount = 0;
-    output->objectDataTail = NULL;
+    InitializeList(&output->scriptData);
+
+    InitializeList(&output->objectData);
 
     InitializeList(&output->colliderRects);
 
@@ -493,23 +469,31 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
     AddDataToObject(output, VarConstructor("velocity", strlen("velocity"), TYPE_VECTOR, false));
     AddDataToObject(output, VarConstructor("drag", strlen("drag"), TYPE_INT, true));
 
-    print("Added data");
+    debugPrint("Added data");
 
     GetObjectDataByName(output, "sprite")->data.i = 0;
+    debugPrint("set sprite");
+
     GetObjectDataByName(output, "scale")->data.XY.x = 1;
     GetObjectDataByName(output, "scale")->data.XY.y = 1;
+    debugPrint("set scale");
+
+    GetObjectDataByName(output, "angle")->data.f = 0;
+    debugPrint("set angl");
 
     GetObjectDataByName(output, "position")->data.XY.x = 0;
     GetObjectDataByName(output, "position")->data.XY.y = 0;
+    debugPrint("set pos");
 
     GetObjectDataByName(output, "velocity")->data.XY.x = 0;
     GetObjectDataByName(output, "velocity")->data.XY.y = 0;
+    debugPrint("set velo");
+
+
 
     GetObjectDataByName(output, "drag")->data.i = 10;
 
-    print("set data");
-
-    
+    debugPrint("set drag");
 
     return output;
 }
@@ -518,7 +502,7 @@ EngineObject *ObjectConstructor(uint8_t ID, char *name, uint8_t nameLength)
 void CreateNullStructs()
 {
     NULL_VAR = VarConstructor("", 0, 0, false);
-    NULL_SCRIPT = ScriptConstructor(0, "", "");
+    NULL_SCRIPT = ScriptConstructor("", "");
     NULL_SCRIPT_DATA = ScriptDataConstructor(NULL_SCRIPT);
     uint16_t emptySprite[SPRITE_WIDTH][SPRITE_HEIGHT];
     for (int i = 0; i < SPRITE_HEIGHT * SPRITE_WIDTH; i++)
@@ -538,7 +522,7 @@ uint8_t CreateSprite()
 }
 
 // Returns the index of the script
-uint8_t CreateScript(char *name, uint8_t nameLength)
+uint8_t CreateScript(char* name, uint8_t nameLength)
 {
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
     {
@@ -556,7 +540,7 @@ uint8_t CreateScript(char *name, uint8_t nameLength)
 }
 
 // Returns the index of the scene
-uint8_t CreateScene(char *name, uint8_t nameLength)
+uint8_t CreateScene(char* name, uint8_t nameLength)
 {
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
     {
@@ -570,7 +554,7 @@ uint8_t CreateScene(char *name, uint8_t nameLength)
         }
     }
     scenes[sceneCount].objectCount = 0;
-    scenes[sceneCount].objects = (EngineObject **)malloc(sizeof(EngineObject *) * MAX_OBJECTS);
+    scenes[sceneCount].objects = (EngineObject**)malloc(sizeof(EngineObject*) * MAX_OBJECTS);
     return sceneCount++;
 }
 
@@ -584,7 +568,7 @@ int GetScriptIndexByID(uint8_t ID)
     return -1;
 }
 
-int GetScriptByName(char *name)
+int GetScriptByName(char* name)
 {
     for (int i = 0; i < scriptCount; i++)
     {
@@ -594,7 +578,7 @@ int GetScriptByName(char *name)
     return -1;
 }
 
-int GetSceneByName(char *name)
+int GetSceneByName(char* name)
 {
     for (int i = 0; i < sceneCount; i++)
     {

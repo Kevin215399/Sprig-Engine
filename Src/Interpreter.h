@@ -17,6 +17,8 @@
 
 #include "DebugPrint.h"
 
+#include "DebugConsole.h"
+
 #define LEFT_LIGHT 28
 #define RIGHT_LIGHT 4
 
@@ -40,6 +42,7 @@
 #define OPERATOR_CANNOT_BE_USED_WITH_TYPE 9
 #define NO_CAMERA_DEFINED 10
 #define COULD_NOT_START_CORE_1 11
+#define COMPARISON_TYPE_WRONG 12
 
 #define OPPERATION_SUCCESS 0x8000
 
@@ -54,7 +57,9 @@ const char* ERROR_NAMES[] = {
     "Assignment attribute unknown",
     "Type cannot be transformed using this operator",
     "No camera, add an object named \"Camera\"",
-    "CORE 1 DID NOT RESPOND" };
+    "CORE 1 DID NOT RESPOND",
+    "\'==\' can only be used on numbers"
+};
 
 const char* CATEGORY_ERRORS[] = {
     "EQUATION",
@@ -71,6 +76,11 @@ const char* CATEGORY_ERRORS[] = {
 #define UNKOWN_TOKEN 2
 
 #define UNARY_SUBTRACT 255
+
+typedef struct {
+    uint16_t line;
+    ScriptData* script;
+} InstructionPointer;
 
 typedef struct
 {
@@ -115,6 +125,8 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"getPosition", 13, 0},
     {"getScale", 13, 0},
     {"getSprite", 13, 0},
+    {"getVelocity",13,0},
+    {"getAngle",13,0},
 
     {"rightLED", 13, 1},
     {"leftLED", 13, 1},
@@ -159,8 +171,19 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
 };
 
+//returns an instruction struct as a pointer
+InstructionPointer* NewInstruction(uint16_t line, ScriptData* script) {
+    InstructionPointer* output = malloc(sizeof(InstructionPointer));
+    output->line = line;
+    output->script = script;
+    return output;
+}
 
+GeneralList instructionStack;
 
+void InitializeInterpreter() {
+    InitializeList(&instructionStack);
+}
 
 void InitializeLights()
 {
@@ -504,7 +527,7 @@ int FloatLength(float value)
     return IntLength((int)value) + (isDecimal ? 1 : 0);
 }
 
-uint16_t SerializeUnion(VariableUnion* variable, uint8_t type)
+uint16_t SerializeUnion(VariableUnion* variable, uint8_t type, bool limitDecimals)
 {
     switch (type)
     {
@@ -517,13 +540,10 @@ uint16_t SerializeUnion(VariableUnion* variable, uint8_t type)
     break;
     case TYPE_INT:
     {
-        // debugPrintf("int type serialize, %d\n", variable->i);
-        int numberLength = IntLength(variable->i);
 
-        // debugPrintf("length: %d", numberLength);
         uint16_t intChar = PoolString();
         sprintf(stringPool[intChar], "%d", variable->i);
-        // debugPrintf("out: %s\n", stringPool[intChar]);
+
         return intChar;
     }
     break;
@@ -531,13 +551,11 @@ uint16_t SerializeUnion(VariableUnion* variable, uint8_t type)
     {
         debugPrint("serialize float");
 
-        debugPrintf("val: %f\n", variable->f);
-
-        int numberLength = FloatLength(variable->f);
-
         uint16_t floatChar = PoolString();
-
-        snprintf(stringPool[floatChar], sizeof(stringPool[floatChar]), "%f", variable->f);
+        if (limitDecimals)
+            snprintf(stringPool[floatChar], sizeof(stringPool[floatChar]), "%.3f", variable->f);
+        else
+            snprintf(stringPool[floatChar], sizeof(stringPool[floatChar]), "%f", variable->f);
         return floatChar;
     }
     break;
@@ -575,7 +593,7 @@ uint16_t SerializeUnion(VariableUnion* variable, uint8_t type)
 }
 
 // Returns a malloced char*
-uint16_t SerializeVar(EngineVar* variable)
+uint16_t SerializeVar(EngineVar* variable, bool limitDecimals)
 {
     if (variable->listData.count > 0)
     {
@@ -585,7 +603,7 @@ uint16_t SerializeVar(EngineVar* variable)
         while (variable->listData.count > 0)
         {
             VariableUnion* pop = (VariableUnion*)PopListFirst(&variable->listData);
-            uint16_t unionSerialized = SerializeUnion(pop, variable->currentType);
+            uint16_t unionSerialized = SerializeUnion(pop, variable->currentType, limitDecimals);
             strcpy(stringPool[output] + index, stringPool[unionSerialized]);
             index += strlen(stringPool[unionSerialized]);
             stringPool[output][index++] = ',';
@@ -597,7 +615,7 @@ uint16_t SerializeVar(EngineVar* variable)
     }
     else
     {
-        uint16_t unionSerialized = SerializeUnion(&variable->data, variable->currentType);
+        uint16_t unionSerialized = SerializeUnion(&variable->data, variable->currentType, limitDecimals);
         return unionSerialized;
     }
 }
@@ -617,14 +635,13 @@ void GreatestCommonType(Atom* atom1, Atom* atom2)
 
 void PushLine(ScriptData* data, uint16_t line)
 {
-    uint16_t* mallocedLine = malloc(sizeof(uint16_t));
-    *mallocedLine = line;
-    PushList(&data->instructionStack, mallocedLine);
+    InstructionPointer* instruction = NewInstruction(line, data);
+    PushList(&instructionStack, instruction);
 }
 
 void JumpToFunction(ScriptData* scriptData, char* functionName)
 {
-    debugPrint("jumping...");
+    debugPrintf("jumping... %s\n", functionName);
     for (int i = 0; i < scriptData->functionCount; i++)
     {
         debugPrintf("function: %s\n", scriptData->functions[i]->name);
@@ -680,6 +697,7 @@ Atom* MallocAtom(uint8_t atomType, uint8_t datatype, uint8_t precedence, uint8_t
     output->listData = NULL;
     return output;
 }
+
 Atom* MallocTokenAtom(uint8_t atomType, uint8_t precedence, uint8_t parameters, char* token)
 {
     Atom* output = malloc(sizeof(Atom));
@@ -777,11 +795,8 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
             stringPool[string][index - i - 1] = '\0';
 
             Atom* newAtom = MallocAtom(VALUE, TYPE_STRING, 0, 0);
-            newAtom->data.s = PoolString();
-            strcpy(stringPool[newAtom->data.s], stringPool[string]);
+            newAtom->data.s = string;
             PushList(&tokens, newAtom);
-
-            FreeString(&string);
 
             i += index - i;
             continue;
@@ -953,7 +968,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
     for (int i = 0; i < tokens.count; i++)
     {
         Atom* atom = (Atom*)ListGetIndex(&tokens, i);
-        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType, false);
         debugPrintf("--------------------- token: %s\n", stringPool[serialized]);
         FreeString(&serialized);
     }
@@ -1056,7 +1071,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
     for (int i = 0; i < operands.count; i++)
     {
         Atom* atom = (Atom*)ListGetIndex(&operands, i);
-        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+        uint16_t serialized = SerializeUnion(&atom->data, atom->dataType, false);
         debugPrintf("-------------RPN: %s\n", stringPool[serialized]);
         FreeString(&serialized);
     }
@@ -1116,7 +1131,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
             for (int checkParam = 0; checkParam < currentAtom->parameters; checkParam++)
             {
                 debugPrint("push param");
-                PushList(&parameters, DeleteListElement(&operands, index - currentAtom->parameters));
+                PushList(&parameters, (Atom*)DeleteListElement(&operands, index - currentAtom->parameters));
             }
             index -= currentAtom->parameters;
 
@@ -1125,7 +1140,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
             for (int print = 0; print < parameters.count; print++)
             {
                 Atom* atom = (Atom*)ListGetIndex(&parameters, print);
-                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType, false);
                 debugPrintf("-------------parameters: %s\n", stringPool[serialized]);
                 FreeString(&serialized);
             }
@@ -1147,6 +1162,44 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                     currentAtom->data.f = 3.14159265459;
                     currentAtom->atomType = VALUE;
                 }
+                if (strcmp(operatorString, "getPosition") == 0)
+                {
+                    currentAtom->dataType = TYPE_VECTOR;
+                    currentAtom->atomType = VALUE;
+                    Vector2 pos = GetObjectDataByName(scriptData->linkedObject, "position")->data.XY;
+                    currentAtom->data.XY.x = pos.x;
+                    currentAtom->data.XY.y = pos.y;
+                }
+                if (strcmp(operatorString, "getScale") == 0)
+                {
+                    currentAtom->dataType = TYPE_VECTOR;
+                    currentAtom->atomType = VALUE;
+                    Vector2 scale = GetObjectDataByName(scriptData->linkedObject, "scale")->data.XY;
+                    currentAtom->data.XY.x = scale.x;
+                    currentAtom->data.XY.y = scale.y;
+                }
+
+                if (strcmp(operatorString, "getSprite") == 0)
+                {
+                    currentAtom->dataType = TYPE_INT;
+                    currentAtom->atomType = VALUE;
+                    currentAtom->data.i = GetObjectDataByName(scriptData->linkedObject, "sprite")->data.i;
+                }
+                if (strcmp(operatorString, "getVelocity") == 0)
+                {
+                    currentAtom->dataType = TYPE_VECTOR;
+                    currentAtom->atomType = VALUE;
+                    Vector2 vel = GetObjectDataByName(scriptData->linkedObject, "velocity")->data.XY;
+                    currentAtom->data.XY.x = vel.x;
+                    currentAtom->data.XY.y = vel.y;
+                }
+                if (strcmp(operatorString, "getAngle") == 0)
+                {
+                    currentAtom->dataType = TYPE_FLOAT;
+                    currentAtom->atomType = VALUE;
+                    currentAtom->data.f = GetObjectDataByName(scriptData->linkedObject, "angle")->data.f;
+                }
+
                 debugPrint("no params");
                 if (context->dataType == TYPE_OBJ)
                 {
@@ -1179,14 +1232,18 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
 
                         currentAtom->atomType = VALUE;
                         currentAtom->dataType = NO_TYPE;
+                        EngineObject* obj = scenes[sceneIndex].objects[context->data.objIndex];
+                        debugPrintf("script index: %d\n", context->data.scriptIndex);
+                        ScriptData* scrData = (ScriptData*)ListGetIndex(&obj->scriptData, context->data.scriptIndex);
 
                         debugPrint("unkown type");
-                        debugPrintf("obj name: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->name);
-                        debugPrintf("scr name %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->script->name);
+                        debugPrintf("obj name: %s\n", obj->name);
 
-                        for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variableCount; x++)
+                        debugPrintf("scr name %s\n", scrData->script->name);
+
+                        for (int x = 0; x < scrData->variables.count; x++)
                         {
-                            EngineVar* variable = ((EngineVar*)ListGetIndex(&scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->variables, x));
+                            EngineVar* variable = ((EngineVar*)ListGetIndex(&scrData->variables, x));
                             debugPrintf("check var: %s\n", variable->name);
                             if (strcmp(operatorString, variable->name) == 0)
                             {
@@ -1200,13 +1257,13 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                             }
                         }
 
-                        for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functionCount; x++)
+                        for (int x = 0; x < scrData->functionCount; x++)
                         {
-                            EngineFunction* function = scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex]->functions[x];
+                            EngineFunction* function = scrData->functions[x];
                             debugPrintf("check function: %s\n", function->name);
                             if (strcmp(operatorString, function->name) == 0)
                             {
-                                JumpToFunction(scenes[sceneIndex].objects[context->data.objIndex]->scriptData[context->data.scriptIndex], function->name);
+                                JumpToFunction(scrData, function->name);
                                 break;
                             }
                         }
@@ -1422,10 +1479,15 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                             currentAtom->atomType = VALUE;
                             currentAtom->dataType = NO_TYPE;
 
-                            for (int x = 0; x < scenes[sceneIndex].objects[context->data.objIndex]->scriptCount; x++)
+                            EngineObject* obj = scenes[sceneIndex].objects[context->data.objIndex];
+
+
+                            for (int x = 0; x < obj->scriptData.count; x++)
                             {
-                                debugPrintf("script: %s\n", scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name);
-                                if (strcmp(stringPool[parameter0->data.s], scenes[sceneIndex].objects[context->data.objIndex]->scriptData[x]->script->name) == 0)
+                                ScriptData* scrData = ((ScriptData*)ListGetIndex(&obj->scriptData, x));
+
+                                debugPrintf("script: %s\n", scrData->script->name);
+                                if (strcmp(stringPool[parameter0->data.s], scrData->script->name) == 0)
                                 {
                                     currentAtom->dataType = TYPE_SCRIPT;
 
@@ -1467,7 +1529,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                         for (int list = 0; list < currentAtom->listData->count; list++)
                         {
                             VariableUnion* getUnion = (VariableUnion*)ListGetIndex(currentAtom->listData, list);
-                            uint16_t serialized = SerializeUnion(getUnion, currentAtom->dataType);
+                            uint16_t serialized = SerializeUnion(getUnion, currentAtom->dataType, false);
                             debugPrintf("---list elements: %s\n", stringPool[serialized]);
                             FreeString(&serialized);
                         }
@@ -1496,7 +1558,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                         VariableUnion* seekValue = NULL;
 
 #ifdef DEBUG
-                        uint16_t serialize = SerializeUnion(&parameter0->data, parameter0->dataType);
+                        uint16_t serialize = SerializeUnion(&parameter0->data, parameter0->dataType, false);
                         debugPrintf("find value: %s\n", stringPool[serialize]);
                         FreeString(&serialize);
                         debugPrintf("context count: %d\n", context->listData->count);
@@ -1507,7 +1569,7 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                             seekValue = (VariableUnion*)ListGetIndex(context->listData, seek);
 
 #ifdef DEBUG
-                            uint16_t serialize = SerializeUnion(seekValue, context->dataType);
+                            uint16_t serialize = SerializeUnion(seekValue, context->dataType, false);
                             debugPrintf("list value: %s\n", stringPool[serialize]);
                             FreeString(&serialize);
 #endif
@@ -1532,6 +1594,16 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                 Atom* parameter0 = (Atom*)ListGetIndex(&parameters, 0);
                 Atom* parameter1 = (Atom*)ListGetIndex(&parameters, 1);
                 currentAtom->atomType = VALUE;
+
+                if (parameter0->dataType == TYPE_INT) {
+                    parameter0->data.f = parameter0->data.i;
+                    parameter0->dataType = TYPE_FLOAT;
+                }
+                if (parameter1->dataType == TYPE_INT) {
+                    parameter1->data.f = parameter1->data.i;
+                    parameter0->dataType = TYPE_FLOAT;
+                }
+
                 if (strcmp(operatorString, "+") == 0)
                 {
                     debugPrint("add");
@@ -1558,10 +1630,12 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                         currentAtom->dataType = TYPE_VECTOR;
                     }
                 }
+
                 if (parameter0->dataType == TYPE_FLOAT && parameter1->dataType == TYPE_FLOAT)
                 {
                     debugPrintf("FLOAT OP: %s\n", operatorString);
                     currentAtom->dataType = TYPE_FLOAT;
+                    currentAtom->atomType = VALUE;
                     if (strcmp(operatorString, "-") == 0)
                     {
                         currentAtom->data.f = parameter0->data.f - parameter1->data.f;
@@ -1635,12 +1709,17 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
 
             while (parameters.count > 0)
             {
+                debugPrintf("parameters: %d\n", parameters.count);
                 Atom* param = PopList(&parameters);
+                debugPrint("popped param");
                 if (param->dataType == TYPE_STRING)
                 {
+                    debugPrint("is string");
                     FreeString(&param->data.s);
+                    debugPrint("cleared string");
                 }
                 free(param);
+                debugPrint("cleared atom");
             }
             index = -1;
 
@@ -1658,8 +1737,8 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                 {
                     debugPrint("not list");
                 }
-
-                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType);
+                debugPrintf("operand type: %d\n", atom->dataType);
+                uint16_t serialized = SerializeUnion(&atom->data, atom->dataType, false);
                 debugPrintf("-------------OUT: %s\n", stringPool[serialized]);
                 FreeString(&serialized);
             }
@@ -2036,7 +2115,7 @@ uint32_t DeclareEntity(ScriptData* output, uint16_t l, bool declareFunctions)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
-                    debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
+                    debugPrintf("indexes: %d, %d\n", output->variables.count, assignValue);
                     debugPrintf("set to %s, from %d\n", newVariable->name, varPool[assignValue].data.i);
                     newVariable->data.i = varPool[assignValue].data.i;
                 }
@@ -2057,7 +2136,7 @@ uint32_t DeclareEntity(ScriptData* output, uint16_t l, bool declareFunctions)
             {
                 if (varPool[assignValue].currentType == TYPE_INT)
                 {
-                    debugPrintf("indexes: %d, %d\n", output->variableCount, assignValue);
+                    debugPrintf("indexes: %d, %d\n", output->variables.count, assignValue);
                     debugPrintf("set to %s, from %d\n", newVariable->name, varPool[assignValue].data.i);
                     float floatVal = (float)varPool[assignValue].data.i;
                     newVariable->data.f = floatVal;
@@ -2094,7 +2173,7 @@ uint32_t DeclareEntity(ScriptData* output, uint16_t l, bool declareFunctions)
 
             debugPrintf("variable declared: %s=type %d\n", newVariable->name, newVariable->currentType);
             PushList(&output->variables, newVariable);
-            output->variableCount++;
+
             FreeString(&trimmedLine);
             FreeString(&entityName);
             return OPPERATION_SUCCESS;
@@ -2128,6 +2207,8 @@ uint32_t SetScriptData(EngineScript* script, ScriptData* output, uint8_t scopeLe
 {
 
     uint32_t error = 0;
+
+    output->currentScope = 0;
 
     SplitScript(script, output);
     /*for (int i = 0; i < output->lineCount; i++)
@@ -2169,49 +2250,61 @@ uint32_t SetScriptData(EngineScript* script, ScriptData* output, uint8_t scopeLe
 
     output->currentScope = 0;
 
-    InitializeList(&output->instructionStack);
     return 0;
 }
 
 // Frees all script lines, line indexes, brackets, and functions
 void FreeScriptData(ScriptData* scriptData, bool onlyFreeContent)
 {
-    for (int i = 0; i < scriptData->lineCount; i++)
-    {
-        free(scriptData->lines[i]);
+
+    if (scriptData->lineIndexes != NULL) {
+        free(scriptData->lineIndexes);
+        debugPrint("cleared line indexes");
     }
-    free(scriptData->lineIndexes);
-    free(scriptData->lines);
-    free(scriptData->brackets);
+
+    if (scriptData->lines != NULL) {
+        for (int i = 0; i < scriptData->lineCount; i++)
+        {
+            free(scriptData->lines[i]);
+        }
+        debugPrint("cleared scrdatalines");
+
+        free(scriptData->lines);
+        debugPrint("cleared line array");
+    }
+
+
+    if (scriptData->brackets != NULL)
+        free(scriptData->brackets);
+    debugPrint("cleared brackets");
 
     // debugPrint("free scr data 1");
 
     for (int i = 0; i < scriptData->functionCount; i++)
     {
         free(scriptData->functions[i]->name);
+        debugPrint("cleared function name");
         // debugPrint("free scr data 1a");
         free(scriptData->functions[i]);
+        debugPrint("cleared function");
         // debugPrint("free scr data 1b");
-    }
-    for (int i = 0; i < scriptData->variableCount; i++)
-    {
-        EngineVar* var = (EngineVar*)ListGetIndex(&scriptData->variables, i);
-        if (var->currentType == TYPE_STRING)
-            FreeString(&var->data.s);
-        free(var);
     }
     while (scriptData->variables.count > 0)
     {
-        PopList(&scriptData->variables);
+        EngineVar* var = (EngineVar*)PopList(&scriptData->variables);
+        if (var->currentType == TYPE_STRING)
+            FreeString(&var->data.s);
+        free(var);
+        debugPrint("cleared var");
     }
     // debugPrint("free scr data 3");
     scriptData->lineCount = 0;
     scriptData->bracketPairs = 0;
     scriptData->functionCount = 0;
-    scriptData->variableCount = 0;
 
     if (!onlyFreeContent)
         free(scriptData);
+    debugPrint("free done");
 }
 
 /*#define PATH_VARIABLE 0
@@ -2270,31 +2363,14 @@ void AssignToPath(char *path, ScriptData *scriptData, EngineVar *assignValue)
 
 }*/
 
-uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
+uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData, uint16_t currentLine)
 {
-    if (scriptData->instructionStack.count == 0)
-    {
-        return 0;
-    }
-
-    for (int i = 0; i < scriptData->instructionStack.count; i++)
-    {
-        debugPrintf("Script line: %d\n", *(uint16_t*)ListGetIndex(&scriptData->instructionStack, i));
-    }
-
-    uint16_t* poppedLine = (uint16_t*)PopList(&scriptData->instructionStack);
-
-    uint16_t currentLine = *(poppedLine);
-
-    free(poppedLine);
 
     if (currentLine >= scriptData->lineCount)
     {
         return 0;
     }
 
-    // Function prototype
-    bool UI_PrintToScreen(char* message, bool isError);
 
     bool justShuntYard = true;
 
@@ -2313,7 +2389,7 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
     // If line only includes end of a curly bracket, just pop, do not push next line and free variables
     if (stringPool[trimmedLine][0] == '}')
     {
-        for (int i = 0; i < scriptData->variableCount; i++)
+        for (int i = 0; i < scriptData->variables.count; i++)
         {
             EngineVar* variable = (EngineVar*)ListGetIndex(&scriptData->variables, i);
 
@@ -2335,8 +2411,6 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
                 }
 
                 free(DeleteListElement(&scriptData->variables, i));
-
-                scriptData->variableCount--;
             }
         }
         scriptData->currentScope--;
@@ -2348,7 +2422,7 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
     // Set variable
 
     int varIndex = -1;
-    for (int i = 0; i < scriptData->variableCount; i++)
+    for (int i = 0; i < scriptData->variables.count; i++)
     {
         EngineVar* var = (EngineVar*)ListGetIndex(&scriptData->variables, i);
         if (indexOf(var->name, stringPool[trimmedLine]) == 0)
@@ -2716,41 +2790,24 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
             return error | currentLine;
         }
 
-        if (varPool[out].currentType == TYPE_FLOAT || varPool[out].currentType == TYPE_INT)
-        {
-            int outLength = 0;
 
-            uint16_t printMessage = PoolString();
+        uint16_t printMessage = SerializeVar(&varPool[out], false);
+        debugPrintf("message print: %s\n", stringPool[printMessage]);
+        UI_PrintMessage(scriptData, printMessage);
 
-            if (varPool[out].currentType == TYPE_FLOAT)
-            {
-                snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %f", scriptData->script->name, varPool[out].data.f);
-            }
-            else
-            {
-                snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %d", scriptData->script->name, varPool[out].data.i);
-            }
-
-            debugPrintf("float message debugPrint: %s\n", stringPool[printMessage]);
-
-            UI_PrintToScreen(stringPool[printMessage], false);
-
-            FreeString(&printMessage);
-        }
-        else if (varPool[out].currentType == TYPE_STRING)
-        {
-            debugPrintf("str message debugPrint: %s\n", stringPool[varPool[out].data.s]);
-
-            uint16_t printMessage = PoolString();
-            snprintf(stringPool[printMessage], STRING_POOL_WIDTH, "(%s) %s", scriptData->script->name, stringPool[varPool[out].data.s]);
-
-            UI_PrintToScreen(stringPool[printMessage], false);
-
-            FreeString(&printMessage);
-        }
-        if (varPool[out].currentType == TYPE_STRING)
-        {
+        if (varPool[out].currentType == TYPE_STRING) {
             FreeString(&varPool[out].data.s);
+
+            while (varPool[out].listData.count > 0)
+            {
+                debugPrint("pop content");
+                VariableUnion* listElement = (VariableUnion*)PopList(&varPool[out].listData);
+                if (varPool[out].currentType == TYPE_STRING)
+                {
+                    FreeString(&listElement->s);
+                }
+                free(listElement);
+            }
         }
         FreeVar(&out);
         justShuntYard = false;
@@ -2771,7 +2828,7 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
             VariableUnion* pop = (VariableUnion*)PopList(&varPool[out].listData);
 
 #ifdef DEBUG
-            uint16_t serialize = SerializeUnion(pop, varPool[out].currentType);
+            uint16_t serialize = SerializeUnion(pop, varPool[out].currentType, false);
             debugPrintf("popped data: %s\n", stringPool[serialize]);
             FreeString(&serialize);
 #endif
@@ -2807,13 +2864,14 @@ uint32_t ExecuteLine(EngineScript* script, ScriptData* scriptData)
 void ResetScriptData(ScriptData* scriptData)
 {
     debugPrint("RESET SCRIPT DATA");
-    for (int i = 0; i < scriptData->variableCount; i++)
+    for (int i = 0; i < scriptData->variables.count; i++)
     {
-        debugPrint("pop variable");
+        debugPrint("get variable");
         EngineVar* variable = (EngineVar*)ListGetIndex(&scriptData->variables, i);
 
         if (variable->scope != 0)
         {
+            debugPrintf("free variable: %s\n", variable->name);
             if (variable->currentType == TYPE_STRING)
             {
                 FreeString(&variable->data.s);
@@ -2833,11 +2891,28 @@ void ResetScriptData(ScriptData* scriptData)
 
             free(variable);
 
-            scriptData->variableCount--;
             i = -1;
         }
     }
     scriptData->currentScope = 0;
+    debugPrint("reset data done");
+}
+
+uint32_t ExecuteInstructionStack() {
+
+    void UI_PrintError(ScriptData * scrData, uint32_t error);
+
+    debugPrintf("instructions to do: %d\n", instructionStack.count);
+    while (instructionStack.count > 0) {
+        InstructionPointer* poppedLine = (InstructionPointer*)PopList(&instructionStack);
+        uint32_t error = ExecuteLine(poppedLine->script->script, poppedLine->script, poppedLine->line);
+        if (error != 0)
+            UI_PrintError(poppedLine->script, error);
+        free(poppedLine);
+
+        debugPrintf("instructions to do: %d\n", instructionStack.count);
+    }
+    return 0;
 }
 
 #endif
