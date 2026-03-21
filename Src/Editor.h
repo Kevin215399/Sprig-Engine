@@ -22,14 +22,16 @@
 
 #include "GUI_Icons.h"
 
+#include "DebugPrint.h"
+
+
 #define PALLETE_WIDTH 12
 #define PALLETE_HEIGHT 15
 
 #define PLAY_VIEW 1
-#define DEBUG_VIEW 2
-#define SCRIPT_VIEW 3
-#define SPRITE_VIEW 4
-#define SCENE_VIEW 5
+#define SCRIPT_VIEW 2
+#define SPRITE_VIEW 3
+#define SCENE_VIEW 4
 
 uint8_t editorView = 0;
 uint8_t debugLine = 0;
@@ -50,12 +52,16 @@ const uint16_t colorTable[PALLETE_HEIGHT * PALLETE_WIDTH] = {
     65535, 58875, 50264, 45813, 39379, 37105, 34896, 32783, 28685, 20489, 14342, 8196, 4098, 2049, 0,
     65535, 59164, 50712, 42292, 35953, 29614, 23275, 19017, 14791, 10565, 6371, 4258, 2113, 32, 0 };
 
+//////////////////////////////// HELPER FUNCTIONS ////////////////////////////
+#pragma region
+
 float maxF(float a, float b)
 {
     if (a < b)
         return b;
     return a;
 }
+
 float minF(float a, float b)
 {
     if (a > b)
@@ -86,45 +92,12 @@ uint16_t ColorMultiply(uint16_t color, float value, float saturation)
     return RGBTo16(r, g, b);
 }
 
-///////////////////////////////////////////////////////////////////////// INTERPRETER CALLS ///////////////////////////////////////////
+#pragma endregion
 
-bool UI_ClearDebug()
-{
-    if (editorView != DEBUG_VIEW)
-        return false;
-    Clear();
-    debugLine = 0;
-    return true;
-}
-
-bool UI_PrintToScreen(char* message, bool isError)
-{
-    if (editorView != DEBUG_VIEW)
-        return false;
-
-    uint16_t color = 0;
-    uint16_t backgroundColor = 0;
-    if (isError)
-    {
-        color = RGBTo16(255, 100, 100);
-        backgroundColor = RGBTo16(60, 40, 0);
-    }
-    else
-    {
-        color = RGBTo16(255, 255, 255);
-    }
-
-    if (debugLine >= 10)
-    {
-        UI_ClearDebug();
-    }
-
-    debugLine += WriteWord(message, strlen(message), 5, 5 + debugLine * 10, 1, color, backgroundColor);
-
-    return true;
-}
 
 //////////////////////////////////////////////////////////////////////// SPRITE EDITOR /////////////////////////////////////////////////////////////////
+#pragma region
+
 uint8_t SelectSprite()
 {
     uint8_t option = 0;
@@ -462,7 +435,7 @@ void EditSprite(uint8_t spriteIndex)
 
         if (GetButton() == BUTTON_L)
         {
-            print("Save Project");
+            debugPrint("Save Project");
             SaveProject(program);
             SmartClearAll();
             Clear();
@@ -534,7 +507,10 @@ void SpriteMode()
     }
 }
 
+#pragma endregion
+
 //////////////////////////////////////////////////////////////////////// SCRIPT EDITOR /////////////////////////////////////////////////////////////////
+#pragma region
 
 // shortcuts
 #pragma region
@@ -716,12 +692,12 @@ char* HandleShortcuts()
             }
             if (GetButton() == BUTTON_W && selected > shortcutPage * 5)
             {
-                print("w");
+                debugPrint("w");
                 selected--;
             }
             if (GetButton() == BUTTON_S && selected < min((shortcutPage + 1) * 5, count) - 1)
             {
-                print("s");
+                debugPrint("s");
                 selected++;
             }
 
@@ -755,6 +731,7 @@ char* HandleShortcuts()
         }
     }
 }
+
 void RecalculateCaret(int* caretX, int* caretY, int* caretPos)
 {
     (*caretX) = 0;
@@ -769,6 +746,7 @@ void RecalculateCaret(int* caretX, int* caretY, int* caretPos)
         }
     }
 }
+
 void EditScript(uint8_t scriptIndex)
 {
     bool refresh = true;
@@ -1072,7 +1050,7 @@ void EditScript(uint8_t scriptIndex)
                     }
                     else
                     {
-                        print("saving file");
+                        debugPrint("saving file");
 
                         FlushBuffer();
 
@@ -1099,7 +1077,7 @@ void EditScript(uint8_t scriptIndex)
                         free(saveName);
                         DisengageSD();
 
-                        print("Save complete");
+                        debugPrint("Save complete");
 
                         SaveProject(program);
                         keyboard[0] = '@';
@@ -1278,6 +1256,7 @@ void EditScript(uint8_t scriptIndex)
         }
     }
 }
+
 int SelectScript()
 {
     bool refresh = true;
@@ -1361,6 +1340,7 @@ int SelectScript()
         }
     }
 }
+
 charArray* CreateScriptMenu()
 {
     bool refresh = true;
@@ -1603,7 +1583,10 @@ void ScriptMenu()
     }
 }
 
+#pragma endregion
+
 ///////////////////////////////////////////////////////////////////////// MAIN SCREEN //////////////////////////////////////////////////////////////////
+#pragma region
 
 void EditorMainScreen()
 {
@@ -1672,5 +1655,7 @@ void EditorMainScreen()
         }
     }
 }
+
+#pragma endregion
 
 #endif

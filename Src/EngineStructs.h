@@ -5,6 +5,7 @@
 #include "pico/stdlib.h"
 #include <string.h>
 #include "LinkedList.h"
+#include "DebugPrint.h"
 
 #define COLLIDER_VARS 6
 #define BASE_VARS 6
@@ -148,7 +149,7 @@ typedef struct ScriptData
     GeneralList variables;
 
     // EngineVar *data;
-    uint8_t variableCount;
+    //uint8_t variableCount;
 
     EngineVar* backupData;
     uint8_t backupVarCount;
@@ -184,11 +185,12 @@ typedef struct EngineObject
     uint8_t ID;
     char name[MAX_NAME_LENGTH];
 
-    uint8_t scriptCount;
-    
+    //uint8_t scriptCount;
 
-    ScriptData* scriptData[MAX_SCRIPTS_PER_OBJECT];
-    uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
+    GeneralList scriptData;
+
+    //ScriptData* scriptData[MAX_SCRIPTS_PER_OBJECT];
+    //uint8_t scriptIndexes[MAX_SCRIPTS_PER_OBJECT];
 
     // Each object has position, sprite, and scale
     GeneralList objectData;
@@ -319,7 +321,7 @@ EngineVar* VarConstructor(char* name, uint8_t nameLength, uint8_t dataType, bool
     return output;
 }
 
-EngineScript* ScriptConstructor(uint8_t ID, char* name, char* content)
+EngineScript* ScriptConstructor(char* name, char* content)
 {
     EngineScript* output = (EngineScript*)malloc(sizeof(EngineScript));
     for (int i = 0; i < MAX_NAME_LENGTH; i++)
@@ -340,7 +342,8 @@ EngineScript* ScriptConstructor(uint8_t ID, char* name, char* content)
         output->content[i] = content[i];
     }
     output->content[strlen(content)] = '\0';
-    output->ID = ID;
+    debugPrintf("current scriptCount %d\n", scriptCount);
+    output->ID = scriptCount;
     return output;
 }
 
@@ -358,24 +361,37 @@ EngineSprite* SpriteConstructor(uint8_t ID, uint16_t sprite[SPRITE_WIDTH][SPRITE
 
 ScriptData* ScriptDataConstructor(EngineScript* script)
 {
+    debugPrint("creating scr data...");
     ScriptData* output = (ScriptData*)malloc(sizeof(ScriptData));
+    debugPrint("malloced");
 
     InitializeList(&output->variables);
+
+    debugPrint("init list");
+
     output->backupData = NULL;
 
     output->script = script;
 
     // output->data = variables;
-    output->variableCount = 0;
     output->backupVarCount = 0;
     output->functionCount = 0;
     output->bracketPairs = 0;
     output->currentLine = 0;
+    output->currentScope = 0;
+
 
     output->scriptIndex = -1;
     output->objectIndex = -1;
 
     output->linkedObject = NULL;
+
+    output->lineIndexes = NULL;
+    output->brackets = NULL;
+    output->lines = NULL;
+
+
+    debugPrint("set");
 
     return output;
 }
@@ -435,7 +451,9 @@ EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
     }
 
     // output->scriptData = (ScriptData **)malloc(sizeof(ScriptData *) * MAX_SCRIPTS_PER_OBJECT);
-    output->scriptCount = 0;
+   // output->scriptCount = 0;
+
+    InitializeList(&output->scriptData);
 
     InitializeList(&output->objectData);
 
@@ -451,24 +469,31 @@ EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
     AddDataToObject(output, VarConstructor("velocity", strlen("velocity"), TYPE_VECTOR, false));
     AddDataToObject(output, VarConstructor("drag", strlen("drag"), TYPE_INT, true));
 
-    print("Added data");
+    debugPrint("Added data");
 
     GetObjectDataByName(output, "sprite")->data.i = 0;
+    debugPrint("set sprite");
+
     GetObjectDataByName(output, "scale")->data.XY.x = 1;
     GetObjectDataByName(output, "scale")->data.XY.y = 1;
+    debugPrint("set scale");
+
+    GetObjectDataByName(output, "angle")->data.f = 0;
+    debugPrint("set angl");
 
     GetObjectDataByName(output, "position")->data.XY.x = 0;
     GetObjectDataByName(output, "position")->data.XY.y = 0;
+    debugPrint("set pos");
 
     GetObjectDataByName(output, "velocity")->data.XY.x = 0;
     GetObjectDataByName(output, "velocity")->data.XY.y = 0;
+    debugPrint("set velo");
+
+
 
     GetObjectDataByName(output, "drag")->data.i = 10;
 
-    print("set data");
-
-    output->packages[0] = false;
-    output->packages[1] = false;
+    debugPrint("set drag");
 
     return output;
 }
@@ -477,7 +502,7 @@ EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
 void CreateNullStructs()
 {
     NULL_VAR = VarConstructor("", 0, 0, false);
-    NULL_SCRIPT = ScriptConstructor(0, "", "");
+    NULL_SCRIPT = ScriptConstructor("", "");
     NULL_SCRIPT_DATA = ScriptDataConstructor(NULL_SCRIPT);
     uint16_t emptySprite[SPRITE_WIDTH][SPRITE_HEIGHT];
     for (int i = 0; i < SPRITE_HEIGHT * SPRITE_WIDTH; i++)

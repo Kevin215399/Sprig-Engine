@@ -542,6 +542,44 @@ uint8_t WriteWord(char *word, int len, int x, int y, uint8_t scale, uint16_t col
     return currentLine+1;
 }
 
+// Returns the number of lines
+uint8_t WriteWordLimited(char *word, int len, int x, int y, uint8_t scale, uint16_t color, uint16_t background, uint8_t lettersPerRow)
+{
+    uint8_t letterWidth = 5 * scale + (scale - 1) * 2 + 1;
+    uint8_t currentLine = 0;
+    int xOffset = 0;
+    for (int i = 0; i < len; i++)
+    {
+        if (xOffset >= lettersPerRow)
+        {
+            xOffset = 0;
+            currentLine++;
+        }
+        if (word[i] == '\n')
+        {
+            xOffset = 0;
+            currentLine++;
+            continue;
+        }
+        if (background != TRANSPARENT)
+        {
+            uint8_t bufferHeight = 7 * scale + (scale - 1) * 2;
+            if (currentLine == 0)
+            {
+                Rectangle(background, x + xOffset * letterWidth - 1, y + (FONT_HEIGHTS[scale - 1] * currentLine) - 1, letterWidth + 2, bufferHeight + 2);
+            }
+            else
+            {
+                Rectangle(background, x + xOffset * letterWidth - 1, y + (FONT_HEIGHTS[scale - 1] * currentLine), letterWidth + 2, bufferHeight + 1);
+            }
+        }
+        WriteLetter(word[i], x + xOffset * letterWidth, y + ((FONT_HEIGHTS[scale - 1]+1) * currentLine), scale, color, background);
+        xOffset++;
+    }
+
+    return currentLine+1;
+}
+
 #ifndef initPins
 #define initPins
 bool pinsInitialized = false;

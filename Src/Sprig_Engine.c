@@ -26,6 +26,10 @@ File *program;
 
 #include "LinkedList.h"
 
+#include "DebugPrint.h"
+
+#include "DebugConsole.h"
+
 void RenderTest()
 {
     for (int x = 0; x < 360; x += 1)
@@ -102,8 +106,7 @@ int main()
     // sleep_ms(1000);
     // FireworkShow();
 
-    editorView = DEBUG_VIEW;
-    UI_ClearDebug();
+    ClearConsole();
     
     /*sleep_ms(4000);
     EngineVar *out = VarConstructor("", 0, 0, false);
@@ -260,5 +263,7 @@ else
         }
     }
 
-    print("end of program");
+    debugPrint("end of program");
+
+    return 0;
 }

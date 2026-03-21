@@ -81,11 +81,17 @@ Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
     return output;
 }
 
-Vector2 PreciseProjectPoint(Vector2 point, float slope, Vector2 lineOffset) {
+Vector2 PreciseProjectPoint(Vector2 point, float projectSlope, float slope, Vector2 lineOffset) {
     Vector2 output;
-    output.x = (-slope * lineOffset.x + lineOffset.y - slope * point.x - point.y) / (-2 * slope);
+
+    output.x = (projectSlope * point.x - slope * lineOffset.x + lineOffset.y - point.y) / (projectSlope - slope);
     output.y = slope * (output.x - lineOffset.x) + lineOffset.y;
+
+
     return output;
+}
+float Distance(Vector2 a, Vector2 b) {
+    return sqrt(pow(b.x - a.x, 2) + pow(b.y - a.y, 2));
 }
 
 //////////////////////////////// CONSTRUCTORS / SETUP
@@ -111,7 +117,7 @@ Rect* NewRect(float centerX, float centerY, float scaleX, float scaleY, EngineOb
 
     debugPrintf("created rect index: %d\n", setRectID);
     output->ID = setRectID++;
-    
+
 
     return output;
 }
@@ -136,7 +142,7 @@ void DeleteRectFromAll(int ID) {
     if (current == NULL)
         return;
     debugPrint("found rect, deleting");
-    free(DeleteListElement(&allColliders,elementIndex));
+    free(DeleteListElement(&allColliders, elementIndex));
 }
 
 Cell* NewCell(float topLeftx, float topLefty)
@@ -239,7 +245,7 @@ void RecalculateObjectColliders(EngineObject* object)
 {
     while (object->colliderRects.count > 0)
     {
-        int *ID = (int*)PopList(&object->colliderRects);
+        int* ID = (int*)PopList(&object->colliderRects);
         DeleteRectFromAll(*ID);
         free(ID);
     }
@@ -487,8 +493,16 @@ void FreeCells() {
 
 void JumpToFunction(ScriptData* scriptData, char* functionName);
 
+typedef struct Slope {
+    float m;
+    bool isVertical;
+} Slope;
+
+
+
 void ResolveCollision(Rect* a, Rect* b)
 {
+    debugPrint("resolving collision!");
     float aForce = 0;
     float bForce = 0;
 
@@ -537,19 +551,10 @@ void ResolveCollision(Rect* a, Rect* b)
 
     debugPrintf("b pos: (%f,%f)\n", bPosition.x, bPosition.y);
 
-    int direction = 0;
-    int costs[4];
 
-    /*
-    0: top of A to bottom of B
-    1: right of A to left of B
-    2: bottom of A to top of B
-    3: left of A to right of B
-    */
-    Vector2 aDirection;
-    Vector2 bDirection;
+    // The slope of the rects avged gives the movement vector
 
-    // The perpendicular slope of rectA gives the movement vector
+    //calculation for rect A
     Vector2 tempPoint;
     tempPoint.x = a->globalCenter.x - a->globalScale.x / 2;
     tempPoint.y = a->globalCenter.y;
@@ -557,76 +562,158 @@ void ResolveCollision(Rect* a, Rect* b)
     tempPoint.x = a->globalCenter.x + a->globalScale.x / 2;
     Vector2 aRightPoint = RotatePoint(tempPoint, a->globalCenter, a->angle);
 
-    aLeftPoint.y = -aLeftPoint.y;
-    aRightPoint.y = -aRightPoint.y;
+    aLeftPoint.y = aLeftPoint.y;
+    aRightPoint.y = aRightPoint.y;
 
-
-    bool isAVertical = false;
-    float slopeA = 0;
+    Slope slopeA;
+    memset(&slopeA, 0, sizeof(Slope));
     if (aRightPoint.x == aLeftPoint.x) {
-        isAVertical = true;
+        slopeA.isVertical = true;
     }
     else {
-        slopeA = (aRightPoint.y - aLeftPoint.y) / (aRightPoint.x - aLeftPoint.x);
+        slopeA.m = (aRightPoint.y - aLeftPoint.y) / (aRightPoint.x - aLeftPoint.x);
     }
 
-    debugPrintf(" slope a = %f\n", slopeA);
+    debugPrintf(" slope a = %f\n", slopeA.m);
 
+    //calculation for rect B
     tempPoint.x = b->globalCenter.x - b->globalScale.x / 2;
     tempPoint.y = b->globalCenter.y;
     Vector2 bLeftPoint = RotatePoint(tempPoint, b->globalCenter, b->angle);
     tempPoint.x = b->globalCenter.x + b->globalScale.x / 2;
     Vector2 bRightPoint = RotatePoint(tempPoint, b->globalCenter, b->angle);
 
-    bLeftPoint.y = -bLeftPoint.y;
-    bRightPoint.y = -bRightPoint.y;
+    bLeftPoint.y = bLeftPoint.y;
+    bRightPoint.y = bRightPoint.y;
 
     debugPrintf("b points: (%f, %f) -> (%f, %f)\n", bLeftPoint.x, bLeftPoint.y, bRightPoint.x, bRightPoint.y);
 
-    bool isBVertical = false;
-    float slopeB = 0;
+    Slope slopeB;
+    memset(&slopeB, 0, sizeof(Slope));
     if (bRightPoint.x == bLeftPoint.x) {
-        isBVertical = true;
+        slopeB.isVertical = true;
     }
     else {
-        slopeB = (bRightPoint.y - bLeftPoint.y) / (bRightPoint.x - bLeftPoint.x);
+        slopeB.m = (bRightPoint.y - bLeftPoint.y) / (bRightPoint.x - bLeftPoint.x);
     }
-    debugPrintf(" slope b = %f\n", slopeB);
+    debugPrintf(" slope b = %f\n", slopeB.m);
 
-    float combinedSlope = 0;
-    bool isHorizontal = false;
-    if (isAVertical && isBVertical) {
+    //Combine slope
+
+    Slope combinedSlope;
+    memset(&combinedSlope, 0, sizeof(Slope));
+
+    if (slopeA.isVertical && slopeB.isVertical) {
         debugPrint("both vertical");
-        isHorizontal = true;
-        combinedSlope = 0;
+        combinedSlope.isVertical = true;
+        combinedSlope.m = 0;
     }
     else {
         debugPrint("avging slopes");
-        combinedSlope = (slopeA + slopeB) / 2;
+        combinedSlope.m = (slopeA.m + slopeB.m) / 2;
     }
-    debugPrintf("combined slope = %f\n", combinedSlope);
+    debugPrintf("combined slope = %f\n", combinedSlope.m);
+
+    Vector2 projectM;
+    float _projectSlope = combinedSlope.m;
+    float _slopeB = slopeB.m;
+    if (combinedSlope.isVertical) {
+        _projectSlope = 10000;
+    }
+    if (slopeB.isVertical) {
+        _slopeB = 10000;
+    }
+    projectM = PreciseProjectPoint(a->globalCenter, _projectSlope, _slopeB, b->globalCenter);
+    debugPrintf("project m = (%f,%f)\n",projectM.x,projectM.y);
+
+
+    Vector2 projectPerpM;
+
+    _projectSlope = -1 / combinedSlope.m;
+    _slopeB = slopeB.m;
+    if (combinedSlope.m == 0) {
+        _projectSlope = 10000;
+    } else if(combinedSlope.isVertical){
+        _projectSlope = 0;
+    }
+    if (slopeB.isVertical) {
+        _slopeB = 10000;
+    }
+
+    projectPerpM = PreciseProjectPoint(a->globalCenter, _projectSlope, _slopeB, b->globalCenter);
+    debugPrintf("project m = (%f,%f)\n",projectPerpM.x,projectPerpM.y);
+
+
+    bool usePerpendicular = false;
+
+    float distance1 = Distance(projectM,a->globalCenter);
+    
+    float distance2 = Distance(projectPerpM,a->globalCenter);
+
+    debugPrintf("dis1: %f, dis2: %f\n",distance1,distance2);
+
+
+
+    /*Slope movementVector;
+    memset(&movementVector, 0, sizeof(Slope));
+
+    if (abs(b->globalCenter.y - a->globalCenter.y) > abs(b->globalCenter.x - a->globalCenter.x)) {
+        //Change in y is greater, using more vertical slope
+        if (combinedSlope.m == 0 || combinedSlope.isVertical) {
+            // if slope or perp slope is vertical, choose vertical
+            movementVector.isVertical = true;
+        }
+        else {
+            // choose the slope with the greatest abs value (more vertical)
+            if (abs(combinedSlope.m) > abs(-1 / combinedSlope.m)) {
+                movementVector.m = combinedSlope.m;
+            }
+            else {
+                movementVector.m = -1 / combinedSlope.m;
+            }
+        }
+    }
+    else {
+        //Change in x is greater, using lower slope
+
+        if (combinedSlope.m == 0 || combinedSlope.isVertical) {
+            // if slope or perp slope is horizontal, choose horizontal
+            movementVector.m = 0;
+        }
+        else {
+            // choose the slope with the smallest abs value (more horizontal)
+            if (abs(combinedSlope.m) < abs(-1 / combinedSlope.m)) {
+                movementVector.m = combinedSlope.m;
+            }
+            else {
+                movementVector.m = -1 / combinedSlope.m;
+            }
+        }
+    }
+
     float aMultiplier = 1;
     float bMultiplier = 1;
-    if (isHorizontal) {
+
+    if (movementVector.m == 0) {
         debugPrint("horizontal movement");
 
         aMultiplier = a->globalCenter.x < b->globalCenter.x ? -1 : 1;
         bMultiplier = b->globalCenter.x < a->globalCenter.x ? -1 : 1;
     }
-    else if (combinedSlope == 0) {
+    else if (movementVector.isVertical) {
         debugPrint("vertical movement");
 
         aMultiplier = a->globalCenter.y < b->globalCenter.y ? -1 : 1;
         bMultiplier = b->globalCenter.y < a->globalCenter.y ? -1 : 1;
     }
     else {
-        debugPrintf("movement along y = %fx\n", -1 / combinedSlope);
+        debugPrintf("movement along y = %fx\n", movementVector.m);
 
         float aProjected = ProjectPoint(a->globalCenter, -1 / combinedSlope);
         float bProjected = ProjectPoint(b->globalCenter, -1 / combinedSlope);
 
         debugPrintf("projected relations: a:%f, b:%f\n", aProjected, bProjected);
-    }
+    }*/
 
     /*costs[0] = abs((b->globalCenter.y - b->globalScale.y / 2) - (a->globalCenter.y + a->globalScale.y / 2));
     costs[2] = abs((b->globalCenter.y + b->globalScale.y / 2) - (a->globalCenter.y - a->globalScale.y / 2));
@@ -709,8 +796,8 @@ void PartitionColliders() {
         if (!currentRect->didCollide && currentRect->couldExit) {
             debugPrintf("exit collision");
             currentRect->couldExit = false;
-            for (int s = 0; s < currentRect->link->scriptCount; s++) {
-                JumpToFunction(currentRect->link->scriptData[s], "CollideExit");
+            for (int s = 0; s < currentRect->link->scriptData.count; s++) {
+                JumpToFunction((ScriptData*)ListGetIndex(&currentRect->link->scriptData, s), "CollideExit");
             }
         }
 
@@ -846,27 +933,27 @@ void ColliderStep(uint8_t mode)
 
                     // Rect A Enter
                     if (!rectA->didCollide) {
-                        for (int s = 0; s < rectA->link->scriptCount; s++) {
-                            JumpToFunction(rectA->link->scriptData[s], "CollideEnter");
+                        for (int s = 0; s < rectA->link->scriptData.count; s++) {
+                            JumpToFunction((ScriptData*)ListGetIndex(&rectA->link->scriptData, s), "CollideEnter");
                         }
                     }
                     // Rect A stay
                     rectA->didCollide = true;
-                    for (int s = 0; s < rectA->link->scriptCount; s++) {
-                        JumpToFunction(rectA->link->scriptData[s], "CollideStay");
+                    for (int s = 0; s < rectA->link->scriptData.count; s++) {
+                        JumpToFunction((ScriptData*)ListGetIndex(&rectA->link->scriptData, s), "CollideStay");
                     }
 
 
                     // Rect B Enter
                     if (!rectB->didCollide) {
-                        for (int s = 0; s < rectB->link->scriptCount; s++) {
-                            JumpToFunction(rectB->link->scriptData[s], "CollideEnter");
+                        for (int s = 0; s < rectB->link->scriptData.count; s++) {
+                            JumpToFunction((ScriptData*)ListGetIndex(&rectB->link->scriptData, s), "CollideEnter");
                         }
                     }
                     // Rect B stay
                     rectB->didCollide = true;
-                    for (int s = 0; s < rectB->link->scriptCount; s++) {
-                        JumpToFunction(rectB->link->scriptData[s], "CollideStay");
+                    for (int s = 0; s < rectB->link->scriptData.count; s++) {
+                        JumpToFunction((ScriptData*)ListGetIndex(&rectB->link->scriptData, s), "CollideStay");
                     }
 
                     rectA->couldExit = true;
@@ -885,16 +972,16 @@ void ColliderStep(uint8_t mode)
                     // Rect A exit
                     if (rectA->couldExit) {
                         debugPrintf("exit collision");
-                        for (int s = 0; s < rectA->link->scriptCount; s++) {
-                            JumpToFunction(rectA->link->scriptData[s], "CollideExit");
+                        for (int s = 0; s < rectA->link->scriptData.count; s++) {
+                            JumpToFunction((ScriptData*)ListGetIndex(&rectA->link->scriptData, s), "CollideExit");
                         }
                         rectA->couldExit = false;
                     }
                     // Rect B exit
                     if (rectB->couldExit) {
                         debugPrintf("exit collision");
-                        for (int s = 0; s < rectB->link->scriptCount; s++) {
-                            JumpToFunction(rectB->link->scriptData[s], "CollideExit");
+                        for (int s = 0; s < rectB->link->scriptData.count; s++) {
+                            JumpToFunction((ScriptData*)ListGetIndex(&rectB->link->scriptData, s), "CollideExit");
                         }
                         rectB->couldExit = false;
                     }

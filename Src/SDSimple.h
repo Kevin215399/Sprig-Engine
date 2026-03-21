@@ -23,6 +23,23 @@ uint32_t getFreeHeap(void)
     return getTotalHeap() - m.uordblks;
 }
 
+//#define SD_DEBUG 1
+
+#ifdef SD_DEBUG
+#define SDprintf(...) SDprintf("DEBUG: " __VA_ARGS__)
+#define SDprint(x) SDprintf("%s\n", x)
+#else
+#define SDprintf(...) \
+    do                   \
+    {                    \
+    } while (0)
+#define SDprint(x) \
+    do                \
+    {                 \
+    } while (0)
+#endif
+
+
 #define SPI_PORT spi0
 #define PIN_MISO 16
 #define SD_CS 21
@@ -78,10 +95,7 @@ typedef struct
 
 File *NULL_FILE;
 
-void print(const char *message)
-{
-    printf("%s\n", message);
-}
+
 
 // Takes for bytes and combines them into a uint32
 uint32_t CombineBytes(uint8_t *bytes)
@@ -158,15 +172,15 @@ int GetTotalBlocks()
         // spi_write_blocking(SPI_PORT, (uint8_t[]){0xFF}, 1);
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
     } while ((response & 0x80) != 0); // Wait for 0x00
-    printf("Cmd 9A response: %u\n", response);
+    SDprintf("Cmd 9A response: %u\n", response);
 
     do
     {
         // spi_write_blocking(SPI_PORT, (uint8_t[]){0xFF}, 1);
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
-        printf("cmd9 %u", response);
+        SDprintf("cmd9 %u", response);
     } while (response != 0xFE); // Wait for 0x00
-    printf("Cmd 9B response: %u\n", response);
+    SDprintf("Cmd 9B response: %u\n", response);
 
     spi_read_blocking(SPI_PORT, 0xFF, cardData, 16); // Read the CID register
 
@@ -177,7 +191,7 @@ int GetTotalBlocks()
     if (csdType == 0)
     {
         // v1.0
-        printf("CSD Version 1.0 is not supported\n");
+        SDprintf("CSD Version 1.0 is not supported\n");
     }
     else if (csdType == 1)
     {
@@ -185,12 +199,12 @@ int GetTotalBlocks()
         uint32_t c_size = ((cardData[7] & 0x3F) << 16) | (cardData[8] << 8) | cardData[9];
         uint32_t blocks = (c_size + 1) * 1024; // 512-byte blocks
 
-        printf("Total blocks (SDHC/SDXC): %lu\n", blocks);
+        SDprintf("Total blocks (SDHC/SDXC): %lu\n", blocks);
         return blocks;
     }
     else
     {
-        printf("Unsupported CSD version\n");
+        SDprintf("Unsupported CSD version\n");
     }
 
     return 0;
@@ -200,12 +214,12 @@ Block ReadBlock(uint32_t blockNumber)
 {
     if (blockNumber >= totalBlocks)
     {
-        print("Block number out of range.\n");
+        SDprint("Block number out of range.\n");
         Block out;
         return out; // Return NULL if block number is out of range
     }
 
-    printf("block num %d\n", blockNumber);
+    SDprintf("block num %d\n", blockNumber);
 
     uint8_t token = 0xFF;
 
@@ -225,19 +239,19 @@ Block ReadBlock(uint32_t blockNumber)
                        (blockNumber >> 8) & 0xFF,
                        blockNumber & 0xFF, 0xFF};
 
-    print("cmd 17");
+    SDprint("cmd 17");
     spi_write_blocking(SPI_PORT, cmd17, 6);
 
-    print("read");
+    SDprint("read");
 
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
     } while (response == 0xFF);
 
-    printf("response: %d\n", response);
+    SDprintf("response: %d\n", response);
 
-    print("waiting for 0xFE");
+    SDprint("waiting for 0xFE");
 
     do
     {
@@ -245,7 +259,7 @@ Block ReadBlock(uint32_t blockNumber)
 
     } while (response != 0xFE);
 
-    print("got 0xFE");
+    SDprint("got 0xFE");
 
     uint8_t readBuffer[512];
     spi_read_blocking(SPI_PORT, 0xFF, readBuffer, 512); // Read the block
@@ -262,26 +276,26 @@ Block ReadBlock(uint32_t blockNumber)
 
     return out;
 
-    /*print("Cmd17");
+    /*SDprint("Cmd17");
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
     } while (response != 0x00); // Wait for 0x00
 
-    print("got 0x00");
+    SDprint("got 0x00");
 
     do
     {
         uint8_t x = 0xFF;
         spi_write_read_blocking(SPI_PORT, &x, &response, 1);
-        printf("wai start: %d\n", response);
+        SDprintf("wai start: %d\n", response);
     } while (response != 0xFE); // Wait for Block start token
 
-    printf("Cmd 17b response: %u\n", response);
+    SDprintf("Cmd 17b response: %u\n", response);
 
     uint8_t *readBuffer = (uint8_t *)malloc(sizeof(uint8_t) * 512);
 
-    printf("created read buffer");
+    SDprintf("created read buffer");
 
     for (int i = 0; i < 512; i++)
     {
@@ -294,7 +308,7 @@ Block ReadBlock(uint32_t blockNumber)
     gpio_put(SD_CS, 1);                        // Deselect the card
     Flush();
 
-    print("read block done");
+    SDprint("read block done");
 
     return readBuffer; // Return the read block*/
 }
@@ -303,11 +317,11 @@ void WriteBlock(uint32_t blockNumber, uint8_t *data)
 {
     if (blockNumber >= totalBlocks)
     {
-        print("Block number out of range.\n");
+        SDprint("Block number out of range.\n");
         return; // Return NULL if block number is out of range
     }
 
-    print("write");
+    SDprint("write");
 
     uint8_t token = 0xFF;
 
@@ -325,30 +339,30 @@ void WriteBlock(uint32_t blockNumber, uint8_t *data)
                        (uint8_t)(blockNumber),
                        0xFF};
 
-    print("cmd24");
+    SDprint("cmd24");
     spi_write_blocking(SPI_PORT, cmd24, 6);
 
-    print("read response");
+    SDprint("read response");
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
     } while (response != 0x00);
 
-    print("send start token");
+    SDprint("send start token");
     uint8_t startToken = 0xFE;
     spi_write_blocking(SPI_PORT, &startToken, 1);
 
-    print("send data");
+    SDprint("send data");
     spi_write_blocking(SPI_PORT, data, 512);
 
-    print("wait response");
+    SDprint("wait response");
     do
     {
         spi_read_blocking(SPI_PORT, 0xFF, &response, 1);
 
     } while (response == 0xFF || response & 0x1F != 0x05);
 
-    print("success");
+    SDprint("success");
 
     while (1)
     {
@@ -356,7 +370,7 @@ void WriteBlock(uint32_t blockNumber, uint8_t *data)
         if (response != 0x00)
             break;
     }
-    print("data written");
+    SDprint("data written");
 
     spi_write_blocking(SPI_PORT, &token, 1);
     gpio_put(SD_CS, 1);
@@ -372,7 +386,7 @@ void SetupTable(bool forceClear)
     {
         return;
     }
-    print("setting up table");
+    SDprint("setting up table");
 
     uint8_t buffer[512];
 
@@ -404,7 +418,7 @@ int InitializeSDCard()
 
     ////////////////////////////////// step 1 ///////////////////////////////
 
-    print("step1A\n");
+    SDprint("step1A\n");
     // Send dummy clocks at least 74
     gpio_put(SD_CS, 1); // Deselect the card
     for (int i = 0; i < 10; i++)
@@ -413,11 +427,11 @@ int InitializeSDCard()
         spi_write_blocking(SPI_PORT, &dummy, 1);
     }
 
-    print("step1B\n");
+    SDprint("step1B\n");
 
     //////////////////////////////////// step 2 ///////////////////////////////
 
-    print("step2A\n");
+    SDprint("step2A\n");
     uint8_t cmd0[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x95}; // Idle state with CRC
 
     gpio_put(SD_CS, 0); // Enable card
@@ -432,13 +446,13 @@ int InitializeSDCard()
             break; // Response received
         }
     }
-    printf("Cmd 0 response: %u\n", response);
+    SDprintf("Cmd 0 response: %u\n", response);
     gpio_put(SD_CS, 1);
-    print("step2B\n");
+    SDprint("step2B\n");
 
     ////////////////////////////////// step 3 ///////////////////////////////
 
-    print("step3A\n");
+    SDprint("step3A\n");
     uint8_t cmd8[] = {0x40 | 8, 0x00, 0x00, 0x01, 0xAA, 0x87}; // Check card specs and CRC
 
     gpio_put(SD_CS, 0);
@@ -462,14 +476,14 @@ int InitializeSDCard()
     spi_read_blocking(spi0, 0xFF, response7, 4);
     for (int i = 0; i < 4; i++)
     {
-        printf("R8B[%u]: %u\n", i, response7[i]);
+        SDprintf("R8B[%u]: %u\n", i, response7[i]);
     }
 
     gpio_put(SD_CS, 1);
-    print("step3B\n");
+    SDprint("step3B\n");
     sleep_ms(100); // Wait for a short time before the next command
     /////////////////////////////////// step 4 ///////////////////////////////
-    print("step4A\n");
+    SDprint("step4A\n");
 
     uint8_t cmd55[] = {0x40 | 55, 0x00, 0x00, 0x00, 0x00, 0xFF}; // Set mode to application cmd and CRC
 
@@ -488,11 +502,11 @@ int InitializeSDCard()
             }
         }
 
-        // printf("55R: %u\n", response);
+        // SDprintf("55R: %u\n", response);
 
         if (response != 0x01)
         {
-            print("Failed to receive response for CMD55.\n");
+            SDprint("Failed to receive response for CMD55.\n");
             continue; // Retry if response is not 0x01
         }
 
@@ -509,11 +523,11 @@ int InitializeSDCard()
             }
         }
 
-        // printf("A41R: %u\n", response);
+        // SDprintf("A41R: %u\n", response);
 
         if (response == 0x00)
         {
-            print("Card initialized successfully.\n");
+            SDprint("Card initialized successfully.\n");
             // Deselect card
             break; // Exit loop if card is initialized
         }
@@ -528,16 +542,16 @@ int InitializeSDCard()
     gpio_put(SD_CS, 1);
     if (response != 0x00)
     {
-        print("Card initialization failed.\n");
+        SDprint("Card initialization failed.\n");
         return 2; // Return error code if initialization fails
     }
 
     sleep_ms(100);
 
-    print("step4B\n");
+    SDprint("step4B\n");
 
     ////////////////////////////////// step 5 ///////////////////////////////
-    print("step5A\n");
+    SDprint("step5A\n");
     timeout = 150;
     uint8_t ocr[4];
     do
@@ -555,21 +569,21 @@ int InitializeSDCard()
         timeout--;
 
     } while ((ocr[0] & 0b10000000) == 1 && timeout > 0);
-    print("step5B\n");
+    SDprint("step5B\n");
 
     for (int i = 0; i < 4; i++)
     {
-        printf("OCR[%u]: %u\n", i, ocr[i]);
+        SDprintf("OCR[%u]: %u\n", i, ocr[i]);
     }
 
     if (timeout == 0)
     {
-        print("SD Card initialization failed.\n");
+        SDprint("SD Card initialization failed.\n");
         return 3;
     }
 
     // Additional SD card initialization code can be added here
-    print("SD Card initialized.\n");
+    SDprint("SD Card initialized.\n");
 
     totalBlocks = GetTotalBlocks();
 
@@ -600,22 +614,22 @@ bool Strcmp(char *str1, char *str2)
 
 File *GetFile(char *searchFileName)
 {
-    printf("GetFile current heap %u/%u\n", getFreeHeap(), getTotalHeap());
-    printf("Get File: %s\n", searchFileName);
+    SDprintf("GetFile current heap %u/%u\n", getFreeHeap(), getTotalHeap());
+    SDprintf("Get File: %s\n", searchFileName);
     int fileIndex = 9;
     int block = 0;
     int currentFile = 0;
     Block buffer = ReadBlock(0);
 
-    printf("read block");
+    SDprintf("read block");
 
     uint32_t files = CombineBytes(buffer.data + 5);
 
-    printf("get file setup %u\n", files);
+    SDprintf("get file setup %u\n", files);
 
     while (currentFile < files)
     {
-        print("search");
+        SDprint("search");
         fileIndex++;
         char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
         fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
@@ -626,10 +640,10 @@ File *GetFile(char *searchFileName)
 
         if (buffer.data[fileIndex - 1] != deletedFile && Strcmp(searchFileName, fileName))
         {
-            print("found match");
+            SDprint("found match");
             File *file = FileInit(fileName, (buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1 + 4) + 1);
             free(fileName);
-            print("returning");
+            SDprint("returning");
             return file;
         }
         else
@@ -648,7 +662,7 @@ File *GetFile(char *searchFileName)
 
         currentFile++;
     }
-    print("file not found");
+    SDprint("file not found");
 
     return NULL_FILE; // Return an empty file if not found
 }
@@ -665,7 +679,7 @@ uint8_t *ReadFile(File *file)
 
     for (int i = 0; i < blocksOccupied; i++)
     {
-        printf("Reading block %u\n", file->startBlock - i);
+        SDprintf("Reading block %u\n", file->startBlock - i);
         Block blockData = ReadBlock(file->startBlock - i);
         if (blockData.data == NULL)
         {
@@ -693,7 +707,7 @@ uint8_t *ReadFileUntil(File *file, char until)
 
     for (int i = 0; i < blocksOccupied; i++)
     {
-        printf("Reading block %u\n", file->startBlock - i);
+        SDprintf("Reading block %u\n", file->startBlock - i);
         Block blockData = ReadBlock(file->startBlock - i);
 
         for (int j = 0; j < 512; j++)
@@ -725,7 +739,7 @@ uint8_t *ReadFileUntilLimited(File *file, char until, uint8_t maxBlocks)
 
     for (int i = 0; i < blocksOccupied; i++)
     {
-        printf("Reading block %u\n", file->startBlock - i);
+        SDprintf("Reading block %u\n", file->startBlock - i);
         Block blockData = ReadBlock(file->startBlock - i);
 
         for (int j = 0; j < 512; j++)
@@ -747,7 +761,7 @@ void WriteFile(File *file, char *data, uint32_t length)
 
     if (length >= blocksOccupied * 512)
     {
-        print("Data size exceeds allocated blocks.\n");
+        SDprint("Data size exceeds allocated blocks.\n");
         return;
     }
     uint8_t buffer[512];
@@ -758,7 +772,7 @@ void WriteFile(File *file, char *data, uint32_t length)
         {
             if (i + b * 512 < length)
             {
-                printf("Write: %c\n", (data[i + b * 512]));
+                SDprintf("Write: %c\n", (data[i + b * 512]));
                 buffer[i] = (uint8_t)(data[i + b * 512]);
             }
             else
@@ -766,20 +780,20 @@ void WriteFile(File *file, char *data, uint32_t length)
                 buffer[i] = 0;
             }
         }
-        printf("write file block: %d\n", file->startBlock - b);
+        SDprintf("write file block: %d\n", file->startBlock - b);
         WriteBlock(file->startBlock - b, buffer);
     }
 }
 
 File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
 {
-    print("Create File");
-    printf("Creating file with name len of %u\n", strlen(filename));
+    SDprint("Create File");
+    SDprintf("Creating file with name len of %u\n", strlen(filename));
     File *checkExist = GetFile(filename);
-    print("Check if exist");
+    SDprint("Check if exist");
     if (checkExist->startBlock != 0)
     {
-        print("file exists");
+        SDprint("file exists");
         free(checkExist);
         return NULL_FILE;
     }
@@ -807,7 +821,7 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
     if (buffer.data[9] != deletedFile)
         buffer.data[9] = endOfFile;
 
-    print("TableSpec updated.\n");
+    SDprint("TableSpec updated.\n");
     WriteBlock(0, buffer.data);
 
     int fileIndex = 9;
@@ -816,7 +830,7 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
 
     while (currentFile < files)
     {
-        printf("Current file: %u, File index: %u, Write block: %u\n", currentFile, fileIndex, writeBlock);
+        SDprintf("Current file: %u, File index: %u, Write block: %u\n", currentFile, fileIndex, writeBlock);
         fileIndex++;
         fileIndex += buffer.data[fileIndex] + 10; // Skip the file name length+ 10
         if (buffer.data[fileIndex] == endOfBlock)
@@ -838,12 +852,12 @@ File *CreateFile(char *filename, uint8_t fileNameLen, uint8_t requestBlocks)
         // If there may not be enough space left in this block, write to the next block
     }
 
-    printf("Free space at index: %u, block: %u\n", fileIndex, writeBlock);
+    SDprintf("Free space at index: %u, block: %u\n", fileIndex, writeBlock);
 
     uint32_t startBlock = totalBlocks - 100 - blocksUsed - 1;
     uint32_t endBlock = startBlock - requestBlocks;
 
-    printf("Start: %u, End: %u\n", startBlock, endBlock);
+    SDprintf("Start: %u, End: %u\n", startBlock, endBlock);
 
     buffer.data[fileIndex] = fileNameLen;
     fileIndex++;
@@ -906,7 +920,7 @@ void DeleteFile(char *searchFileName)
 
         if (Strcmp(searchFileName, fileName) && buffer.data[fileIndex - 1] != deletedFile)
         {
-            printf("deleting b%u, i%u", block, fileIndex - 1);
+            SDprintf("deleting b%u, i%u", block, fileIndex - 1);
             buffer.data[fileIndex - 1] = deletedFile;
             WriteBlock(block, buffer.data);
             free(fileName);
@@ -939,11 +953,11 @@ File *GetFileByIndex(int index)
 
     uint32_t files = CombineBytes(buffer.data + 5);
 
-    printf("Files: %u\n", files);
+    SDprintf("Files: %u\n", files);
 
     if (index >= files)
     {
-        print("file out of range");
+        SDprint("file out of range");
         return NULL_FILE; // Return an empty file if not found
     }
 
@@ -962,7 +976,7 @@ File *GetFileByIndex(int index)
         {
             if (currentFile == index)
             {
-                printf("found file at: %u\n", fileIndex);
+                SDprintf("found file at: %u\n", fileIndex);
                 File *file = FileInit(fileName, (buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1), CombineBytes(buffer.data + fileIndex + 1 + buffer.data[fileIndex] + 1 + 4) + 1);
                 free(fileName);
                 return file;
@@ -990,19 +1004,19 @@ int GetFileCount()
     int block = 0;
     int currentFile = 0;
     int activeFiles = 0;
-    print("SD GetFileCount");
+    SDprint("SD GetFileCount");
     Block buffer = ReadBlock(0);
-    print("SD GetFileCount: read block");
+    SDprint("SD GetFileCount: read block");
 
     uint32_t files = CombineBytes(buffer.data + 5);
-    printf("SD GetFileCount: got file count %u\n", files);
+    SDprintf("SD GetFileCount: got file count %u\n", files);
 
     while (currentFile < files)
     {
 
         fileIndex++;
         char *fileName = (char *)malloc((buffer.data[fileIndex] + 1) * sizeof(char));
-        print("SD GetFileCount: malloc name");
+        SDprint("SD GetFileCount: malloc name");
         fileName[buffer.data[fileIndex]] = '\0'; // Null-terminate the string
         for (int i = 0; i < buffer.data[fileIndex]; i++)
         {
@@ -1019,7 +1033,7 @@ int GetFileCount()
         fileIndex += buffer.data[fileIndex] + 10;
 
         free(fileName);
-        print("SD GetFileCount: free");
+        SDprint("SD GetFileCount: free");
 
         if (buffer.data[fileIndex] == endOfBlock)
         {
@@ -1028,7 +1042,7 @@ int GetFileCount()
             memcpy(buffer.data, ReadBlock(block).data, 512);
         }
     }
-    print("SD GetFileCount: end");
+    SDprint("SD GetFileCount: end");
     return activeFiles;
 }
 

@@ -16,6 +16,8 @@
 
 #include "Start_Logo.h"
 
+#include "DebugPrint.h"
+
 File *SelectProgram()
 {
     LoadingScreen();
@@ -26,11 +28,11 @@ File *SelectProgram()
     uint8_t currentFile = 0;
 
     FlushBuffer();
-    print("flushed");
+    debugPrint("flushed");
     File **programs = GetAllPrograms();
-    print("Got programs");
+    debugPrint("Got programs");
     uint8_t programCount = GetProgramCount(true);
-    print("got program count");
+    debugPrint("got program count");
     DisengageSD();
 
     uint8_t totalPages = (uint8_t)((float)programCount / 5) + 1; // floor and then add 1 basically ceil

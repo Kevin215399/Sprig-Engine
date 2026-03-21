@@ -29,6 +29,8 @@
 #include "pico/multicore.h"
 #include "pico/sync.h"
 
+#include "DebugConsole.h"
+
 #define CAMERA_SPRITE -1
 
 // Func prototypes
@@ -37,21 +39,28 @@ uint32_t RunProgram();
 ///////////////////////// SCENE VIEW
 #pragma region
 
+#define OBJECT_MODE 0
+#define LAYOUT_MODE 1
+#define MODULE_MODE 2
+#define CONSOLE_MODE 3
+#define OPTIONS_MODE 4
+
 #define SELECT_OBJECTS_UI 0
 #define SELECT_LAYOUT_UI 1
 #define SELECT_MODULE_UI 2
-#define SELECT_OPTIONS_UI 3
+#define SELECT_CONSOLE_UI 3
+#define SELECT_OPTIONS_UI 4
 
-#define OPEN_NAV_PANEL 4
+#define OPEN_NAV_PANEL 5
 
-#define PLAY_SCENE_UI 5
-#define EXIT_EDITOR_UI 6
+#define PLAY_SCENE_UI 6
+#define EXIT_EDITOR_UI 7
 
-#define RENDER_MODE_BUTTON 7
+#define RENDER_MODE_BUTTON 8
 
-#define ADD_THING_BUTTON 8
+#define ADD_THING_BUTTON 9
 
-#define OBJECT_BUTTONS 9
+#define OBJECT_BUTTONS 10
 
 #define SCRIPT_DELETE_BUTTON (OBJECT_BUTTONS + MAX_OBJECTS + 1)
 #define MODULE_BUTTONS (SCRIPT_DELETE_BUTTON + 1)
@@ -358,18 +367,20 @@ bool Modal(char* text, bool confirmButton) {
             Rectangle(BLACK, left + 5 + 1, bottom - 25 + 1, 40 - 2, 15 - 2);
             WriteWord("Cancel", strlen("Cancel"), left + 5 + 3, bottom - 25 + 4, 1, WHITE, TRANSPARENT);
 
-            Rectangle(position ? BLUE : WHITE, left + 5 + 45, bottom - 25, 47, 15);
-            Rectangle(BLACK, left + 5 + 1 + 45, bottom - 25 + 1, 47 - 2, 15 - 2);
-            WriteWord("Confirm", strlen("Confirm"), left + 5 + 45 + 3, bottom - 25 + 4, 1, WHITE, TRANSPARENT);
+            if (confirmButton) {
+                Rectangle(position ? BLUE : WHITE, left + 5 + 45, bottom - 25, 47, 15);
+                Rectangle(BLACK, left + 5 + 1 + 45, bottom - 25 + 1, 47 - 2, 15 - 2);
+                WriteWord("Confirm", strlen("Confirm"), left + 5 + 45 + 3, bottom - 25 + 4, 1, WHITE, TRANSPARENT);
+            }
 
             refresh = false;
         }
 
-        if (GetButton() == BUTTON_D && !position) {
+        if (GetButton() == BUTTON_D && !position && confirmButton) {
             position = true;
             refresh = true;
         }
-        if (GetButton() == BUTTON_A && position) {
+        if (GetButton() == BUTTON_A && position && confirmButton) {
             position = false;
             refresh = true;
         }
@@ -387,10 +398,32 @@ void DecompileScene()
 {
     for (int i = 0; i < currentScene->objectCount; i++)
     {
-        for (int s = 0; s < currentScene->objects[i]->scriptCount; s++)
+        EngineObject* object = currentScene->objects[i];
+        // clear all colliders from object
+        while (object->colliderRects.count > 0)
         {
-            debugPrintf("obj: %d, scr: %d\n", i, s);
-            FreeScriptData(currentScene->objects[i]->scriptData[s], false);
+            debugPrint("pop rect");
+            free(PopList(&object->colliderRects));
+        }
+
+        for (int s = 0; s < object->scriptData.count; s++) {
+            debugPrintf("obj: %d\n", i);
+            ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, s);
+            debugPrint("popped script");
+            debug_sleep(100);
+
+            if (scrData == NULL) {
+                debugPrint("scr is null");
+                continue;
+            }
+            else {
+                debugPrint("not null");
+            }
+            debug_sleep(100);
+
+            FreeScriptData(scrData, true);
+            debugPrint("cleared scrdata");
+            debug_sleep(100);
         }
     }
 }
@@ -400,20 +433,22 @@ void RecompileScene()
 
     for (int i = 0; i < currentScene->objectCount; i++)
     {
+        debugPrintf("recomp obj %d\n", i);
         EngineObject* object = currentScene->objects[i];
         // clear all colliders from object
         while (object->colliderRects.count > 0)
         {
+            debugPrint("pop rect");
             free(PopList(&object->colliderRects));
         }
 
-        for (int s = 0; s < object->scriptCount; s++)
+        for (int s = 0; s < object->scriptData.count; s++)
         {
-
-            object->scriptData[s] = ScriptDataConstructor(&scripts[object->scriptIndexes[s]]);
-            object->scriptData[s]->linkedObject = object;
-            object->scriptData[s]->objectIndex = i;
-            object->scriptData[s]->scriptIndex = object->scriptIndexes[s];
+            debugPrintf("set scr %d\n", s);
+            ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, s);
+            scrData->linkedObject = object;
+            scrData->objectIndex = i;
+            scrData->scriptIndex = s;
 
             // Function prototypes
             uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
@@ -421,19 +456,19 @@ void RecompileScene()
 
             debugPrintf("obj: %d, scr: %d\n", i, s);
             uint32_t errorNum = SetScriptData(
-                &scripts[object->scriptData[s]->script->ID],
-                object->scriptData[s],
+                scrData->script,
+                scrData,
                 0);
 
             debugPrintf("data set reutn %d\n", errorNum);
 
             debugPrintf("scene name: %s\n", currentScene->name);
             debugPrintf("obj name: %s\n", object->name);
-            debugPrintf("var count: %d\n", object->scriptData[s]->variableCount);
+            debugPrintf("var count: %d\n", scrData->variables.count);
 
-            for (int t = 0; t < object->scriptData[s]->variableCount; t++)
+            for (int t = 0; t < scrData->variables.count; t++)
             {
-                EngineVar* var = (EngineVar*)ListGetIndex(&object->scriptData[s]->variables, t);
+                EngineVar* var = (EngineVar*)ListGetIndex(&scrData->variables, t);
                 debugPrintf("set scr variable out: %s\n", var->name);
 
                 if (var->currentType == TYPE_FLOAT)
@@ -445,12 +480,13 @@ void RecompileScene()
             if (errorNum != 0)
             {
                 errors[errorCount++] = errorNum;
+
+                void UI_PrintError(ScriptData * scrData, uint32_t error);
+
+                UI_PrintError(scrData, errorNum);
             }
 
-            uint16_t error = UnpackErrorMessage(errorNum);
-            debugPrintf("set script error: %s\n", stringPool[error]);
-            FreeString(&error);
-            debugPrint("freed error");
+
         }
         debugPrint("object's scripts set");
 
@@ -468,14 +504,22 @@ void RecompileScene()
 
 void SetNavPanelVisibility(bool visible)
 {
+
+
+
     panels[NAV_PANEL].visible = visible;
 
     buttons[SELECT_OBJECTS_UI].visible = visible;
     buttons[SELECT_LAYOUT_UI].visible = visible;
     buttons[SELECT_MODULE_UI].visible = visible;
     buttons[SELECT_OPTIONS_UI].visible = visible;
+    buttons[SELECT_CONSOLE_UI].visible = visible;
 
     buttons[OPEN_NAV_PANEL].visible = !visible;
+
+    if (visible) {
+        buttons[SELECT_CONSOLE_UI].fontColor = ConsoleHasError() ? RED : WHITE;
+    }
 
     Clear();
     // Draw background panels
@@ -484,14 +528,14 @@ void SetNavPanelVisibility(bool visible)
         DrawPanel(&panels[i]);
     }
     // draw background buttons
-    for (int i = 4; i < sizeof(buttons) / sizeof(UIButton); i++)
+    for (int i = 5; i < sizeof(buttons) / sizeof(UIButton); i++)
     {
         DrawButton(&buttons[i]);
     }
 
     // draw front buttons
     DrawPanel(&panels[NAV_PANEL]);
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 5; i++)
     {
         DrawButton(&buttons[i]);
     }
@@ -864,10 +908,11 @@ void ManageSceneUI()
 
     SetPanel(&panels[OBJECT_PANEL], 5, 5, 150, 118, 6, RGBTo16(0, 0, 40), RGBTo16(120, 120, 120));
 
-    SetButton(&buttons[SELECT_OBJECTS_UI], 85, 5, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, NULL, NULL, &buttons[1], NULL);
-    SetButton(&buttons[SELECT_LAYOUT_UI], 85, 22, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[0], NULL, &buttons[2], NULL);
-    SetButton(&buttons[SELECT_MODULE_UI], 85, 39, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[1], NULL, &buttons[3], NULL);
-    SetButton(&buttons[SELECT_OPTIONS_UI], 85, 56, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[2], NULL, NULL, NULL);
+    SetButton(&buttons[SELECT_OBJECTS_UI], 85, 5, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[SELECT_OPTIONS_UI], NULL, &buttons[SELECT_LAYOUT_UI], NULL);
+    SetButton(&buttons[SELECT_LAYOUT_UI], 85, 22, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[SELECT_OBJECTS_UI], NULL, &buttons[SELECT_MODULE_UI], NULL);
+    SetButton(&buttons[SELECT_MODULE_UI], 85, 39, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[SELECT_LAYOUT_UI], NULL, &buttons[SELECT_CONSOLE_UI], NULL);
+    SetButton(&buttons[SELECT_CONSOLE_UI], 85, 56, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[SELECT_MODULE_UI], NULL, &buttons[SELECT_OPTIONS_UI], NULL);
+    SetButton(&buttons[SELECT_OPTIONS_UI], 85, 73, 70, 15, 7, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, &buttons[SELECT_CONSOLE_UI], NULL, &buttons[SELECT_OBJECTS_UI], NULL);
 
     SetButton(&buttons[PLAY_SCENE_UI], 10, 10, 60, 20, 6, RGBTo16(0, 167, 0), WHITE, BLACK, GREEN, NULL, &buttons[OPEN_NAV_PANEL], &buttons[EXIT_EDITOR_UI], NULL);
     SetButton(&buttons[EXIT_EDITOR_UI], 10, 35, 60, 20, 6, RGBTo16(255, 0, 0), WHITE, BLACK, GREEN, &buttons[PLAY_SCENE_UI], &buttons[OPEN_NAV_PANEL], &buttons[RENDER_MODE_BUTTON], NULL);
@@ -880,6 +925,7 @@ void ManageSceneUI()
     AddTextToButton(&buttons[SELECT_OBJECTS_UI], "Objects", WHITE, 1);
     AddTextToButton(&buttons[SELECT_LAYOUT_UI], "Layout", WHITE, 1);
     AddTextToButton(&buttons[SELECT_MODULE_UI], "Modules", WHITE, 1);
+    AddTextToButton(&buttons[SELECT_CONSOLE_UI], "Console", WHITE, 1);
     AddTextToButton(&buttons[SELECT_OPTIONS_UI], "Options", WHITE, 1);
 
     AddTextToButton(&buttons[PLAY_SCENE_UI], "Play", WHITE, 1);
@@ -945,16 +991,18 @@ void ManageSceneUI()
 
     while (1)
     {
+
+
         if (!showKeyboard)
             UpdateUIButtons();
 
-        if ((buttons[OPEN_NAV_PANEL].onPressDown && currentMode != 1) || (GetButton() == BUTTON_L && currentMode == 1))
+        if ((buttons[OPEN_NAV_PANEL].onPressDown && currentMode != LAYOUT_MODE) || (GetButton() == BUTTON_L && currentMode == LAYOUT_MODE))
         {
             for (int i = SELECT_LAYOUT_UI; i <= SELECT_OPTIONS_UI; i++)
             {
                 buttons[i].isFocused = false;
             }
-            RefocusButton(&buttons[SELECT_OBJECTS_UI], false);
+            RefocusButton(&buttons[currentMode], false);
             SetNavPanelVisibility(true);
 
             buttons[OPEN_NAV_PANEL].leftNext = NULL;
@@ -962,10 +1010,18 @@ void ManageSceneUI()
             sleep_ms(100);
         }
 
-        // Objects mode
-        if (buttons[SELECT_OBJECTS_UI].onPressDown || (refresh && currentMode == 0))
+
+        // Exit Nav Panel
+        if (GetButton() == BUTTON_L && panels[NAV_PANEL].visible)
         {
-            currentMode = 0;
+            refresh = true;
+        }
+
+        // Objects mode
+        if (buttons[SELECT_OBJECTS_UI].onPressDown || (refresh && currentMode == OBJECT_MODE))
+        {
+            panels[MAIN_PANEL].fillColor = RGBTo16(80, 80, 80);
+            currentMode = OBJECT_MODE;
             HideAllButtons();
 
             RefocusButton(&buttons[OPEN_NAV_PANEL], false);
@@ -1006,9 +1062,10 @@ void ManageSceneUI()
         }
 
         // Layout mode
-        if (buttons[SELECT_LAYOUT_UI].onPressDown || (refresh && currentMode == 1))
+        if (buttons[SELECT_LAYOUT_UI].onPressDown || (refresh && currentMode == LAYOUT_MODE))
         {
-            currentMode = 1;
+            panels[MAIN_PANEL].fillColor = RGBTo16(80, 80, 80);
+            currentMode = LAYOUT_MODE;
             HideAllButtons();
 
             RefocusButton(&buttons[OPEN_NAV_PANEL], false);
@@ -1029,9 +1086,10 @@ void ManageSceneUI()
         }
 
         // Module mode
-        if (buttons[SELECT_MODULE_UI].onPressDown || (refresh && currentMode == 2))
+        if (buttons[SELECT_MODULE_UI].onPressDown || (refresh && currentMode == MODULE_MODE))
         {
-            currentMode = 2;
+            panels[MAIN_PANEL].fillColor = RGBTo16(80, 80, 80);
+            currentMode = MODULE_MODE;
             HideAllButtons();
 
             RefocusButton(&buttons[OPEN_NAV_PANEL], false);
@@ -1045,7 +1103,7 @@ void ManageSceneUI()
             int height = 13;
             uint8_t buttonIndex = MODULE_BUTTONS;
             variableCount = 0;
-            debugPrintf("Script count: %d\n", currentScene->objects[currentObject]->scriptCount);
+            debugPrintf("Script count: %d\n", currentScene->objects[currentObject]->scriptData.count);
 
             // Serialize var prototype
             uint16_t SerializeVar(EngineVar * variable, bool limitDecimals);
@@ -1060,7 +1118,7 @@ void ManageSceneUI()
                 objectPackageCount++;
             }
 
-            uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + objectPackageCount;
+            uint8_t scriptCount = currentScene->objects[currentObject]->scriptData.count + objectPackageCount;
             if (modulePage >= scriptCount)
             {
                 modulePage = 0;
@@ -1081,15 +1139,19 @@ void ManageSceneUI()
             else
             {
                 uint8_t scriptIndex = modulePage - objectPackageCount;
-                debugPrintf("count: %d\n", currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
-                uint8_t scriptVariables = (currentScene->objects[currentObject]->scriptData[scriptIndex]->variableCount);
+
+                EngineObject* obj = currentScene->objects[currentObject];
+                ScriptData* scrData = (ScriptData*)ListGetIndex(&obj->scriptData, scriptIndex);
+
+                debugPrintf("var count: %d\n", scrData->variables.count);
+                uint8_t scriptVariables = (scrData->variables.count);
 
                 EngineVar** passVars = (EngineVar**)malloc(sizeof(EngineVar*) * scriptVariables);
 
                 for (int i = 0; i < scriptVariables; i++)
                 {
 
-                    EngineVar* var = (EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[scriptIndex]->variables, i);
+                    EngineVar* var = (EngineVar*)ListGetIndex(&scrData->variables, i);
 
                     passVars[i] = var;
 
@@ -1104,7 +1166,7 @@ void ManageSceneUI()
                         debugPrint("isn't float");
                     }
                 }
-                DrawModulePage(scripts[currentScene->objects[currentObject]->scriptIndexes[scriptIndex]].name,
+                DrawModulePage(scrData->script->name,
                     scriptVariables,
                     &variableCount,
                     passVars,
@@ -1141,19 +1203,23 @@ void ManageSceneUI()
             }
             else
             {
-                buttons[OPEN_NAV_PANEL].downNext = &buttons[ADD_THING_BUTTON];
-                buttons[ADD_THING_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
+                buttons[OPEN_NAV_PANEL].downNext = &buttons[SCRIPT_DELETE_BUTTON];
+
+                buttons[SCRIPT_DELETE_BUTTON].downNext = &buttons[ADD_THING_BUTTON];
+                buttons[SCRIPT_DELETE_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
+
+                buttons[ADD_THING_BUTTON].upNext = &buttons[SCRIPT_DELETE_BUTTON];
             }
-            buttons[SCRIPT_DELETE_BUTTON].upNext = &buttons[OPEN_NAV_PANEL];
             buttons[ADD_THING_BUTTON].visible = true;
             DrawButton(&buttons[ADD_THING_BUTTON]);
             sleep_ms(100);
         }
 
         // Settings mode
-        if (buttons[SELECT_OPTIONS_UI].onPressDown || (refresh && currentMode == 3))
+        if (buttons[SELECT_OPTIONS_UI].onPressDown || (refresh && currentMode == OPTIONS_MODE))
         {
-            currentMode = 3;
+            panels[MAIN_PANEL].fillColor = RGBTo16(80, 80, 80);
+            currentMode = OPTIONS_MODE;
             HideAllButtons();
 
             RefocusButton(&buttons[OPEN_NAV_PANEL], false);
@@ -1167,64 +1233,64 @@ void ManageSceneUI()
             sleep_ms(100);
         }
 
-        if (buttons[EXIT_EDITOR_UI].onPressDown)
+        // Console mode
+        if (buttons[SELECT_CONSOLE_UI].onPressDown || (refresh && currentMode == CONSOLE_MODE))
         {
-            DecompileScene();
-            free(modifyVariable);
+            currentMode = CONSOLE_MODE;
+            HideAllButtons();
 
-            FlushBuffer();
+            RefocusButton(&buttons[OPEN_NAV_PANEL], false);
 
-            char* fileName = malloc(strlen(FILE_IDENTIFIER) + strlen(currentProjectName) + strlen(currentScene->name) + 4);
-            sprintf(fileName, "%s`%s`%s",
-                FILE_IDENTIFIER,
-                currentProjectName,
-                currentScene->name);
+            buttons[OPEN_NAV_PANEL].leftNext = NULL;
+            buttons[OPEN_NAV_PANEL].downNext = NULL;
 
-            File* scene = GetFile(fileName);
+            panels[MAIN_PANEL].fillColor = BLACK;
 
-            if (scene->startBlock == 0)
-            {
-                scene = CreateFile(fileName, strlen(fileName), MAX_OBJECTS * 2 + 2);
+            SetNavPanelVisibility(false);
+
+            uint8_t startY = 5;
+
+            uint8_t messages = 0;
+            for (int i = 0; i < CONSOLE_POOL;i++) {
+                if (startY > 128 - 5)
+                    break;
+                if (!console[i].used)
+                    continue;
+                char* message = TranslateConsoleMessage(i);
+                debugPrintf("console message: %s\n", message);
+
+
+
+                uint8_t lines = WriteWordLimited(message, strlen(message), 5, startY, 1, console[i].isError ? RED : WHITE, TRANSPARENT, 23);
+
+                Rectangle(RGBTo16(100, 100, 100), 5, startY + lines * (FONT_HEIGHTS[0] + 1) + 1, 150, 1);
+
+                startY += lines * (FONT_HEIGHTS[0] + 1) + 3;
+
+                free(message);
+                messages++;
             }
 
-            debugPrint("starting object save");
-
-            int startBlock = scene->startBlock;
-            char buffer[4];
-            sprintf(buffer, "%d", currentScene->objectCount);
-            WriteFile(scene, buffer, strlen(buffer) + 1);
-            scene->startBlock -= 1;
-            for (int obj = 0; obj < currentScene->objectCount; obj++)
-            {
-                char* serializedObject = SerializeObject(currentScene->objects[obj]);
-                debugPrint("obj serialized");
-                WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
-                scene->startBlock -= 2;
-                free(serializedObject);
+            if (messages == 0) {
+                WriteWordLimited("No Messages", strlen("No Messages"), 5, 5, 1, RGBTo16(0, 150, 0), TRANSPARENT, 23);
             }
 
-            free(scene);
-            free(fileName);
 
-            DisengageSD();
 
-            debugPrint("saved scene to project");
-
-            SaveProject(program);
-
-            return;
+            sleep_ms(100);
         }
+
+
+
+
+
 
         refresh = false;
 
-        // Exit Nav Panel
-        if (GetButton() == BUTTON_L && panels[NAV_PANEL].visible)
-        {
-            refresh = true;
-        }
+
 
         // Manage Scene View
-        if (currentMode == 1 && !panels[NAV_PANEL].visible)
+        if (currentMode == LAYOUT_MODE && !panels[NAV_PANEL].visible)
         {
             uint8_t delay = 0;
 
@@ -1283,7 +1349,7 @@ void ManageSceneUI()
         }
 
         // Manage module mode
-        if (currentMode == 2)
+        if (currentMode == MODULE_MODE)
         {
             if (showKeyboard)
             {
@@ -1334,7 +1400,6 @@ void ManageSceneUI()
                         {
                             EngineVar* output = malloc(sizeof(EngineVar));
                             ScriptData* emptyScripData = malloc(sizeof(ScriptData));
-                            emptyScripData->variableCount = 0;
                             uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
                             if (error == 0)
@@ -1355,7 +1420,6 @@ void ManageSceneUI()
                         {
                             EngineVar* output = malloc(sizeof(EngineVar));
                             ScriptData* emptyScripData = malloc(sizeof(ScriptData));
-                            emptyScripData->variableCount = 0;
                             uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
                             if (error == 0)
@@ -1390,7 +1454,6 @@ void ManageSceneUI()
 
                                 EngineVar* output = malloc(sizeof(EngineVar));
                                 ScriptData* emptyScripData = malloc(sizeof(ScriptData));
-                                emptyScripData->variableCount = 0;
                                 uint32_t error = ShuntYard(modifyVariable, strlen(modifyVariable), output, emptyScripData);
 
                                 if (error == 0)
@@ -1483,36 +1546,44 @@ void ManageSceneUI()
 
                     if (script != -1)
                     {
-                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount] = ScriptDataConstructor(&scripts[script]);
-                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->linkedObject = currentScene->objects[currentObject];
-                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->objectIndex = currentObject;
-                        currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->scriptIndex = currentScene->objects[currentObject]->scriptCount;
-                        currentScene->objects[currentObject]->scriptIndexes[currentScene->objects[currentObject]->scriptCount] = script;
-                        // Function prototypes
+                        EngineObject* obj = currentScene->objects[currentObject];
+                        debugPrintf("script ID: %d\n", scripts[script].ID);
+                        ScriptData* scrData = ScriptDataConstructor(&scripts[script]);
+
+                        debugPrintf("script ID from data: %d\n", scrData->script->ID);
+
+                        PushList(&obj->scriptData, scrData);
+
+                        scrData->linkedObject = obj;
+                        scrData->objectIndex = currentObject;
+                        scrData->scriptIndex = obj->scriptData.count;
+
+                        /////// Function prototypes
                         uint32_t SetScriptData(EngineScript * script, ScriptData * output, uint8_t scopeLevel);
                         uint16_t UnpackErrorMessage(uint32_t error);
-                        //
+                        /////////////////////////
 
                         uint32_t errorNum = SetScriptData(
                             &scripts[script],
-                            currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount],
+                            scrData,
                             0);
 
-                        for (int t = 0; t < currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variableCount; t++)
+                        debugPrint("set scr data");
+
+                        for (int t = 0; t < scrData->variables.count; t++)
                         {
-                            debugPrintf("set scr variable out: %s\n", ((EngineVar*)ListGetIndex(&currentScene->objects[currentObject]->scriptData[currentScene->objects[currentObject]->scriptCount]->variables, t))->name);
+                            debugPrintf("set scr variable out: %s\n", ((EngineVar*)ListGetIndex(&scrData->variables, t))->name);
                         }
 
                         if (errorNum != 0)
                         {
                             errors[errorCount++] = errorNum;
+
+                            void UI_PrintError(ScriptData * scrData, uint32_t error);
+
+                            UI_PrintError(scrData, errorNum);
                         }
 
-                        uint16_t error = UnpackErrorMessage(errorNum);
-                        debugPrintf("set script error: %s\n", stringPool[error]);
-                        FreeString(&error);
-
-                        currentScene->objects[currentObject]->scriptCount++;
                     }
                     refresh = true;
                     sleep_ms(160);
@@ -1540,10 +1611,11 @@ void ManageSceneUI()
                         }
                     }
                     else {
-                        sprintf("Are you sure you\nwant to delete\n%s", scripts[object->scriptIndexes[modulePage - objectPackageCount]].name);
+                        ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, modulePage - objectPackageCount);
+                        sprintf("Are you sure you\nwant to delete\n%s", scrData->script->name);
                         if (Modal(buffer, true)) {
-                            FreeScriptData(object->scriptData[modulePage - objectPackageCount], true);
-                            object->scriptCount--;
+                            FreeScriptData(scrData, true);
+                            free((ScriptData*)DeleteListElement(&object->scriptData, modulePage - objectPackageCount));
                         }
                     }
 
@@ -1554,7 +1626,7 @@ void ManageSceneUI()
 
 
 
-                uint8_t scriptCount = currentScene->objects[currentObject]->scriptCount + 1;
+                uint8_t scriptCount = currentScene->objects[currentObject]->scriptData.count + 1;
                 if (currentScene->objects[currentObject]->packages[0])
                 {
                     scriptCount++;
@@ -1585,7 +1657,7 @@ void ManageSceneUI()
 
 
         // Manage settings
-        if (currentMode == 3 && buttons[RENDER_MODE_BUTTON].isPressed)
+        if (currentMode == OPTIONS_MODE && buttons[RENDER_MODE_BUTTON].isPressed)
         {
             renderMode++;
             if (renderMode == 3)
@@ -1599,8 +1671,75 @@ void ManageSceneUI()
         // Play scene
         if (buttons[PLAY_SCENE_UI].isPressed)
         {
+            ClearConsole();
             RunProgram();
             refresh = true;
+        }
+
+        // exit
+        if (buttons[EXIT_EDITOR_UI].onPressDown)
+        {
+
+            ClearConsole();
+
+            debugPrint("clear console");
+
+            LoadingScreen();
+
+            free(modifyVariable);
+
+            FlushBuffer();
+
+            char* fileName = malloc(strlen(FILE_IDENTIFIER) + strlen(currentProjectName) + strlen(currentScene->name) + 4);
+            sprintf(fileName, "%s`%s`%s",
+                FILE_IDENTIFIER,
+                currentProjectName,
+                currentScene->name);
+
+            File* scene = GetFile(fileName);
+
+            if (scene->startBlock == 0)
+            {
+                scene = CreateFile(fileName, strlen(fileName), MAX_OBJECTS * 2 + 2);
+            }
+
+            debugPrint("starting object save");
+
+            int startBlock = scene->startBlock;
+            char buffer[4];
+            sprintf(buffer, "%d", currentScene->objectCount);
+            WriteFile(scene, buffer, strlen(buffer) + 1);
+            scene->startBlock -= 1;
+            for (int obj = 0; obj < currentScene->objectCount; obj++)
+            {
+                char* serializedObject = SerializeObject(currentScene->objects[obj]);
+                debugPrint("obj serialized");
+                WriteFile(scene, serializedObject, strlen(serializedObject) + 1);
+                scene->startBlock -= 2;
+                free(serializedObject);
+            }
+
+            free(scene);
+            free(fileName);
+
+            DisengageSD();
+
+            debugPrint("saved scene to project");
+
+            SaveProject(program);
+
+
+            EngineObject* testobj = currentScene->objects[1];
+            if (testobj != NULL && testobj->scriptData.count > 0) {
+                debugPrintf("script ID before decomp: %d\n", ((ScriptData*)ListGetIndex(&testobj->scriptData, 0))->script->ID);
+            }
+
+            DecompileScene();
+
+            debugPrint("decomp scene");
+            debug_sleep(100);
+
+            return;
         }
 
         if (currentMode == 0)
@@ -1640,6 +1779,8 @@ void ManageSceneUI()
 void EditScene(int sceneIndex)
 {
     currentScene = &scenes[sceneIndex];
+
+    ClearConsole();
 
     RecompileScene();
 
@@ -1768,7 +1909,7 @@ char* CreateNewScene()
                 }
                 if (GetButton() == BUTTON_J)
                 {
-                    if (option == 1)
+                    if (option == 1 && strlen(name) > 0)
                     {
                         if (GetSceneByName(name) != -1)
                         {
@@ -1888,7 +2029,7 @@ int SelectScene()
                 page--;
                 currentScene = page * 5;
             }
-            if (GetButton() == BUTTON_J)
+            if (GetButton() == BUTTON_J && sceneCount > 0)
             {
                 return currentScene;
             }
@@ -1941,17 +2082,24 @@ void SceneMenu()
 
                     if (sceneName != NULL)
                     {
+                        debugPrint("creating scene");
                         uint8_t index = CreateScene(sceneName, strlen(sceneName));
+                        debugPrint("created scene");
                         scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Camera", strlen("Camera"));
+                        debugPrint("created camera");
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->currentType = TYPE_INT;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "scale")->data.i = 2;
                         GetObjectDataByName(scenes[index].objects[scenes[index].objectCount], "sprite")->data.i = CAMERA_SPRITE;
-
                         scenes[index].objectCount++;
+                        debugPrint("set cam data");
+
+
 
                         scenes[index].objects[scenes[index].objectCount] = ObjectConstructor(scenes[index].objectCount, "Object1", strlen("Object1"));
                         scenes[index].objectCount++;
                         sceneIndex = index;
+                        debugPrint("created obj1");
+
                         EditScene(index);
                     }
                     free(sceneName);
@@ -2126,7 +2274,6 @@ uint32_t RunProgram()
 {
     debugPrint("run prog");
 
-    bool UI_PrintToScreen(char* message, bool isError);
 
     EngineObject* camera = NULL;
 
@@ -2150,12 +2297,14 @@ uint32_t RunProgram()
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
-        for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
+        for (int scr = 0; scr < currentScene->objects[obj]->scriptData.count; scr++)
         {
 
+            ScriptData* scrData = (ScriptData*)ListGetIndex(&currentScene->objects[obj]->scriptData, scr);
+
+
             debugPrintf("backup: obj:%d, scr:%d\n", obj, scr);
-            debugPrintf("scrdata lines: %d\n", currentScene->objects[obj]->scriptData[scr]->lineCount);
-            ScriptData* scrData = currentScene->objects[obj]->scriptData[scr];
+            debugPrintf("scrdata lines: %d\n", scrData->lineCount);
             debugPrint("got scr data");
             if (scrData == NULL)
             {
@@ -2167,19 +2316,25 @@ uint32_t RunProgram()
                 free(scrData->backupData);
             }
             debugPrint("freed");
-            if (scrData->variableCount > 0)
-                scrData->backupData = malloc(sizeof(EngineVar) * scrData->variableCount);
+            if (scrData->variables.count > 0)
+                scrData->backupData = malloc(sizeof(EngineVar) * scrData->variables.count);
             debugPrint("malloced");
-            scrData->backupVarCount = scrData->variableCount;
-            for (int var = 0; var < scrData->variableCount; var++)
+            scrData->backupVarCount = scrData->variables.count;
+            for (int var = 0; var < scrData->variables.count; var++)
             {
                 EngineVar* varPointer = (EngineVar*)ListGetIndex(&scrData->variables, var);
                 debugPrintf("backup: %d\n", var);
-                strcpy(scrData->backupData[var].name, varPointer->name);
-                scrData->backupData[var].currentType = varPointer->currentType;
 
+                scrData->backupData[var].currentType = varPointer->currentType;
                 scrData->backupData[var].data = varPointer->data;
+
+
+                InitializeList(&scrData->backupData[var].listData);
+
+                CpyList(&scrData->backupData[var].listData, &varPointer->listData, sizeof(VariableUnion));
+
             }
+
             debugPrint("backed up!");
         }
         debugPrintf("object %d fin\n", obj);
@@ -2255,12 +2410,13 @@ uint32_t RunProgram()
             // debugPrint("modified velocity");
 
 
-            uint8_t scrCount = object->scriptCount;
+            uint8_t scrCount = object->scriptData.count;
 
             for (int scr = 0; scr < scrCount; scr++)
             {
                 char funcName[32] = "main";
-                JumpToFunction(object->scriptData[scr], funcName);
+                ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, scr);
+                JumpToFunction(scrData, funcName);
             }
         }
 
@@ -2388,27 +2544,36 @@ uint32_t RunProgram()
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
-        for (int scr = 0; scr < currentScene->objects[obj]->scriptCount; scr++)
+        for (int scr = 0; scr < currentScene->objects[obj]->scriptData.count; scr++)
         {
-            ResetScriptData(currentScene->objects[obj]->scriptData[scr]);
-            ScriptData* scrData = currentScene->objects[obj]->scriptData[scr];
 
-            scrData->variableCount = scrData->backupVarCount;
-            for (int var = 0; var < scrData->variableCount; var++)
+            ScriptData* scrData = (ScriptData*)ListGetIndex(&currentScene->objects[obj]->scriptData, scr);
+
+            ResetScriptData(scrData);
+
+            scrData->variables.count = scrData->backupVarCount;
+            for (int var = 0; var < scrData->variables.count; var++)
             {
+                debugPrintf("get var index: %d\n", var);
                 EngineVar* varPointer = (EngineVar*)ListGetIndex(&scrData->variables, var);
-                strcpy(varPointer->name, scrData->backupData[var].name);
+                debugPrintf("var name: %s\n", varPointer->name);
                 varPointer->currentType = scrData->backupData[var].currentType;
-
                 varPointer->data = scrData->backupData[var].data;
+                debugPrint("set data");
+
+                TransferList(&varPointer->listData, &scrData->backupData[var].listData);
+                debugPrint("transfered list");
             }
-            if (scrData->variableCount > 0)
+            if (scrData->variables.count > 0)
                 free(scrData->backupData);
+            debugPrint("freedbackup");
         }
     }
 
     gpio_put(LEFT_LIGHT, 0);
     gpio_put(RIGHT_LIGHT, 0);
+
+    debugPrint("exit");
 
     return 0;
 }
