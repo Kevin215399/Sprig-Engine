@@ -1,4 +1,8 @@
 #ifndef FIREWORK
+
+//// Currently unused, uses too much sram, is removed
+
+/*
 #define FIREWORK
 #include <stdio.h>
 #include "pico/stdlib.h"
@@ -8,6 +12,24 @@
 #include "SmartRender.h"
 #include "EngineStructs.h"
 #include "Editor.h"
+
+uint16_t colors[12];
+
+void SetupColors()
+{
+    colors[0] = RGBTo16(255, 0, 0);
+    colors[1] = RGBTo16(255, 35, 0);
+    colors[2] = RGBTo16(255, 55, 0);
+    colors[3] = RGBTo16(255, 255, 0);
+    colors[4] = RGBTo16(200, 255, 0);
+    colors[5] = RGBTo16(0, 255, 0);
+    colors[6] = RGBTo16(0, 255, 100);
+    colors[7] = RGBTo16(0, 255, 255);
+    colors[8] = RGBTo16(0, 0, 255);
+    colors[9] = RGBTo16(160, 0, 255);
+    colors[10] = RGBTo16(255, 0, 200);
+    colors[11] = RGBTo16(255, 255, 255);
+}
 
 typedef struct
 {
@@ -72,7 +94,7 @@ void RunParticle(int index)
 
 void LaunchFirework(int x)
 {
-    
+
     while (1)
     {
         Vector2 pos;
@@ -94,10 +116,11 @@ void LaunchFirework(int x)
 }
 void FireworkShow()
 {
+    SetupColors();
     memset(particles, 0, sizeof(particles));
     memset(particlesUsed, 0, sizeof(particlesUsed));
 
     LaunchFirework(80);
-}
+}*/
 
 #endif
