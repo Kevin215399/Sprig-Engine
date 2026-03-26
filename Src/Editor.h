@@ -55,6 +55,8 @@ const uint16_t colorTable[PALLETE_HEIGHT * PALLETE_WIDTH] = {
 //////////////////////////////// HELPER FUNCTIONS ////////////////////////////
 #pragma region
 
+
+
 float maxF(float a, float b)
 {
     if (a < b)
@@ -559,7 +561,7 @@ char* SC_MATH_SHORTCUTS[] = {
     "cos",
     "deltaTime" };
 
-#define SC_OBJECT_COUNT 12
+#define SC_OBJECT_COUNT 13
 char* SC_OBJECT_SHORTCUTS[] = {
     "setPosition();",
     "setScale();",
@@ -574,7 +576,8 @@ char* SC_OBJECT_SHORTCUTS[] = {
 
     "getPosition()",
     "getScale()",
-    "getSprite()"
+    "getSprite()",
+    "ObjectByName(\"\")"
 
 };
 
@@ -582,12 +585,17 @@ char* SC_OBJECT_SHORTCUTS[] = {
 
 #define SC_COLLISION_COUNT 3
 char* SC_COLLISION_SHORTCUTS[] = {
-    "void CollideEnter(){}",
-    "void CollideStay(){}",
-    "void CollideExit(){}",
+    "int CollideEnter(){}",
+    "int CollideStay(){}",
+    "int CollideExit(){}",
 };
 
 // physic here
+
+#define SC_PHYSICS_COUNT 1
+char* SC_PHYSICS_SHORTCUTS[] = {
+    "setGravity()"
+};
 
 #define SC_IO_COUNT 3
 char* SC_IO_SHORTCUTS[] = {
@@ -666,6 +674,12 @@ char* HandleShortcuts()
                 PrintListOnKeyboard(SC_COLLISION_SHORTCUTS, SC_COLLISION_COUNT, shortcutPage, selected);
                 count = SC_COLLISION_COUNT;
                 strcpy(output, SC_COLLISION_SHORTCUTS[selected]);
+                break;
+
+            case SHORTCUT_PHYSICS:
+                PrintListOnKeyboard(SC_PHYSICS_SHORTCUTS, SC_PHYSICS_COUNT, shortcutPage, selected);
+                count = SC_PHYSICS_COUNT;
+                strcpy(output, SC_PHYSICS_SHORTCUTS[selected]);
                 break;
 
             case SHORTCUT_IO:

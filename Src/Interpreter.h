@@ -103,7 +103,7 @@ typedef struct
 // when an unkown token is found, set to this precedence
 #define UNKOWN_PRECEDENCE 13
 
-#define OPERATOR_COUNT 43
+#define OPERATOR_COUNT 44
 
 OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
 
@@ -136,6 +136,8 @@ OperatorPrecedence OPERATOR_PRECEDENT_LIST[] = {
     {"setSprite", 13, 1},
     {"setVelocity", 13, 1},
     {"setAngle", 13, 1},
+
+    {"setGravity",13,1},
 
     {"addPosition", 13, 1},
     {"addScale", 13, 1},
@@ -642,14 +644,15 @@ void PushLine(ScriptData* data, uint16_t line)
 void JumpToFunction(ScriptData* scriptData, char* functionName)
 {
     debugPrintf("jumping... %s\n", functionName);
-    for (int i = 0; i < scriptData->functionCount; i++)
+    for (int i = 0; i < scriptData->functions.count; i++)
     {
-        debugPrintf("function: %s\n", scriptData->functions[i]->name);
-        if (strcmp(scriptData->functions[i]->name, functionName) == 0)
+        EngineFunction* function = ListGetIndex(&scriptData->functions, i);
+        debugPrintf("function: %s\n", function->name);
+        if (strcmp(function->name, functionName) == 0)
         {
             debugPrintf("function found");
             scriptData->currentScope++;
-            PushLine(scriptData, scriptData->functions[i]->line);
+            PushLine(scriptData, function->line);
         }
     }
     debugPrint("not found");
@@ -1257,9 +1260,9 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                             }
                         }
 
-                        for (int x = 0; x < scrData->functionCount; x++)
+                        for (int x = 0; x < scrData->functions.count; x++)
                         {
-                            EngineFunction* function = scrData->functions[x];
+                            EngineFunction* function = ListGetIndex(&scrData->functions, x);
                             debugPrintf("check function: %s\n", function->name);
                             if (strcmp(operatorString, function->name) == 0)
                             {
@@ -1453,6 +1456,12 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                         GetObjectDataByName(scriptData->linkedObject, "angle")->data.f += (float)parameter0->data.f;
                     }
 
+                    if (strcmp(operatorString, "setGravity") == 0 && scriptData->linkedObject != NULL && scriptData->linkedObject->packages[1])
+                    {
+                        currentAtom->dataType = NO_TYPE;
+                        GetObjectDataByName(scriptData->linkedObject, "gravityScale")->data.f = parameter0->data.f;
+                    }
+
                     if (strcmp(operatorString, "leftLED") == 0 && scriptData->linkedObject != NULL)
                     {
                         currentAtom->dataType = NO_TYPE;
@@ -1463,6 +1472,8 @@ float ShuntYard(char* equation, uint16_t equationLength, EngineVar* output, Scri
                         currentAtom->dataType = NO_TYPE;
                         gpio_put(RIGHT_LIGHT, parameter0->data.f != 0);
                     }
+
+
 
                     if (operatorString[0] == UNARY_SUBTRACT)
                     {
@@ -2050,11 +2061,15 @@ uint32_t DeclareEntity(ScriptData* output, uint16_t l, bool declareFunctions)
             debugPrintf("bracket pos: %d\n", l);
             newFunction->line = l;
 
-            output->functions[output->functionCount] = newFunction;
-            output->functions[output->functionCount]->name = (char*)malloc(sizeof(char) * (strlen(stringPool[entityName]) + 1));
-            strcpy(output->functions[output->functionCount]->name, stringPool[entityName]);
+            debugPrintf("assign function to index: %d\n", (int)output->functions.count);
+
+            newFunction->name = (char*)malloc(sizeof(char) * (strlen(stringPool[entityName]) + 1));
+
+            strcpy(newFunction->name, stringPool[entityName]);
+
             FreeString(&entityName);
-            output->functionCount++;
+
+            PushList(&output->functions, newFunction);
             debugPrint("declare fin");
 
             FreeString(&trimmedLine);
@@ -2280,15 +2295,16 @@ void FreeScriptData(ScriptData* scriptData, bool onlyFreeContent)
 
     // debugPrint("free scr data 1");
 
-    for (int i = 0; i < scriptData->functionCount; i++)
-    {
-        free(scriptData->functions[i]->name);
+    while (scriptData->functions.count > 0) {
+        EngineFunction* func = PopList(&scriptData->functions);
+
+        free(func->name);
         debugPrint("cleared function name");
-        // debugPrint("free scr data 1a");
-        free(scriptData->functions[i]);
+
+        free(func);
         debugPrint("cleared function");
-        // debugPrint("free scr data 1b");
     }
+
     while (scriptData->variables.count > 0)
     {
         EngineVar* var = (EngineVar*)PopList(&scriptData->variables);
@@ -2300,7 +2316,6 @@ void FreeScriptData(ScriptData* scriptData, bool onlyFreeContent)
     // debugPrint("free scr data 3");
     scriptData->lineCount = 0;
     scriptData->bracketPairs = 0;
-    scriptData->functionCount = 0;
 
     if (!onlyFreeContent)
         free(scriptData);

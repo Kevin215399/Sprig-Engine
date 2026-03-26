@@ -88,8 +88,9 @@ uint32_t errors[10];
 uint8_t errorCount;
 
 char* packageNames[] = {
-    "Collision" };
-#define PACKAGE_COUNT 1
+    "Collision",
+    "Physics" };
+#define PACKAGE_COUNT 2
 
 #define NORMAL_FIELD 0
 #define VECTOR_X_FIELD 1
@@ -181,7 +182,7 @@ void UpdateUIButtons()
 // Scene renderers
 #pragma region
 
-uint8_t sceneScale = 4;
+float sceneScale = 4;
 
 void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, int angle)
 {
@@ -226,7 +227,7 @@ void DrawSpriteCentered(int sprite, int x, int y, float scaleX, float scaleY, in
     int topLeftX = x - scaleX * SPRITE_WIDTH / 2;
     int topLeftY = y - scaleY * SPRITE_HEIGHT / 2;
 
-    SmartSprite(sprites[sprite].sprite, topLeftX, topLeftY, scaleX, scaleY, angle);
+    SmartSprite(sprites[sprite].sprite, topLeftX, topLeftY, scaleX, scaleY, -angle);
 
     /*for (int ix = 0; ix < SPRITE_WIDTH; ix++)
     {
@@ -263,19 +264,21 @@ void RenderScene(int offsetX, int offsetY)
     topBound = 1;
     bottomBound = 127;
 
-    for (int i = leftBound; i < rightBound; i++)
-    {
-        if ((i - offsetX - 80) % (10 * sceneScale) == 0)
+    if ((16 * sceneScale) >= 2) {
+        for (int i = leftBound; i < rightBound; i++)
         {
-            SmartRect(RGBTo16(70, 70, 70), i, topBound, 1, bottomBound - topBound);
+            if ((i - offsetX - 80) % (int)(16 * sceneScale) == 0)
+            {
+                SmartRect(RGBTo16(70, 70, 70), i, topBound, 1, bottomBound - topBound);
+            }
         }
-    }
 
-    for (int i = topBound; i < bottomBound; i++)
-    {
-        if ((i - offsetY - 64) % (10 * sceneScale) == 0)
+        for (int i = topBound; i < bottomBound; i++)
         {
-            SmartRect(RGBTo16(70, 70, 70), leftBound, i, rightBound - leftBound, 1);
+            if ((i - offsetY - 64) % (int)(16 * sceneScale) == 0)
+            {
+                SmartRect(RGBTo16(70, 70, 70), leftBound, i, rightBound - leftBound, 1);
+            }
         }
     }
 
@@ -446,6 +449,7 @@ void RecompileScene()
         {
             debugPrintf("set scr %d\n", s);
             ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, s);
+
             scrData->linkedObject = object;
             scrData->objectIndex = i;
             scrData->scriptIndex = s;
@@ -637,7 +641,7 @@ int SelectScriptToAdd()
             }
             else
             {
-                current++;
+                current--;
             }
             refresh = true;
         }
@@ -738,6 +742,29 @@ void DrawModulePage(char* moduleName, uint8_t totalVariableCount, uint8_t* varia
         }
     }
 }
+
+void TriangleTopBase(uint16_t color, int b1X, int b2X, int bY, int vX, int vY)
+{
+    if (b2X < b1X)
+    {
+        int temp = b2X;
+        b2X = b1X;
+        b1X = temp;
+    }
+    float slope1 = (float)(b1X - vX) / (float)(bY - vY);
+    float slope2 = (float)(b2X - vX) / (float)(bY - vY);
+
+    float x1 = vX;
+    float x2 = vX;
+
+    for (int y = vY; y > bY; y--)
+    {
+        Rectangle(color, x1, y, x2 - x1, 1);
+        x1 -= slope1;
+        x2 -= slope2;
+    }
+}
+
 
 char* NewObject()
 {
@@ -989,12 +1016,16 @@ void ManageSceneUI()
 
     uint8_t objectPackageCount = 1;
 
+    uint8_t objectListOffset = 0;
+
     while (1)
     {
 
 
         if (!showKeyboard)
             UpdateUIButtons();
+
+
 
         if ((buttons[OPEN_NAV_PANEL].onPressDown && currentMode != LAYOUT_MODE) || (GetButton() == BUTTON_L && currentMode == LAYOUT_MODE))
         {
@@ -1020,15 +1051,19 @@ void ManageSceneUI()
         // Objects mode
         if (buttons[SELECT_OBJECTS_UI].onPressDown || (refresh && currentMode == OBJECT_MODE))
         {
+            if (buttons[SELECT_OBJECTS_UI].onPressDown) {
+                objectListOffset = 0;
+                RefocusButton(&buttons[OPEN_NAV_PANEL], false);
+            }
             panels[MAIN_PANEL].fillColor = RGBTo16(80, 80, 80);
             currentMode = OBJECT_MODE;
             HideAllButtons();
 
-            RefocusButton(&buttons[OPEN_NAV_PANEL], false);
+
 
             panels[OBJECT_PANEL].visible = true;
 
-            for (int i = 0; i < currentScene->objectCount; i++)
+            for (int i = objectListOffset; i < min(currentScene->objectCount, objectListOffset + 6); i++)
             {
                 UIButton* top = NULL;
                 UIButton* bottom = NULL;
@@ -1046,7 +1081,7 @@ void ManageSceneUI()
                     bottom = &buttons[ADD_THING_BUTTON];
                     buttons[ADD_THING_BUTTON].upNext = &buttons[OBJECT_BUTTONS + i];
                 }
-                SetButton(&buttons[OBJECT_BUTTONS + i], 10, 10 + i * 17, 140, 15, 6, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, top, &buttons[OPEN_NAV_PANEL], bottom, NULL);
+                SetButton(&buttons[OBJECT_BUTTONS + i], 10, 10 + (i - objectListOffset) * 17, 140, 15, 6, RGBTo16(0, 0, 0), RGBTo16(100, 100, 100), RGBTo16(120, 120, 120), GREEN, top, &buttons[OPEN_NAV_PANEL], bottom, NULL);
                 AddTextToButton(&buttons[OBJECT_BUTTONS + i], currentScene->objects[i]->name, WHITE, 1);
             }
 
@@ -1055,9 +1090,16 @@ void ManageSceneUI()
                 buttons[OPEN_NAV_PANEL].leftNext = &buttons[OBJECT_BUTTONS];
             }
 
+
+
+
             SetNavPanelVisibility(false);
             buttons[ADD_THING_BUTTON].visible = true;
             DrawButton(&buttons[ADD_THING_BUTTON]);
+
+            if (currentScene->objectCount >= objectListOffset + 6) {
+                TriangleTopBase(WHITE, 160 / 2 - 5, 160 / 2 + 5, 112, 160 / 2, 120);
+            }
             sleep_ms(100);
         }
 
@@ -1118,6 +1160,12 @@ void ManageSceneUI()
                 objectPackageCount++;
             }
 
+            if (currentScene->objects[currentObject]->packages[1])
+            {
+                doPhysics = true;
+                objectPackageCount++;
+            }
+
             uint8_t scriptCount = currentScene->objects[currentObject]->scriptData.count + objectPackageCount;
             if (modulePage >= scriptCount)
             {
@@ -1133,7 +1181,14 @@ void ManageSceneUI()
             else if (doCollider && modulePage == 1)
             {
                 EngineVar** drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
-                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[BASE_VARS], &buttonIndex, variableLinks);
+                DrawModulePage("Collision", COLLIDER_VARS, &variableCount, &drawVarList[GetObjectDataIndex(currentScene->objects[currentObject],"colliderCenter")], &buttonIndex, variableLinks);
+                free(drawVarList);
+            }
+            else if ((doPhysics && !doCollider && modulePage == 1) || (doPhysics && doCollider && modulePage == 2))
+            {
+
+                EngineVar** drawVarList = ObjectDataToList(currentScene->objects[currentObject]);
+                DrawModulePage("Phyiscs", PHYSICS_VARS, &variableCount, &drawVarList[GetObjectDataIndex(currentScene->objects[currentObject],"gravityScale")], &buttonIndex, variableLinks);
                 free(drawVarList);
             }
             else
@@ -1289,6 +1344,7 @@ void ManageSceneUI()
 
 
 
+
         // Manage Scene View
         if (currentMode == LAYOUT_MODE && !panels[NAV_PANEL].visible)
         {
@@ -1320,14 +1376,24 @@ void ManageSceneUI()
 
             if (GetButton() == BUTTON_I)
             {
-                sceneScale += 1;
+                if (sceneScale > 1) {
+                    sceneScale += 1;
+                }
+                else {
+                    sceneScale *= 2;
+                }
                 refreshSceneView = true;
                 delay = 100;
             }
 
             if (GetButton() == BUTTON_K)
             {
-                sceneScale -= 1;
+                if (sceneScale > 1) {
+                    sceneScale -= 1;
+                }
+                else {
+                    sceneScale /= 2;
+                }
                 refreshSceneView = true;
                 delay = 100;
             }
@@ -1539,6 +1605,11 @@ void ManageSceneUI()
                         AddColliderToObject(currentScene->objects[currentObject], COLLIDER_MESH, true, 1);
                         script = -1;
                     }
+                    else if (script == 1)
+                    {
+                        AddPhysicsToObject(currentScene->objects[currentObject], DEFAULT_GRAV);
+                        script = -1;
+                    }
                     else
                     {
                         script -= PACKAGE_COUNT;
@@ -1628,6 +1699,10 @@ void ManageSceneUI()
 
                 uint8_t scriptCount = currentScene->objects[currentObject]->scriptData.count + 1;
                 if (currentScene->objects[currentObject]->packages[0])
+                {
+                    scriptCount++;
+                }
+                if (currentScene->objects[currentObject]->packages[1])
                 {
                     scriptCount++;
                 }
@@ -1742,10 +1817,14 @@ void ManageSceneUI()
             return;
         }
 
-        if (currentMode == 0)
+        if (currentMode == OBJECT_MODE)
         {
+            int highlighedObject = -1;
             for (int i = 0; i < currentScene->objectCount; i++)
             {
+                if (buttons[i + OBJECT_BUTTONS].isFocused) {
+                    highlighedObject = i;
+                }
                 if (buttons[i + OBJECT_BUTTONS].isPressed)
                 {
                     currentObject = i;
@@ -1770,6 +1849,17 @@ void ManageSceneUI()
                 }
                 sleep_ms(120);
                 refresh = true;
+            }
+
+            if (highlighedObject < currentScene->objectCount && highlighedObject >= 0) {
+                if (objectListOffset < currentScene->objectCount - 5 && highlighedObject - objectListOffset > 4) {
+                    refresh = true;
+                    objectListOffset++;
+                }
+                if (objectListOffset > 0 && highlighedObject - objectListOffset < 1) {
+                    refresh = true;
+                    objectListOffset--;
+                }
             }
         }
     }
@@ -2175,13 +2265,15 @@ void GameRenderThread()
     {
         sleep_ms(1);
         debugPrintf("............ Core 1 loop");
-        core1State.busy = false;
+
 
         if (core1State.exit)
             break;
 
-        if (!core1State.flagCalled)
+        if (!core1State.flagCalled) {
+            core1State.busy = false;
             continue;
+        }
 
         core1State.flagCalled = false;
         core1State.busy = true;
@@ -2190,6 +2282,7 @@ void GameRenderThread()
 
         if (core1State.startRendering)
         {
+            core1State.startRendering = false;
 
             debugPrint("............ Core 1 start render...");
             SmartClear();
@@ -2219,7 +2312,7 @@ void GameRenderThread()
                 DrawSpriteCentered(
                     object->renderData[RENDER_SPRITE].i,
                     80 + cameraScale * object->renderData[RENDER_POSITION].XY.x - cameraX,
-                    64 + cameraScale * -object->renderData[RENDER_POSITION].XY.y - cameraY,
+                    64 + cameraScale * -object->renderData[RENDER_POSITION].XY.y + cameraY,
                     cameraScale * scale.x,
                     cameraScale * scale.y,
                     (int)object->renderData[RENDER_ANGLE].f);
@@ -2267,7 +2360,7 @@ void GameRenderThread()
 
 
     while (1)
-        sleep_ms(1000); // infinite loop
+        tight_loop_contents();
 }
 
 uint32_t RunProgram()
@@ -2299,7 +2392,6 @@ uint32_t RunProgram()
     {
         for (int scr = 0; scr < currentScene->objects[obj]->scriptData.count; scr++)
         {
-
             ScriptData* scrData = (ScriptData*)ListGetIndex(&currentScene->objects[obj]->scriptData, scr);
 
 
@@ -2310,11 +2402,7 @@ uint32_t RunProgram()
             {
                 debugPrint("null scr data");
             }
-            if (scrData->backupData != NULL)
-            {
-                debugPrint("free backup data");
-                free(scrData->backupData);
-            }
+
             debugPrint("freed");
             if (scrData->variables.count > 0)
                 scrData->backupData = malloc(sizeof(EngineVar) * scrData->variables.count);
@@ -2337,8 +2425,16 @@ uint32_t RunProgram()
 
             debugPrint("backed up!");
         }
+        GeneralListNode* currentNode = currentScene->objects[obj]->objectData.firstElement;
+        while (currentNode != NULL) {
+            VariableUnion* backup = malloc(sizeof(VariableUnion));
+            *backup = ((EngineVar*)currentNode->content)->data;
+            PushList(&currentScene->objects[obj]->backupData, backup);
+            currentNode = currentNode->next;
+        }
         debugPrintf("object %d fin\n", obj);
     }
+    
     debugPrint("fin");
 
     Clear();
@@ -2379,12 +2475,10 @@ uint32_t RunProgram()
 
     while (1)
     {
-        ////////////////////////////////////////////////////////////////////// GET CAMERA DATA
 
-        cameraScale = GetObjectDataByName(camera, "scale")->data.i;
 
-        cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
-        cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
+
+
 
         // debugPrint("///////////////////////////////////////////////////////////////////// APPLY OBJECT PHYSICS");
 
@@ -2456,6 +2550,11 @@ uint32_t RunProgram()
             core1State.offloadCollision = true;
             core1State.flagCalled = true;
 
+            while (!core1State.busy) {
+                sleep_ms(1);
+                debugPrint("............ Core 0 waiting for core 1 to start");
+            }
+
             ColliderStep(COLLIDER_FIRST);
 
 
@@ -2465,18 +2564,20 @@ uint32_t RunProgram()
                 debugPrint("............ Core 0 finished collisions, awaiting core 1");
             }
             debugPrint("............ Core 0 got core 1 finished");
+            debug_sleep(100);
 
         }
         else {
             debugPrint("............ Core 0 doing all collision");
             ColliderStep(COLLIDER_ALL);
         }
-        core0State.collisionPartitioned = false;
-        core0State.partitioning = false;
-        core1State.collisionPartitioned = false;
-        core1State.partitioning = false;
+
 
         FreeCells();
+        while (resolvedCollisions.count > 0) {
+            CollisionChecked* check = PopList(&resolvedCollisions);
+            free(check);
+        }
 
         // debugPrint("/////////////////////////////////////////////////////////////////////DRAW SPRITES");
 
@@ -2485,6 +2586,14 @@ uint32_t RunProgram()
             debugPrint("................. Core 0 waiting for core ready");
             while (core1State.busy) sleep_ms(1);
             debugPrint("................. Core 0 saving critical object data");
+
+            ////////////////////////////////////////////////////////////////////// GET CAMERA DATA
+
+            cameraScale = GetObjectDataByName(camera, "scale")->data.i;
+
+            cameraX = GetObjectDataByName(camera, "position")->data.XY.x;
+            cameraY = GetObjectDataByName(camera, "position")->data.XY.y;
+
             for (int i = 0; i < currentScene->objectCount; i++)
             {
                 EngineObject* object = currentScene->objects[i];
@@ -2544,10 +2653,11 @@ uint32_t RunProgram()
 
     for (int obj = 0; obj < currentScene->objectCount; obj++)
     {
-        for (int scr = 0; scr < currentScene->objects[obj]->scriptData.count; scr++)
+        EngineObject* object = currentScene->objects[obj];
+        for (int scr = 0; scr < object->scriptData.count; scr++)
         {
 
-            ScriptData* scrData = (ScriptData*)ListGetIndex(&currentScene->objects[obj]->scriptData, scr);
+            ScriptData* scrData = (ScriptData*)ListGetIndex(&object->scriptData, scr);
 
             ResetScriptData(scrData);
 
@@ -2568,7 +2678,39 @@ uint32_t RunProgram()
                 free(scrData->backupData);
             debugPrint("freedbackup");
         }
+
+        GeneralListNode* backupNode = object->backupData.firstElement;
+        GeneralListNode* dataNode = object->objectData.firstElement;
+        while (backupNode != NULL && dataNode != NULL) {
+            ((EngineVar*)dataNode->content)->data = *((VariableUnion*)backupNode->content);
+            backupNode = backupNode->next;
+            dataNode = dataNode->next;
+        }
+
+        while (object->backupData.count > 0) {
+            free(PopList(&object->backupData));
+        }
+
     }
+
+    GeneralListNode* currentNode = allColliders.firstElement;
+
+    while (currentNode != NULL) {
+        ((Rect*)currentNode->content)->didCollide = false;
+        ((Rect*)currentNode->content)->couldExit = false;
+
+        currentNode = currentNode->next;
+    }
+
+    while (instructionStack.count > 0)
+    {
+        free(PopList(&instructionStack));
+    }
+
+    core0State.collisionPartitioned = false;
+    core0State.partitioning = false;
+    core1State.collisionPartitioned = false;
+    core1State.partitioning = false;
 
     gpio_put(LEFT_LIGHT, 0);
     gpio_put(RIGHT_LIGHT, 0);

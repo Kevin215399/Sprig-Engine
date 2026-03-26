@@ -18,7 +18,9 @@ File *program;
 #include "ProgramCreate.h"
 #include "ProgramSelect.h"
 #include "Editor.h"
-#include "Extras/FireWork.h"
+
+/// Removed due to ram limits
+//#include "Extras/FireWork.h"
 
 #include "Interpreter.h"
 
@@ -45,8 +47,7 @@ void RenderTest()
     sleep_ms(1000);
 }
 
-int main()
-{
+int main(){
     stdio_init_all();
 
     InitializeButtons();
@@ -78,7 +79,7 @@ int main()
 
     Clear();
 
-    // SuperCoolLogo();
+     SuperCoolLogo();
 
     /*uint16_t testSprite[8][8] = {
         {WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE, WHITE},

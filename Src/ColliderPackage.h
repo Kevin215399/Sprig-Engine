@@ -6,6 +6,9 @@
 #include "EngineStructs.h"
 #include "TFT.h"
 
+#include "pico/multicore.h"
+#include "pico/sync.h"
+
 #define COLLIDER_RECT 0
 #define COLLIDER_MESH 1
 
@@ -14,6 +17,13 @@
 
 #include "DebugPrint.h"
 
+typedef enum ResolutionType {
+    ESTIMATE,
+    ACCURATE,
+    VERY_ACCURATE
+} ResolutionType;
+
+ResolutionType resolveAlgorithm;
 
 typedef struct Rect
 {
@@ -37,14 +47,28 @@ typedef struct Cell
     GeneralList rectsWithin;
 } Cell;
 
+typedef struct CollisionChecked {
+    int ID1;
+    int ID2;
+} CollisionChecked;
+
+typedef struct CollisionPenetration {
+    Vector2 axis;
+    float amount;
+} CollisionPenetration;
+
+GeneralList resolvedCollisions;
+
 GeneralList allColliders;
 GeneralList cells;
+
+critical_section_t  resolveCollisionSection;
 
 int setRectID = 0;
 
 
-#define CELL_SIZE_X 8
-#define CELL_SIZE_Y 8
+#define CELL_SIZE_X 64
+#define CELL_SIZE_Y 64
 
 /////////////////////////////////////Helper functions
 #pragma region
@@ -56,16 +80,33 @@ float TruncateFloat(float value, int digits)
     return floor(value * pow(10, digits)) / pow(10, digits);
 }
 
-float ProjectPoint(Vector2 point, float slope) {
-    return slope * point.x - point.y;
+
+// gets the dot product of a point on a line of a slope
+/*float ProjectPoint(Vector2 point, float slope, bool vertical) {
+    if (vertical) {
+        return point.y;
+    }
+    else {
+        return ((1.0 / sqrt(1.0 + pow(slope, 2.0))) * point.x) + ((slope / sqrt(1.0 + pow(slope, 2.0))) * point.y);
+    }
+}*/
+
+Vector2 Normalize(Vector2 axis) {
+    Vector2 out;
+    out.x = axis.x / sqrt(pow(axis.x, 2) + pow(axis.y, 2));
+    out.y = axis.y / sqrt(pow(axis.x, 2) + pow(axis.y, 2));
+    return out;
 }
 
+float minF(float a, float b);
+float maxF(float a, float b);
+
 float Min4(float a, float b, float c, float d) {
-    return min(min(a, b), min(c, d));
+    return minF(minF(a, b), minF(c, d));
 }
 
 float Max4(float a, float b, float c, float d) {
-    return max(max(a, b), max(c, d));
+    return maxF(maxF(a, b), maxF(c, d));
 }
 
 // rotates a point around a point in degrees
@@ -81,8 +122,27 @@ Vector2 RotatePoint(Vector2 point, Vector2 pivot, float angle)
     return output;
 }
 
+// rotates a point around a point in degrees
+Vector2 RotateAroundOrigin(Vector2 point, float angle)
+{
+    Vector2 output;
+
+    angle *= (3.1415 / 180);
+
+    output.x = (point.x) * cos(angle) - (point.y) * sin(angle);
+    output.y = (point.x) * sin(angle) + (point.y) * cos(angle);
+
+    return output;
+}
+
+float DotProduct(Vector2 a, Vector2 b) {
+    return a.x * b.x + a.y * b.y;
+}
+
 Vector2 PreciseProjectPoint(Vector2 point, float projectSlope, float slope, Vector2 lineOffset) {
     Vector2 output;
+
+
 
     output.x = (projectSlope * point.x - slope * lineOffset.x + lineOffset.y - point.y) / (projectSlope - slope);
     output.y = slope * (output.x - lineOffset.x) + lineOffset.y;
@@ -163,6 +223,8 @@ void SetupCollisionPackage()
 {
     InitializeList(&cells);
     InitializeList(&allColliders);
+    InitializeList(&resolvedCollisions);
+    critical_section_init(&resolveCollisionSection);
 }
 
 // Converts a shape into a series of rectangles. Efficient, but CPU heavy
@@ -250,7 +312,7 @@ void RecalculateObjectColliders(EngineObject* object)
         free(ID);
     }
 
-    if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)
+    if (GetObjectDataByName(object, "meshType")->data.i == COLLIDER_RECT)  
     {
         Rect* rect = NewRect(-SPRITE_WIDTH / 2,
             SPRITE_HEIGHT / 2,
@@ -315,7 +377,7 @@ void AddColliderToObject(EngineObject* object, uint16_t meshTypeSet, bool calcul
 #pragma region
 
 //Returns true if they are overlapping
-bool SATWithSlope(Rect* rectA, Rect* rectB, float slope, bool isVertical) {
+bool SATWithSlope(Rect* rectA, Rect* rectB, Vector2 axis, CollisionPenetration* collisionPenetration) {
 
     //first 4 points = rect a, rest = rect b
     float projectedPoints[8];
@@ -348,14 +410,13 @@ bool SATWithSlope(Rect* rectA, Rect* rectB, float slope, bool isVertical) {
 
         point = RotatePoint(point, pivot, currentRect->angle);
 
-        if (!isVertical)
-            projectedPoints[p] = ProjectPoint(point, slope);
-        else
-            projectedPoints[p] = point.y;
+        projectedPoints[p] = DotProduct(point, axis);
     }
+#ifdef DEBUG
     for (int i = 0; i < 8; i++) {
-        debugPrintf("SAT POINTS: %f\n", projectedPoints[i]);
+        debugPrintf("SAT POINTS [%d]: %f\n", i, projectedPoints[i]);
     }
+#endif
 
     float aMin = Min4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
     float aMax = Max4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
@@ -364,18 +425,40 @@ bool SATWithSlope(Rect* rectA, Rect* rectB, float slope, bool isVertical) {
     float bMax = Max4(projectedPoints[4], projectedPoints[5], projectedPoints[6], projectedPoints[7]);
 
     if (aMin < bMax &&
-        aMax > bMin)
-        return true;
+        aMax > bMin) {
 
+        debugPrintf("aMin %f\n", aMin);
+        debugPrintf("aMax %f\n", aMax);
+        debugPrintf("bMin %f\n", bMin);
+        debugPrintf("bMax %f\n", bMax);
+
+        debugPrintf("min %f\n", minF(aMax, bMax));
+        debugPrintf("max %f\n", maxF(aMin, bMin));
+
+        float penetration = minF(aMax, bMax) - maxF(aMin, bMin);
+
+        if (collisionPenetration->amount == 0 || penetration < collisionPenetration->amount) {
+
+
+
+            collisionPenetration->amount = penetration;
+
+            debugPrintf("new smallest penetration: %f along axis (%f,%f)\n", collisionPenetration->amount, axis.x, axis.y);
+            collisionPenetration->axis = axis;
+        }
+
+        return true;
+    }
     return false;
 }
 
 // returns true if the rects are colliding
-bool SATRects(Rect* rectA, Rect* rectB)
+bool SATRects(Rect* rectA, Rect* rectB, CollisionPenetration* penetration)
 {
     float slope;
     Vector2 point1;
     Vector2 point2;
+
 
     for (int i = 0; i < 4; i++) {
         Rect* currentRect;
@@ -405,35 +488,23 @@ bool SATRects(Rect* rectA, Rect* rectB)
         debugPrintf("slope point 1 (%f,%f)\n", point1.x, point1.y);
         debugPrintf("slope point 2 (%f,%f)\n", point2.x, point2.y);
 
+        Vector2 tangent;
+        tangent.x = point2.x - point1.x;
+        tangent.y = point2.y - point1.y;
 
-        //If Ys are equal (horizontal) then use vertical line (opposite)
-        if (point2.y == point1.y) {
-            debugPrint("vertical line");
-            if (!SATWithSlope(rectA, rectB, 0, true)) {
-                debugPrint("SAT done, result: not collide");
-                return false;
-            }
+        tangent = Normalize(tangent);
+
+        Vector2 normal = RotateAroundOrigin(tangent, 90);
+
+        if (!SATWithSlope(rectA, rectB, normal, penetration)) {
+            debugPrint("SAT done, result: not collide");
+            return false;
         }
-        //If Xs are equal (Vertical) then use horizontal line (opposite)
-        else if (point2.x == point1.x) {
-            debugPrint("horizontal line");
-            if (!SATWithSlope(rectA, rectB, 0, false)) {
-                debugPrint("SAT done, result: not collide");
-                return false;
-            }
-        }
-        // otherwise use reciprocal slope
-        else {
-            float slope = (point2.y - point1.y) / (point2.x - point1.x);
-            debugPrintf("slope: %f\n", slope);
-            if (!SATWithSlope(rectA, rectB, slope, false)) {
-                debugPrint("SAT done, result: not collide");
-                return false;
-            }
-        }
-        debugPrint("collide");
+
+        debugPrint("checked axis");
     }
     debugPrint("SAT done, result: collide");
+
     return true;
 }
 
@@ -499,10 +570,45 @@ typedef struct Slope {
 } Slope;
 
 
-
-void ResolveCollision(Rect* a, Rect* b)
+void ResolveCollision(Rect* a, Rect* b, CollisionPenetration* collisionPenetration)
 {
-    debugPrint("resolving collision!");
+    debugPrint("resolveCollision");
+    debug_sleep(100);
+
+    debugPrint("enter crit section");
+    critical_section_enter_blocking(&resolveCollisionSection);
+
+    GeneralListNode* currentNode = resolvedCollisions.firstElement;
+    while (currentNode != NULL) {
+        CollisionChecked* check = ((CollisionChecked*)currentNode->content);
+
+        if (check->ID1 == a->ID && check->ID2 == b->ID)
+            goto wasChecked;
+        if (check->ID1 == b->ID && check->ID2 == a->ID)
+            goto wasChecked;
+
+
+        currentNode = currentNode->next;
+        continue;
+
+
+    wasChecked:
+        debugPrintf("%d + %d was already checked\n", check->ID1, check->ID2);
+        debug_sleep(100);
+        critical_section_exit(&resolveCollisionSection);
+        return;
+
+    }
+    CollisionChecked* check = malloc(sizeof(CollisionChecked));
+    check->ID1 = a->ID;
+    check->ID2 = b->ID;
+    PushList(&resolvedCollisions, check);
+
+    debugPrint("exit crit section");
+    critical_section_exit(&resolveCollisionSection);
+
+    ///////////////////////////////////////////////////////////////// Force distribution
+    debugPrintf("resolving collision between %s and %s\n", a->link->name, b->link->name);
     float aForce = 0;
     float bForce = 0;
 
@@ -544,17 +650,63 @@ void ResolveCollision(Rect* a, Rect* b)
         return;
     }
 
-    Vector2 aPosition = GetObjectDataByName(a->link, "position")->data.XY;
-    Vector2 bPosition = GetObjectDataByName(b->link, "position")->data.XY;
+    EngineVar* aPosition = GetObjectDataByName(a->link, "position");
+    EngineVar* bPosition = GetObjectDataByName(b->link, "position");
 
-    debugPrintf("a pos: (%f,%f)\n", aPosition.x, aPosition.y);
+    debugPrintf("a pos: (%f,%f)\n", aPosition->data.XY.x, aPosition->data.XY.y);
 
-    debugPrintf("b pos: (%f,%f)\n", bPosition.x, bPosition.y);
+    debugPrintf("b pos: (%f,%f)\n", bPosition->data.XY.x, bPosition->data.XY.y);
+
+    debugPrintf("move amount: %f, along (%f,%f)\n", collisionPenetration->amount, collisionPenetration->axis.x, collisionPenetration->axis.y);
+
+    float aDot = collisionPenetration->axis.x * a->globalCenter.x + collisionPenetration->axis.y * a->globalCenter.y;
+    float bDot = collisionPenetration->axis.x * b->globalCenter.x + collisionPenetration->axis.y * b->globalCenter.y;
+
+
+    EngineVar* aVel = GetObjectDataByName(a->link, "velocity");
+    EngineVar* bVel = GetObjectDataByName(b->link, "velocity");
+
+    float aBounce = GetObjectDataByName(a->link, "bounce")->data.f;
+    float bBounce = GetObjectDataByName(b->link, "bounce")->data.f;
+
+    float aMultiplier = 1;
+    float bMultiplier = 1;
+
+    if (aDot < bDot) {
+        debugPrint("a dot is less, negating");
+
+        aMultiplier = -1;
+        bMultiplier = 1;
+
+    }
+    else {
+        debugPrint("b dot is less, negating");
+
+        aMultiplier = 1;
+        bMultiplier = -1;
+    }
+
+
+
+    aPosition->data.XY.x += aMultiplier * (collisionPenetration->amount * collisionPenetration->axis.x) * aForce;
+    aPosition->data.XY.y += aMultiplier * (collisionPenetration->amount * collisionPenetration->axis.y) * aForce;
+
+    aVel->data.XY.x += aMultiplier * collisionPenetration->axis.x * aForce * aBounce;
+    aVel->data.XY.y += aMultiplier * collisionPenetration->axis.y * aForce * aBounce;
+
+
+    bPosition->data.XY.x += bMultiplier * (collisionPenetration->amount * collisionPenetration->axis.x) * bForce;
+    bPosition->data.XY.y += bMultiplier * (collisionPenetration->amount * collisionPenetration->axis.y) * bForce;
+
+    bVel->data.XY.x += bMultiplier * collisionPenetration->axis.x * bForce * bBounce;
+    bVel->data.XY.y += bMultiplier * collisionPenetration->axis.y * bForce * bBounce;
+
+    /*
 
 
     // The slope of the rects avged gives the movement vector
 
-    //calculation for rect A
+    /////////////////////////////////////////////////////////////////////////calculation for rect A
     Vector2 tempPoint;
     tempPoint.x = a->globalCenter.x - a->globalScale.x / 2;
     tempPoint.y = a->globalCenter.y;
@@ -576,7 +728,8 @@ void ResolveCollision(Rect* a, Rect* b)
 
     debugPrintf(" slope a = %f\n", slopeA.m);
 
-    //calculation for rect B
+    ////////////////////////////////////////////////////////////////////////////calculation for rect B
+
     tempPoint.x = b->globalCenter.x - b->globalScale.x / 2;
     tempPoint.y = b->globalCenter.y;
     Vector2 bLeftPoint = RotatePoint(tempPoint, b->globalCenter, b->angle);
@@ -598,7 +751,7 @@ void ResolveCollision(Rect* a, Rect* b)
     }
     debugPrintf(" slope b = %f\n", slopeB.m);
 
-    //Combine slope
+    //////////////////////////////////////////////////////////////////////Combine slope
 
     Slope combinedSlope;
     memset(&combinedSlope, 0, sizeof(Slope));
@@ -614,6 +767,9 @@ void ResolveCollision(Rect* a, Rect* b)
     }
     debugPrintf("combined slope = %f\n", combinedSlope.m);
 
+    ///////////////////////////////////////////////////////////////////// Get Distance 1
+    float distance1 = 0;
+
     Vector2 projectM;
     float _projectSlope = combinedSlope.m;
     float _slopeB = slopeB.m;
@@ -623,9 +779,26 @@ void ResolveCollision(Rect* a, Rect* b)
     if (slopeB.isVertical) {
         _slopeB = 10000;
     }
+    if (_projectSlope == _slopeB) {
+        if ((a->globalCenter.y - _projectSlope * a->globalCenter.x) != (b->globalCenter.y - _slopeB * b->globalCenter.x)) {
+            debugPrint("Lines never touch!");
+            distance1 = 10000;
+        }
+        else {
+            debugPrint("Lines always touch!");
+            distance1 = 0;
+        }
+        goto distance1Done;
+    }
     projectM = PreciseProjectPoint(a->globalCenter, _projectSlope, _slopeB, b->globalCenter);
-    debugPrintf("project m = (%f,%f)\n",projectM.x,projectM.y);
+    debugPrintf("project m = (%f,%f)\n", projectM.x, projectM.y);
 
+    distance1 = Distance(projectM, a->globalCenter);
+
+distance1Done:
+
+    /////////////////////////////////////////////////////////////////////Get distance 2
+    float distance2 = 0;
 
     Vector2 projectPerpM;
 
@@ -633,25 +806,132 @@ void ResolveCollision(Rect* a, Rect* b)
     _slopeB = slopeB.m;
     if (combinedSlope.m == 0) {
         _projectSlope = 10000;
-    } else if(combinedSlope.isVertical){
+    }
+    else if (combinedSlope.isVertical) {
         _projectSlope = 0;
     }
     if (slopeB.isVertical) {
         _slopeB = 10000;
     }
-
+    if (_projectSlope == _slopeB) {
+        if ((a->globalCenter.y - _projectSlope * a->globalCenter.x) != (b->globalCenter.y - _slopeB * b->globalCenter.x)) {
+            debugPrint("Lines never touch!");
+            distance2 = 10000;
+        }
+        else {
+            debugPrint("Lines always touch!");
+            distance2 = 0;
+        }
+        goto distance2Done;
+    }
     projectPerpM = PreciseProjectPoint(a->globalCenter, _projectSlope, _slopeB, b->globalCenter);
-    debugPrintf("project m = (%f,%f)\n",projectPerpM.x,projectPerpM.y);
+    debugPrintf("project m = (%f,%f)\n", projectPerpM.x, projectPerpM.y);
+
+    distance2 = Distance(projectPerpM, a->globalCenter);
+
+distance2Done:
+
+    ////////////////////////////////////////////////////////////////////
 
 
-    bool usePerpendicular = false;
+    debugPrintf("dis1: %f, dis2: %f\n", distance1, distance2);
 
-    float distance1 = Distance(projectM,a->globalCenter);
-    
-    float distance2 = Distance(projectPerpM,a->globalCenter);
+    EngineVar* aPos = GetObjectDataByName(a->link, "position");
+    EngineVar* bPos = GetObjectDataByName(b->link, "position");
 
-    debugPrintf("dis1: %f, dis2: %f\n",distance1,distance2);
+    EngineVar* aVel = GetObjectDataByName(a->link, "velocity");
+    EngineVar* bVel = GetObjectDataByName(b->link, "velocity");
 
+    float aMultiplier = 1;
+    float bMultiplier = 1;
+
+
+    if (distance1 < distance2) {
+        //use normal slope
+        debugPrint("dist1 is shorter");
+
+        if (combinedSlope.isVertical) {
+            combinedSlope.m = 10000;
+        }
+    }
+    else {
+        //use perpendicular slope
+        debugPrint("dist2 is shorter");
+        if (combinedSlope.isVertical) {
+            combinedSlope.m = 0;
+        }
+        else if (combinedSlope.m == 0) {
+            combinedSlope.m = 10000;
+        }
+        else {
+            combinedSlope.m = -1 / combinedSlope.m;
+        }
+    }
+
+    Slope opposite;
+    if (combinedSlope.m != 0)
+        opposite.m = -1 / combinedSlope.m;
+    else
+        opposite.m = 10000;
+
+
+    aMultiplier = a->globalCenter.y < b->globalCenter.y ? -1 : 1;
+    bMultiplier = b->globalCenter.y < a->globalCenter.y ? -1 : 1;
+
+
+
+    //first 4 points = rect a, rest = rect b
+    float projectedPoints[8];
+
+    Vector2 point;
+
+    for (int p = 0; p < 8; p++) {
+
+
+        Rect* currentRect;
+
+        if (p < 4) {
+            currentRect = a;
+        }
+        else {
+            currentRect = b;
+        }
+
+        point.x = currentRect->globalCenter.x + (p % 2 == 0 ? 1 : -1) * (currentRect->globalScale.x / 2);
+        point.y = currentRect->globalCenter.y + (p % 4 < 2 ? 1 : -1) * (currentRect->globalScale.y / 2);
+
+        point = RotatePoint(point, currentRect->globalCenter, currentRect->angle);
+
+        Vector2 lineOffset;
+        lineOffset.x = 0;
+        lineOffset.y = 0;
+        projectedPoints[p] = PreciseProjectPoint(point, opposite.m, combinedSlope.m, lineOffset).y;
+
+    }
+#ifdef DEBUG
+    for (int i = 0; i < 8; i++) {
+        debugPrintf("PROJECTED POINTS: %f\n", projectedPoints[i]);
+    }
+#endif
+
+    float p1Max = Max4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
+    float p2Max = Max4(projectedPoints[4], projectedPoints[5], projectedPoints[6], projectedPoints[7]);
+
+    float p1Min = Min4(projectedPoints[0], projectedPoints[1], projectedPoints[2], projectedPoints[3]);
+    float p2Min = Min4(projectedPoints[4], projectedPoints[5], projectedPoints[6], projectedPoints[7]);
+
+    float moveAmount = maxF(p1Min, p2Min) - minF(p1Max, p2Max);
+
+    debugPrintf("collision MOVE amt %f\n", moveAmount);
+
+    aPos->data.XY.x += ((moveAmount - a->globalCenter.y) / combinedSlope.m + a->globalCenter.x) * aForce * aMultiplier;
+    aPos->data.XY.y += (moveAmount)*aForce * aMultiplier;
+
+    bPos->data.XY.x += ((moveAmount - b->globalCenter.y) / combinedSlope.m + b->globalCenter.x) * bForce * bMultiplier;
+    bPos->data.XY.y += (moveAmount)*bForce * bMultiplier;
+
+
+    */
 
 
     /*Slope movementVector;
@@ -907,10 +1187,17 @@ void ColliderStep(uint8_t mode)
 
     for (int cellIndex = start; cellIndex < end; cellIndex++) {
         Cell* cell = ListGetIndex(&cells, cellIndex);
+        if (cell == NULL)
+        {
+            debugPrint("WHAT?? why are the cells empty?????");
+            return;
+        }
         for (int indexA = 0; indexA < cell->rectsWithin.count; indexA++) {
             for (int indexB = indexA + 1; indexB < cell->rectsWithin.count; indexB++) {
+
                 Rect* rectA = ListGetIndex(&cell->rectsWithin, indexA);
                 Rect* rectB = ListGetIndex(&cell->rectsWithin, indexB);
+
                 if (rectA->link == NULL) {
                     debugPrint("RECT A NOT LINKED");
                     while (1)sleep_ms(100);
@@ -928,7 +1215,11 @@ void ColliderStep(uint8_t mode)
                 if (rectA->link == rectB->link)
                     continue;
 
-                if (SATRects(rectA, rectB)) {
+
+                CollisionPenetration penetration;
+                memset(&penetration, 0, sizeof(penetration));
+
+                if (SATRects(rectA, rectB, &penetration)) {
 
 
                     // Rect A Enter
@@ -962,11 +1253,9 @@ void ColliderStep(uint8_t mode)
                     rectA->link->didCollide = true;
                     rectB->link->didCollide = true;
 
-                    //Function defined in physics package
 
 
-                    void ResolveCollision(Rect * a, Rect * b);
-                    ResolveCollision(rectA, rectB);
+                    ResolveCollision(rectA, rectB, &penetration);
                 }
                 else {
                     // Rect A exit

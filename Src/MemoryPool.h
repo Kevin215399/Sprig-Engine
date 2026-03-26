@@ -4,8 +4,8 @@
 #include "EngineStructs.h"
 #include "DebugPrint.h"
 
-#define VAR_POOL_COUNT 120
-#define STRING_POOL_COUNT 400
+#define VAR_POOL_COUNT 80
+#define STRING_POOL_COUNT 96
 #define STRING_POOL_WIDTH 80
 
 #define NULL_POOL 65535

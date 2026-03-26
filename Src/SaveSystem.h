@@ -365,6 +365,8 @@ EngineObject* DeserializeObject(char* serializedObject)
 
     InitializeList(&objectOut->colliderRects);
 
+    InitializeList(&objectOut->backupData);
+
     for (int i = 0; i < dataCount; i++)
     {
         int type = 0;

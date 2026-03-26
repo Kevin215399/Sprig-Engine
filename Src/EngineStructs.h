@@ -7,9 +7,10 @@
 #include "LinkedList.h"
 #include "DebugPrint.h"
 
-#define COLLIDER_VARS 6
+
 #define BASE_VARS 6
-#define PHYSICS_VARS 2
+#define COLLIDER_VARS 7
+#define PHYSICS_VARS 1
 
 #define MAX_SCRIPTS_PER_OBJECT 10
 #define MAX_NAME_LENGTH 16
@@ -140,7 +141,6 @@ typedef struct ScriptData
 {
     EngineScript* script;
 
-    uint16_t currentLine;
 
     char** lines;
     int* lineIndexes;
@@ -154,8 +154,10 @@ typedef struct ScriptData
     EngineVar* backupData;
     uint8_t backupVarCount;
 
-    EngineFunction* functions[40];
-    uint8_t functionCount;
+    GeneralList functions;
+
+    //EngineFunction* functions[40];
+    //uint8_t functionCount;
 
     BracketPair* brackets;
     uint8_t bracketPairs;
@@ -194,6 +196,7 @@ typedef struct EngineObject
 
     // Each object has position, sprite, and scale
     GeneralList objectData;
+    GeneralList backupData;
     //VarNode* objectDataTail;
    // uint8_t objectDataCount;
 
@@ -317,6 +320,7 @@ EngineVar* VarConstructor(char* name, uint8_t nameLength, uint8_t dataType, bool
     }
     output->currentType = dataType;
     output->serialized = serialized;
+    memset(&output->data, 0, sizeof(VariableUnion));
     InitializeList(&output->listData);
     return output;
 }
@@ -367,6 +371,8 @@ ScriptData* ScriptDataConstructor(EngineScript* script)
 
     InitializeList(&output->variables);
 
+    InitializeList(&output->functions);
+
     debugPrint("init list");
 
     output->backupData = NULL;
@@ -375,9 +381,7 @@ ScriptData* ScriptDataConstructor(EngineScript* script)
 
     // output->data = variables;
     output->backupVarCount = 0;
-    output->functionCount = 0;
     output->bracketPairs = 0;
-    output->currentLine = 0;
     output->currentScope = 0;
 
 
@@ -419,6 +423,18 @@ EngineVar* GetObjectDataByName(EngineObject* obj, char* name)
         return NULL;
     return (EngineVar*)current->content;
 }
+int GetObjectDataIndex(EngineObject* obj, char* name)
+{
+    int index = 0;
+    GeneralListNode* current = obj->objectData.firstElement;
+    while (current != NULL && strcmp(((EngineVar*)(current->content))->name, name) != 0) {
+        current = current->next;
+        index++;
+    }
+    if (current == NULL)
+        return -1;
+    return index;
+}
 EngineVar* GetObjectDataByIndex(EngineObject* obj, uint8_t index)
 {
     return (EngineVar*)ListGetIndex(&obj->objectData, index);
@@ -432,6 +448,8 @@ EngineVar** ObjectDataToList(EngineObject* object)
     }
     return list;
 }
+
+
 
 EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
 {
@@ -458,6 +476,8 @@ EngineObject* ObjectConstructor(uint8_t ID, char* name, uint8_t nameLength)
     InitializeList(&output->objectData);
 
     InitializeList(&output->colliderRects);
+
+    InitializeList(&output->backupData);
 
     memset(output->packages, 0, sizeof(output->packages));
 
