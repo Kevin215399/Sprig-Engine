@@ -1,4 +1,9 @@
-
+<h1>------------- Optimization ----------------</h1>
+1. I used space partitioning to reduce the amount of CPU usage when checking collision between objects
+2. I used a load balancer to make sure both cores were being used efficiently
+3. I used a string memory pool to reduce memory exhaustion
+4. I used linked lists for dynamic arrays and efficient look up
+5. I created a smart renderer that compares frames to prevent redundant updates
 
 <h1>--------------- Hardware ------------------</h1>
 This engine is designed for the hackclub sprig. It has 8 buttons, a 1.8" TFT adafruit screen with SD card, and a speaker. It is powered
